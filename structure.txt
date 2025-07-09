@@ -1,0 +1,17 @@
+Adapt/                  <-- This will be your main project folder
+├── frontend/           <-- All the React code goes here
+│   ├── components/
+│   │   ├── ChatTutor.tsx
+│   │   ├── Icons.tsx
+│   │   ├── ProcessSteps.tsx
+│   │   └── VideoPlayer.tsx
+│   ├── services/
+│   │   ├── geminiService.ts
+│   │   └── ttsService.ts
+│   ├── App.tsx
+│   ├── index.html
+│   ├── index.tsx
+│   ├── metadata.json
+│   └── types.ts
+│
+└── backend/            <-- Your Python code will go here later (it's empty for now)

@@ -1,0 +1,10 @@
+{
+  // Make every new integrated terminal start in the workspace root
+  "terminal.integrated.cwd": "${workspaceFolder}",
+
+  // Auto-select your Python venv as the interpreter
+  "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe",
+
+  // Optional: auto-activate the venv in new terminals
+  "python.terminal.activateEnvironment": true
+}
