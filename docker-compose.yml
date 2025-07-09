@@ -1,9 +1,0 @@
-version: '3.8'
-services:
-  mini_gemini_v2:
-    build: .
-    ports:
-      - "8000:10000"
-    env_file: .env
-    volumes:
-      - .:/app

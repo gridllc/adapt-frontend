@@ -22,3 +22,7 @@ credentials.json
 # Build artifacts
 /dist
 /build
+
+adapt_structure.txt
+
+structure.txt
