@@ -7,7 +7,7 @@ import React from 'react';
  * All relevant logic from this file has been migrated to `src/pages/TrainingPage.tsx`.
  */
 const App: React.FC = () => {
-    return null;
+  return null;
 };
 
 export default App;

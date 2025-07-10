@@ -1,44 +1,25 @@
-import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+import React, { forwardRef } from 'react';
 
 interface VideoPlayerProps {
-    videoUrl: string;
-    onTimeUpdate: (time: number) => void;
+  videoUrl: string;
+  onTimeUpdate: (time: number) => void;
 }
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(({ videoUrl, onTimeUpdate }, ref) => {
-    const localRef = useRef<HTMLVideoElement>(null);
+  const handleTimeUpdate = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    onTimeUpdate(event.currentTarget.currentTime);
+  };
 
-    // Expose the video element ref to the parent component
-    useImperativeHandle(ref, () => localRef.current as HTMLVideoElement);
-
-    useEffect(() => {
-        const videoElement = localRef.current;
-        if (!videoElement) return;
-
-        const handleTimeUpdate = () => {
-            onTimeUpdate(videoElement.currentTime);
-        };
-
-        videoElement.addEventListener('timeupdate', handleTimeUpdate);
-
-        return () => {
-            videoElement.removeEventListener('timeupdate', handleTimeUpdate);
-        };
-    }, [onTimeUpdate]);
-
-    return (
-        <div className="w-full aspect-video bg-black">
-            <video
-                ref={localRef}
-                controls
-                className="w-full h-full"
-                src={videoUrl}
-                preload="metadata"
-            >
-                Your browser does not support the video tag.
-            </video>
-        </div>
-    );
+  return (
+    <video
+      ref={ref}
+      src={videoUrl}
+      controls
+      onTimeUpdate={handleTimeUpdate}
+      className="w-full h-full object-cover"
+      playsInline
+    />
+  );
 });
 
 VideoPlayer.displayName = 'VideoPlayer';

@@ -87,7 +87,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
 
     const enrichPromptIfNeeded = useCallback((prompt: string): string => {
         const vagueQueryRegex = /\bdid i do this (right|correctly|okay)\??/i;
-
+        
         if (vagueQueryRegex.test(prompt.trim()) && steps?.[currentStepIndex]) {
             const step = steps[currentStepIndex];
             return `The user is on step ${currentStepIndex + 1}: "${step.title}". Their question is: "${prompt}". Based on the process instructions for this step, please confirm if they are likely doing it correctly and guide them on what to do next.`;
@@ -102,7 +102,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
         ttsService.cancel();
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
-
+        
         const enrichedInput = enrichPromptIfNeeded(input);
         setInput('');
         setIsLoading(true);
