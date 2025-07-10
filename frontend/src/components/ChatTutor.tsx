@@ -1,19 +1,18 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { startChat } from '../../services/geminiService';
-import * as ttsService from '../../services/ttsService';
-import type { ChatMessage, ProcessStep } from '../types';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from './Icons';
+import { startChat } from '@/services/geminiService';
+import * as ttsService from '@/services/ttsService';
+import type { ChatMessage, ProcessStep } from '@/types';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from '@/components/Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
+    moduleId: string;
     transcriptContext: string;
     onTimestampClick: (time: number) => void;
     currentStepIndex: number;
     steps: ProcessStep[];
 }
-
-const CHAT_HISTORY_KEY = 'adapt-ai-tutor-chat-history';
 
 const parseTimestamp = (text: string): number | null => {
     // This regex now supports MM:SS and HH:MM:SS formats
@@ -27,7 +26,9 @@ const parseTimestamp = (text: string): number | null => {
     return null;
 };
 
-export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimestampClick, currentStepIndex, steps }) => {
+export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContext, onTimestampClick, currentStepIndex, steps }) => {
+    const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}`;
+
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -60,7 +61,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         return () => {
             ttsService.cancel(); // Stop any speech when the component unmounts
         }
-    }, [transcriptContext]);
+    }, [transcriptContext, CHAT_HISTORY_KEY]);
 
     // Save chat history to localStorage
     useEffect(() => {
@@ -77,7 +78,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         }, 500);
 
         return () => clearTimeout(handler);
-    }, [messages]);
+    }, [messages, CHAT_HISTORY_KEY]);
 
     // Scroll to the bottom of the chat
     useEffect(() => {
@@ -152,7 +153,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         } finally {
             setIsLoading(false);
         }
-    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded]);
+    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, CHAT_HISTORY_KEY, transcriptContext]);
 
     const renderMessageContent = (text: string) => {
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);

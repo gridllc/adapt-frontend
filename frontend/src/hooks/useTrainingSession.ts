@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { UserAction, StepStatus } from '../types';
+import type { UserAction, StepStatus } from '@/types';
 
 export function useTrainingSession(moduleId: string, totalSteps: number) {
   const SESSION_KEY = `adapt-session-${moduleId}`;

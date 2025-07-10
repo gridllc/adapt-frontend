@@ -1,5 +1,5 @@
 
-import type { TrainingModule } from '../types';
+import type { TrainingModule } from '@/types';
 
 // Mock data for a training module, now including an alternative method and a transcript.
 export const MOCK_SANDWICH_MODULE: TrainingModule = {

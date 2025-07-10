@@ -1,14 +1,14 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { VideoPlayer } from '../components/VideoPlayer';
-import { ProcessSteps } from '../components/ProcessSteps';
-import { ChatTutor } from '../components/ChatTutor';
-import { BotIcon, MessageSquareIcon, XIcon, BookOpenIcon, FileTextIcon } from '../components/Icons';
-import type { TrainingModule, ProcessStep } from '../types';
-import { useTrainingSession } from '../hooks/useTrainingSession';
-import { getModule } from '../data/modules';
-import { TranscriptViewer } from '../components/TranscriptViewer';
+import { VideoPlayer } from '@/components/VideoPlayer';
+import { ProcessSteps } from '@/components/ProcessSteps';
+import { ChatTutor } from '@/components/ChatTutor';
+import { BotIcon, MessageSquareIcon, XIcon, BookOpenIcon, FileTextIcon } from '@/components/Icons';
+import type { TrainingModule, ProcessStep } from '@/types';
+import { useTrainingSession } from '@/hooks/useTrainingSession';
+import { getModule } from '@/data/modules';
+import { TranscriptViewer } from '@/components/TranscriptViewer';
 
 const findActiveStepIndex = (time: number, steps: ProcessStep[]) => {
     let foundIndex = -1;

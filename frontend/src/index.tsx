@@ -1,9 +1,10 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import RootLayout from './src/RootLayout';
-import HomePage from './src/pages/HomePage';
-import TrainingPage from './src/pages/TrainingPage';
+import RootLayout from '@/RootLayout';
+import HomePage from '@/pages/HomePage';
+import TrainingPage from '@/pages/TrainingPage';
 import './index.css';
 
 const rootElement = document.getElementById('root');

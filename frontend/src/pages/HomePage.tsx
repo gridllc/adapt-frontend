@@ -1,9 +1,9 @@
 
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getAvailableModules, saveUploadedModule } from '../data/modules';
-import { UploadCloudIcon, BookOpenIcon } from '../components/Icons';
-import type { TrainingModule } from '../types';
+import { getAvailableModules, saveUploadedModule } from '@/data/modules';
+import { UploadCloudIcon, BookOpenIcon } from '@/components/Icons';
+import type { TrainingModule } from '@/types';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();

@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect } from 'react';
-import type { ProcessStep, StepStatus } from '../types';
-import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon } from './Icons';
+import type { ProcessStep, StepStatus } from '@/types';
+import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon } from '@/components/Icons';
 
 interface ProcessStepsProps {
   steps: ProcessStep[];
