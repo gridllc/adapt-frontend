@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import type { ProcessStep } from '../types';
 import { CheckCircleIcon, LightbulbIcon } from './Icons';
@@ -12,6 +11,25 @@ interface ProcessStepsProps {
 export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentTime, onStepClick }) => {
   const activeStepRef = useRef<HTMLDivElement>(null);
 
+  const findActiveStepIndex = (time: number) => {
+    // Find the last step that has started. This correctly highlights the current step
+    // even if the video is paused between steps.
+    let foundIndex = -1;
+    for (let i = 0; i < steps.length; i++) {
+      if (time >= steps[i].start) {
+        foundIndex = i;
+      } else {
+        break;
+      }
+    }
+    // If no step is found (currentTime < first step start), default to the first step
+    if (foundIndex === -1 && steps.length > 0) return 0;
+
+    return foundIndex;
+  }
+
+  const activeStepIndex = findActiveStepIndex(currentTime);
+
   useEffect(() => {
     // Scroll the active step into the center of the view smoothly.
     if (activeStepRef.current) {
@@ -20,13 +38,7 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentTime, 
         block: 'center',
       });
     }
-  }, [currentTime]);
-
-  const findActiveStepIndex = (time: number) => {
-    return steps.findIndex(step => time >= step.start && time < step.end);
-  }
-
-  const activeStepIndex = findActiveStepIndex(currentTime);
+  }, [activeStepIndex]); // Depend on activeStepIndex to scroll when the step changes
 
   return (
     <div className="p-4 space-y-3 overflow-y-auto flex-1">
@@ -40,10 +52,10 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentTime, 
             ref={isActive ? activeStepRef : null}
             onClick={() => onStepClick(step.start)}
             className={`cursor-pointer p-4 rounded-lg transition-all duration-300 border-l-4 ${isActive
-                ? 'bg-indigo-600/30 border-indigo-500 shadow-lg'
-                : isCompleted
-                  ? 'bg-slate-700/40 border-green-500 opacity-70'
-                  : 'bg-slate-700/80 border-slate-600 hover:bg-slate-700'
+              ? 'bg-indigo-600/30 border-indigo-500 shadow-lg'
+              : isCompleted
+                ? 'bg-slate-700/40 border-green-500 opacity-70'
+                : 'bg-slate-700/80 border-slate-600 hover:bg-slate-700'
               }`}
           >
             <div className="flex justify-between items-center">

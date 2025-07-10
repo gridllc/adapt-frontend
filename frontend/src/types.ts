@@ -16,7 +16,7 @@ export interface ProcessStep {
 
 // This represents the entire training module, including the video and its structured steps.
 export interface TrainingModule {
-  title:string;
+  title: string;
   videoUrl: string;
   steps: ProcessStep[];
 }

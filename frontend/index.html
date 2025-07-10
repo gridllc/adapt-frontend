@@ -25,24 +25,41 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #64748b;
     }
+
+    /* Simple fade-in animation */
+    @keyframes fade-in-up {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-in-up {
+      animation: fade-in-up 0.3s ease-out forwards;
+    }
   </style>
   <script type="importmap">
 {
   "imports": {
-    "vite": "https://esm.sh/vite@^7.0.3",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^4.6.0",
+    "react": "https://esm.sh/react@^19.1.0",
     "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
     "react/": "https://esm.sh/react@^19.1.0/",
-    "react": "https://esm.sh/react@^19.1.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.9.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.9.0",
+    "vite": "https://esm.sh/vite@^7.0.3",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^4.6.0"
   }
 }
 </script>
 </head>
 
-<body class="bg-slate-900 text-white">
+<body class="bg-slate-900 text-white font-sans">
   <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
+  <script type="module" src="/src/index.tsx"></script>
 </body>
 
 </html>

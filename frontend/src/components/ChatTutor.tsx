@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startChat } from '../services/geminiService';
-import * as ttsService from '../services/ttsService';
+import * as ttsService from '../services/ttsServices';
 import type { ChatMessage } from '../types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from './Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
@@ -14,9 +13,10 @@ interface ChatTutorProps {
 const CHAT_HISTORY_KEY = 'adapt-ai-tutor-chat-history';
 
 const parseTimestamp = (text: string): number | null => {
-    const match = text.match(/\[(\d{2}):(\d{2}):(\d{2})\]/);
+    // This regex now supports MM:SS and HH:MM:SS formats
+    const match = text.match(/\[(?:(\d{2}):)?(\d{2}):(\d{2})\]/);
     if (match) {
-        const hours = parseInt(match[1], 10);
+        const hours = parseInt(match[1] || '0', 10);
         const minutes = parseInt(match[2], 10);
         const seconds = parseInt(match[3], 10);
         return hours * 3600 + minutes * 60 + seconds;
@@ -33,7 +33,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
     const chatRef = useRef<Chat | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Load chat history from localStorage on initial mount
+    // Load chat history and initialize chat session
     useEffect(() => {
         let loadedMessages: ChatMessage[] = [];
         try {
@@ -59,22 +59,24 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         }
     }, [transcriptContext]);
 
-    // Save chat history to localStorage whenever messages change (with debouncing)
+    // Save chat history to localStorage
     useEffect(() => {
         const handler = setTimeout(() => {
-            if (messages.length > 0) {
-                localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
-            } else {
-                localStorage.removeItem(CHAT_HISTORY_KEY);
+            try {
+                if (messages.length > 0) {
+                    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
+                } else {
+                    localStorage.removeItem(CHAT_HISTORY_KEY);
+                }
+            } catch (e) {
+                console.error("Failed to save chat history.", e);
             }
-        }, 500); // Debounce saves to prevent excessive writes during streaming
+        }, 500);
 
-        return () => {
-            clearTimeout(handler);
-        };
+        return () => clearTimeout(handler);
     }, [messages]);
 
-
+    // Scroll to the bottom of the chat
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isLoading]);
@@ -83,7 +85,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         e.preventDefault();
         if (!input.trim() || isLoading) return;
 
-        ttsService.cancel(); // Stop any current speech when sending a new message
+        ttsService.cancel();
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
@@ -91,7 +93,6 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         setError(null);
 
         const modelMessageId = (Date.now() + 1).toString();
-        // Add a placeholder for the streaming response
         setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '', citations: [] }]);
 
         let finalModelText = '';
@@ -99,61 +100,46 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
             if (!chatRef.current) {
                 throw new Error("Chat not initialized");
             }
-
             const stream = await chatRef.current.sendMessageStream({ message: input });
 
             for await (const chunk of stream) {
                 const chunkText = chunk.text;
-                finalModelText += chunkText; // Accumulate final text for TTS
+                finalModelText += chunkText;
                 const groundingChunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
 
                 setMessages(prev =>
                     prev.map(msg => {
-                        if (msg.id !== modelMessageId) {
-                            return msg;
-                        }
-
-                        const updatedMsg: ChatMessage = {
-                            ...msg,
-                            text: msg.text + chunkText,
-                        };
-
+                        if (msg.id !== modelMessageId) return msg;
+                        const updatedMsg: ChatMessage = { ...msg, text: msg.text + chunkText };
                         if (groundingChunks && groundingChunks.length > 0) {
                             const newCitations = groundingChunks
                                 .map((c: GroundingChunk) => c.web)
                                 .filter((c): c is { uri: string; title?: string; } => !!c?.uri)
-                                .map(c => ({
-                                    uri: c.uri,
-                                    title: c.title || c.uri,
-                                }));
-
+                                .map(c => ({ uri: c.uri, title: c.title || c.uri }));
                             if (newCitations.length > 0) {
                                 const currentCitations = msg.citations || [];
                                 const combined = [...currentCitations, ...newCitations];
-                                updatedMsg.citations = combined.filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i) // Add unique citations
+                                updatedMsg.citations = combined.filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i);
                             }
                         }
-
                         return updatedMsg;
                     })
                 );
             }
             if (isAutoSpeakEnabled && finalModelText) {
-                ttsService.speak(finalModelText.replace(/\[SUGGESTION\]/g, 'I have a suggestion.').replace(/\[\/SUGGESTION\]/g, ''));
+                ttsService.speak(finalModelText.replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, 'I have a suggestion. $1'));
             }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             console.error("Gemini API Error:", errorMessage);
             setError("Sorry, I couldn't get a response. Please try again.");
-            // On error, remove the user message and the placeholder to allow retry
             setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
         } finally {
             setIsLoading(false);
         }
-    }, [input, isLoading, isAutoSpeakEnabled]);
+    }, [input, isLoading, isAutoSpeakEnabled, transcriptContext]);
 
     const renderMessageContent = (text: string) => {
-        // Handle suggestions
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);
         if (suggestionMatch) {
             const suggestionText = suggestionMatch[1];
@@ -163,7 +149,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                         <LightbulbIcon className="h-5 w-5 text-yellow-400" />
                         <h4 className="font-bold text-sm text-yellow-300">Suggestion</h4>
                     </div>
-                    <p className="text-sm text-indigo-100 italic">"{suggestionText}"</p>
+                    <p className="text-sm text-indigo-100 italic">"{suggestionText.trim()}"</p>
                     <button className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-3 rounded-full mt-3 w-full">
                         Propose to Owner
                     </button>
@@ -171,8 +157,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
             );
         }
 
-        // Handle timestamps
-        const parts = text.split(/(\[\d{2}:\d{2}:\d{2}\])/g);
+        const parts = text.split(/(\[(?:\d{2}:)?\d{2}:\d{2}\])/g);
         return parts.map((part, index) => {
             const time = parseTimestamp(part);
             if (time !== null) {
@@ -192,16 +177,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
 
     const toggleAutoSpeak = () => {
         setIsAutoSpeakEnabled(prev => {
-            if (!prev === false) {
-                ttsService.cancel();
-            }
+            if (!prev === false) ttsService.cancel();
             return !prev;
         });
     }
 
     return (
         <div className="flex flex-col h-full">
-            <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+            <div className="p-4 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
                 <h3 className="font-bold text-white">AI Tutor Controls</h3>
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-400">Auto-Speak</span>
@@ -212,39 +195,30 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
             </div>
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
                 {messages.length === 0 && !isLoading && (
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white" />
                         </div>
                         <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-700 text-slate-200 rounded-bl-none">
-                            <div className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I've been trained on your company's specific process for this task. Ask me anything, and I'll guide you using the official steps.</div>
+                            <p className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I've been trained on your company's specific process for this task. Ask me anything, and I'll guide you using the official steps.</p>
                         </div>
                     </div>
                 )}
                 {messages.map((msg) => (
-                    <div key={msg.id} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                    <div key={msg.id} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''} animate-fade-in-up`}>
                         {msg.role === 'model' && (
                             <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                                 <BotIcon className="h-5 w-5 text-white" />
                             </div>
                         )}
-                        <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user'
-                                ? 'bg-blue-600 text-white rounded-br-none'
-                                : 'bg-slate-700 text-slate-200 rounded-bl-none'
-                            }`}>
+                        <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-700 text-slate-200 rounded-bl-none'}`}>
                             <div className="text-base whitespace-pre-wrap">{renderMessageContent(msg.text)}</div>
                             {msg.citations && msg.citations.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-slate-600">
                                     <h4 className="text-xs font-bold text-slate-400 mb-1">Sources:</h4>
                                     <div className="space-y-1">
                                         {msg.citations.map((citation, idx) => (
-                                            citation?.uri && <a
-                                                key={idx}
-                                                href={citation.uri}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-2 text-xs text-indigo-300 hover:underline"
-                                            >
+                                            citation?.uri && <a key={idx} href={citation.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-300 hover:underline">
                                                 <LinkIcon className="h-3 w-3 flex-shrink-0" />
                                                 <span className="truncate">{citation.title || new URL(citation.uri).hostname}</span>
                                             </a>
@@ -260,8 +234,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                         )}
                     </div>
                 ))}
-                {isLoading && messages.length === 0 && ( // Only show this loader if there are no messages
-                    <div className="flex items-start gap-3">
+                {isLoading && messages[messages.length - 1]?.role === 'model' && (
+                    <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white animate-pulse" />
                         </div>
@@ -277,7 +251,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                 {error && <p className="text-red-400 text-center text-sm">{error}</p>}
                 <div ref={messagesEndRef} />
             </div>
-            <div className="p-4 border-t border-slate-700">
+            <div className="p-4 border-t border-slate-700 flex-shrink-0">
                 <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                     <input
                         type="text"
