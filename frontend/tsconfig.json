@@ -19,9 +19,16 @@
     "useDefineForClassFields": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
   },
   "include": [
-    "."
+    "src",
+    "vite.config.ts",
+    "index.tsx",
+    "types.ts"
+  ],
+  "exclude": [
+    "node_modules"
   ]
 }

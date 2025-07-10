@@ -4,7 +4,7 @@ import { startChat } from '../services/geminiService';
 import * as ttsService from '../services/ttsService';
 import type { ChatMessage } from '../types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from './Icons';
-import type { Chat, Content } from '@google/genai';
+import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
     transcriptContext: string;
@@ -120,7 +120,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
 
                         if (groundingChunks && groundingChunks.length > 0) {
                             const newCitations = groundingChunks
-                                .map(c => c.web)
+                                .map((c: GroundingChunk) => c.web)
                                 .filter((c): c is { uri: string; title?: string; } => !!c?.uri)
                                 .map(c => ({
                                     uri: c.uri,
@@ -128,7 +128,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                                 }));
 
                             if (newCitations.length > 0) {
-                                updatedMsg.citations = [...(msg.citations || []), ...newCitations].filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i) // Add unique citations
+                                const currentCitations = msg.citations || [];
+                                const combined = [...currentCitations, ...newCitations];
+                                updatedMsg.citations = combined.filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i) // Add unique citations
                             }
                         }
 

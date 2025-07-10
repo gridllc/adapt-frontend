@@ -1,5 +1,4 @@
-
-import React, { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react';
 
 interface VideoPlayerProps {
     videoUrl: string;
