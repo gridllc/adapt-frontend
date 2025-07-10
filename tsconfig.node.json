@@ -3,9 +3,12 @@
     "composite": true,
     "skipLibCheck": true,
     "module": "ESNext",
-    "moduleResolution": "NodeNext",
+    "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
-    "strict": true
+    "strict": true,
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "vite.config.tsx"
