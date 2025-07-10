@@ -1,34 +1,17 @@
+
 import React, { useRef, useEffect } from 'react';
-import type { ProcessStep } from '../types';
-import { CheckCircleIcon, LightbulbIcon } from './Icons';
+import type { ProcessStep, StepStatus } from '../types';
+import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon } from './Icons';
 
 interface ProcessStepsProps {
   steps: ProcessStep[];
-  currentTime: number;
+  currentStepIndex: number;
   onStepClick: (time: number) => void;
+  markStep: (status: StepStatus) => void;
 }
 
-export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentTime, onStepClick }) => {
+export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentStepIndex, onStepClick, markStep }) => {
   const activeStepRef = useRef<HTMLDivElement>(null);
-
-  const findActiveStepIndex = (time: number) => {
-    // Find the last step that has started. This correctly highlights the current step
-    // even if the video is paused between steps.
-    let foundIndex = -1;
-    for (let i = 0; i < steps.length; i++) {
-      if (time >= steps[i].start) {
-        foundIndex = i;
-      } else {
-        break;
-      }
-    }
-    // If no step is found (currentTime < first step start), default to the first step
-    if (foundIndex === -1 && steps.length > 0) return 0;
-
-    return foundIndex;
-  }
-
-  const activeStepIndex = findActiveStepIndex(currentTime);
 
   useEffect(() => {
     // Scroll the active step into the center of the view smoothly.
@@ -38,13 +21,13 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentTime, 
         block: 'center',
       });
     }
-  }, [activeStepIndex]); // Depend on activeStepIndex to scroll when the step changes
+  }, [currentStepIndex]); // Depend on activeStepIndex to scroll when the step changes
 
   return (
     <div className="p-4 space-y-3 overflow-y-auto flex-1">
       {steps.map((step, index) => {
-        const isActive = activeStepIndex === index;
-        const isCompleted = activeStepIndex > index;
+        const isActive = currentStepIndex === index;
+        const isCompleted = currentStepIndex > index;
 
         return (
           <div
@@ -79,6 +62,26 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({ steps, currentTime, 
                     <p className="text-sm text-slate-300 pl-6">{alt.description}</p>
                   </div>
                 ))}
+              </div>
+            )}
+            {isActive && (
+              <div className="mt-4 pt-3 border-t border-slate-600/70 flex items-center justify-center gap-3">
+                <button
+                  onClick={(e) => { e.stopPropagation(); markStep('done'); }}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-full transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-green-500"
+                  aria-label="Mark step as done"
+                >
+                  <CheckCircleIcon className="h-5 w-5" />
+                  <span>I did this</span>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); markStep('unclear'); }}
+                  className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold py-2 px-4 rounded-full transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-amber-400"
+                  aria-label="Mark step as unclear"
+                >
+                  <HelpCircleIcon className="h-5 w-5" />
+                  <span>I'm not sure</span>
+                </button>
               </div>
             )}
           </div>

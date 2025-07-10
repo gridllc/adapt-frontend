@@ -26,3 +26,8 @@ credentials.json
 adapt_structure.txt
 
 structure.txt
+
+node_modules
+dist
+.env
+.DS_Store

@@ -1,13 +1,16 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { startChat } from '../services/geminiService';
-import * as ttsService from '../services/ttsServices';
-import type { ChatMessage } from '../types';
+import { startChat } from '../../services/geminiService';
+import * as ttsService from '../../services/ttsService';
+import type { ChatMessage, ProcessStep } from '../types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from './Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
     transcriptContext: string;
     onTimestampClick: (time: number) => void;
+    currentStepIndex: number;
+    steps: ProcessStep[];
 }
 
 const CHAT_HISTORY_KEY = 'adapt-ai-tutor-chat-history';
@@ -24,7 +27,7 @@ const parseTimestamp = (text: string): number | null => {
     return null;
 };
 
-export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimestampClick }) => {
+export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimestampClick, currentStepIndex, steps }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -81,6 +84,16 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isLoading]);
 
+    const enrichPromptIfNeeded = useCallback((prompt: string): string => {
+        const vagueQueryRegex = /\bdid i do this (right|correctly|okay)\??/i;
+
+        if (vagueQueryRegex.test(prompt.trim()) && steps?.[currentStepIndex]) {
+            const step = steps[currentStepIndex];
+            return `The user is on step ${currentStepIndex + 1}: "${step.title}". Their question is: "${prompt}". Based on the process instructions for this step, please confirm if they are likely doing it correctly and guide them on what to do next.`;
+        }
+        return prompt;
+    }, [currentStepIndex, steps]);
+
     const handleSendMessage = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() || isLoading) return;
@@ -88,6 +101,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         ttsService.cancel();
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
+
+        const enrichedInput = enrichPromptIfNeeded(input);
         setInput('');
         setIsLoading(true);
         setError(null);
@@ -100,7 +115,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
             if (!chatRef.current) {
                 throw new Error("Chat not initialized");
             }
-            const stream = await chatRef.current.sendMessageStream({ message: input });
+            const stream = await chatRef.current.sendMessageStream({ message: enrichedInput });
 
             for await (const chunk of stream) {
                 const chunkText = chunk.text;
@@ -137,7 +152,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         } finally {
             setIsLoading(false);
         }
-    }, [input, isLoading, isAutoSpeakEnabled, transcriptContext]);
+    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded]);
 
     const renderMessageContent = (text: string) => {
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);
