@@ -200,7 +200,7 @@ const TrainingPage: React.FC = () => {
                 </button>
             )}
 
-            {isChatOpen && (
+            {isChatOpen && moduleId && moduleData && (
                 <div className="fixed bottom-6 right-6 h-[85vh] w-[90vw] max-w-md bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-2xl flex flex-col border border-slate-700 z-50 animate-fade-in-up">
                     <header className="flex items-center justify-between p-4 border-b border-slate-700">
                         <div className="flex items-center gap-3">
