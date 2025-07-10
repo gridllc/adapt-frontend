@@ -27,8 +27,6 @@
     }
   },
   "include": [
-    "index.tsx",
-    "services",
     "src",
     "vite-env.d.ts"
   ],
