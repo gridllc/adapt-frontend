@@ -1,14 +1,17 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startChat } from '../services/geminiService';
 import * as ttsService from '../services/ttsService';
 import type { ChatMessage } from '../types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from './Icons';
-import type { Chat } from '@google/genai';
+import type { Chat, Content } from '@google/genai';
 
 interface ChatTutorProps {
     transcriptContext: string;
     onTimestampClick: (time: number) => void;
 }
+
+const CHAT_HISTORY_KEY = 'adapt-ai-tutor-chat-history';
 
 const parseTimestamp = (text: string): number | null => {
     const match = text.match(/\[(\d{2}):(\d{2}):(\d{2})\]/);
@@ -30,15 +33,47 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
     const chatRef = useRef<Chat | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    // Load chat history from localStorage on initial mount
     useEffect(() => {
-        chatRef.current = startChat(transcriptContext);
-        setMessages([
-            { id: 'initial-greeting', role: 'model', text: "Hello! I'm the Adapt AI Tutor. I've been trained on your company's specific process for this task. Ask me anything, and I'll guide you using the official steps." }
-        ]);
+        let loadedMessages: ChatMessage[] = [];
+        try {
+            const savedHistoryJSON = localStorage.getItem(CHAT_HISTORY_KEY);
+            if (savedHistoryJSON) {
+                loadedMessages = JSON.parse(savedHistoryJSON);
+            }
+        } catch (e) {
+            console.error("Failed to parse chat history, starting fresh.", e);
+            localStorage.removeItem(CHAT_HISTORY_KEY);
+        }
+        setMessages(loadedMessages);
+
+        const geminiHistory: Content[] = loadedMessages.map(msg => ({
+            role: msg.role,
+            parts: [{ text: msg.text }]
+        }));
+
+        chatRef.current = startChat(transcriptContext, geminiHistory);
+
         return () => {
             ttsService.cancel(); // Stop any speech when the component unmounts
         }
     }, [transcriptContext]);
+
+    // Save chat history to localStorage whenever messages change (with debouncing)
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            if (messages.length > 0) {
+                localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
+            } else {
+                localStorage.removeItem(CHAT_HISTORY_KEY);
+            }
+        }, 500); // Debounce saves to prevent excessive writes during streaming
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [messages]);
+
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -56,6 +91,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
         setError(null);
 
         const modelMessageId = (Date.now() + 1).toString();
+        // Add a placeholder for the streaming response
         setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '', citations: [] }]);
 
         let finalModelText = '';
@@ -92,7 +128,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                                 }));
 
                             if (newCitations.length > 0) {
-                                updatedMsg.citations = newCitations;
+                                updatedMsg.citations = [...(msg.citations || []), ...newCitations].filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i) // Add unique citations
                             }
                         }
 
@@ -107,7 +143,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             console.error("Gemini API Error:", errorMessage);
             setError("Sorry, I couldn't get a response. Please try again.");
-            setMessages(prev => prev.filter(msg => msg.id !== modelMessageId)); // remove placeholder
+            // On error, remove the user message and the placeholder to allow retry
+            setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
         } finally {
             setIsLoading(false);
         }
@@ -172,6 +209,16 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                 </div>
             </div>
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+                {messages.length === 0 && !isLoading && (
+                    <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
+                            <BotIcon className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-700 text-slate-200 rounded-bl-none">
+                            <div className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I've been trained on your company's specific process for this task. Ask me anything, and I'll guide you using the official steps.</div>
+                        </div>
+                    </div>
+                )}
                 {messages.map((msg) => (
                     <div key={msg.id} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                         {msg.role === 'model' && (
@@ -211,7 +258,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ transcriptContext, onTimes
                         )}
                     </div>
                 ))}
-                {isLoading && (
+                {isLoading && messages.length === 0 && ( // Only show this loader if there are no messages
                     <div className="flex items-start gap-3">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white animate-pulse" />

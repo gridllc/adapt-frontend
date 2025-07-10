@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useCallback } from 'react';
 import { VideoPlayer } from './components/VideoPlayer';
 import { ProcessSteps } from './components/ProcessSteps';
@@ -8,7 +9,7 @@ import type { TrainingModule } from './types';
 // Mock data for a training module, now including an alternative method.
 const MOCK_SANDWICH_MODULE: TrainingModule = {
     title: 'How to Make Our Signature Sandwich',
-    videoUrl: 'https://storage.googleapis.com/web-dev-assets/video-api-demo/flowers.mp4', // Placeholder video
+    videoUrl: 'https://storage.googleapis.com/adapt-training/20250616_120027.mp4',
     steps: [
         {
             start: 0,
