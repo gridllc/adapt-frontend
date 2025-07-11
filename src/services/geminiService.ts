@@ -1,7 +1,3 @@
-
-
-
-
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage } from "@/types";
 

@@ -1,16 +1,15 @@
-
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAvailableModules, saveUploadedModule } from '@/data/modules';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
-import { useAdminMode } from '@/hooks/useAdminMode';
+import { useAuth } from '@/hooks/useAuth';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [isAdmin, setIsAdmin] = useAdminMode();
+    const { isAuthenticated, user, logout } = useAuth();
     const availableModules = getAvailableModules();
 
     const handleFile = useCallback((file: File) => {
@@ -78,21 +77,34 @@ const HomePage: React.FC = () => {
     return (
         <div className="max-w-4xl mx-auto p-8">
             <header className="text-center mb-12 relative">
-                <div className="absolute top-0 right-0">
-                    <label className="flex items-center cursor-pointer">
-                        <span className="mr-3 text-sm font-medium text-slate-400">Admin Mode</span>
-                        <div className="relative">
-                            <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} className="sr-only" />
-                            <div className="block bg-slate-700 w-14 h-8 rounded-full"></div>
-                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isAdmin ? 'transform translate-x-full bg-indigo-400' : ''}`}></div>
-                        </div>
-                    </label>
+                <div className="absolute top-0 right-0 flex items-center gap-4">
+                    {isAuthenticated && user ? (
+                        <>
+                            <span className="text-sm text-slate-400 hidden sm:inline">{user.email}</span>
+                            <button
+                                onClick={logout}
+                                className="flex items-center gap-2 bg-slate-700 hover:bg-red-500/80 text-white text-sm font-semibold py-2 px-4 rounded-full transition-colors"
+                                title="Logout"
+                            >
+                                <LogOutIcon className="h-5 w-5" />
+                                <span className="hidden md:inline">Logout</span>
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={() => navigate('/login')}
+                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded-full transition-colors"
+                        >
+                            <UserIcon className="h-5 w-5" />
+                            <span>Admin Login</span>
+                        </button>
+                    )}
                 </div>
                 <h1 className="text-5xl font-bold text-white">Adapt Training Platform</h1>
                 <p className="mt-4 text-lg text-slate-400">Your interactive AI-powered training assistant.</p>
             </header>
 
-            {isAdmin && (
+            {isAuthenticated && (
                 <div className="mb-12 animate-fade-in-up">
                     <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Admin Tools</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-800/50 p-6 rounded-2xl border border-indigo-500/30">
@@ -152,7 +164,7 @@ const HomePage: React.FC = () => {
                 ) : (
                     <div className="text-center bg-slate-800 p-8 rounded-lg">
                         <p className="text-slate-400">No training modules found.</p>
-                        <p className="text-slate-500 text-sm mt-2">Enable Admin Mode to create or upload a module.</p>
+                        {!isAuthenticated && <p className="text-slate-500 text-sm mt-2">Log in as an admin to create or upload a module.</p>}
                     </div>
                 )}
             </div>

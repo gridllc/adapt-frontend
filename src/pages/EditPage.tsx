@@ -1,22 +1,22 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getModule, saveUploadedModule } from '@/data/modules';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
 import { BookOpenIcon } from '@/components/Icons';
-import { useAdminMode } from '@/hooks/useAdminMode';
+import { useAuth } from '@/hooks/useAuth';
 
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
-    const [isAdmin] = useAdminMode();
+    const { isAuthenticated } = useAuth();
     const [module, setModule] = useState<TrainingModule | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!isAdmin) {
-            navigate('/');
+        // Redundancy check, main protection is at the router level
+        if (!isAuthenticated) {
+            navigate('/login');
             return;
         }
 
@@ -30,11 +30,11 @@ const EditPage: React.FC = () => {
         } else {
             navigate('/not-found');
         }
-    }, [moduleId, navigate, isAdmin]);
+    }, [moduleId, navigate, isAuthenticated]);
 
     const handleSave = () => {
         if (!module) return;
-        
+
         // The slug cannot be changed during an edit, as it's the identifier.
         // We'll ensure the original slug is preserved.
         const originalModule = getModule(moduleId!);
@@ -51,14 +51,14 @@ const EditPage: React.FC = () => {
             setError('Could not save the module. Please try again.');
         }
     };
-    
+
     if (!module) {
         return <div className="text-center p-8">Loading editor...</div>;
     }
 
     return (
         <div className="max-w-7xl mx-auto p-6">
-             <header className="flex justify-between items-center mb-6">
+            <header className="flex justify-between items-center mb-6">
                 <button onClick={() => navigate(`/modules/${module.slug}`)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
                     <BookOpenIcon className="h-5 w-5" />
                     <span>Back to Training</span>

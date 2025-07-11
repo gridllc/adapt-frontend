@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoPlayer } from '@/components/VideoPlayer';
@@ -7,7 +6,7 @@ import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
 import type { TrainingModule, ProcessStep } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
-import { useAdminMode } from '@/hooks/useAdminMode';
+import { useAuth } from '@/hooks/useAuth';
 import { getModule } from '@/data/modules';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 
@@ -33,7 +32,7 @@ const TrainingPage: React.FC = () => {
   const { moduleId } = useParams<{ moduleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const [isAdmin] = useAdminMode();
+  const { isAuthenticated } = useAuth();
 
   const [moduleData, setModuleData] = useState<TrainingModule | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -164,7 +163,7 @@ const TrainingPage: React.FC = () => {
             <Share2Icon className="h-5 w-5" />
             <span>{copied ? 'Copied!' : 'Share'}</span>
           </button>
-          {isAdmin && (
+          {isAuthenticated && (
             <button onClick={() => navigate(`/modules/${moduleId}/edit`)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
               <PencilIcon className="h-5 w-5" />
               <span>Edit Module</span>

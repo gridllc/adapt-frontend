@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createModuleFromText, analyzeVideoContent } from '../services/geminiService';
@@ -6,11 +5,11 @@ import { saveUploadedModule } from '@/data/modules';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
 import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
-import { useAdminMode } from '@/hooks/useAdminMode';
+import { useAuth } from '@/hooks/useAuth';
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();
-    const [isAdmin] = useAdminMode();
+    const { isAuthenticated } = useAuth();
     const [processText, setProcessText] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [videoBlobUrl, setVideoBlobUrl] = useState('');
@@ -20,11 +19,11 @@ const CreatePage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Protect this route from non-admin users
-        if (!isAdmin) {
-            navigate('/');
+        // Redundancy check, main protection is at the router level
+        if (!isAuthenticated) {
+            navigate('/login');
         }
-    }, [isAdmin, navigate]);
+    }, [isAuthenticated, navigate]);
 
     useEffect(() => {
         if (videoFile) {

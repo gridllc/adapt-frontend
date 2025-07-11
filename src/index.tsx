@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
@@ -7,8 +5,10 @@ import RootLayout from './RootLayout';
 import HomePage from './pages/HomePage';
 import TrainingPage from './pages/TrainingPage';
 import CreatePage from './pages/CreatePage';
-import EditPage from './pages/EditPage'; // Import the Edit page
+import EditPage from './pages/EditPage';
+import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
+import ProtectedRoute from './components/ProtectedRoute';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -26,16 +26,28 @@ const router = createBrowserRouter([
                 element: <HomePage />,
             },
             {
+                path: 'login',
+                element: <LoginPage />,
+            },
+            {
                 path: 'modules/:moduleId',
                 element: <TrainingPage />,
             },
             {
-                path: 'modules/:moduleId/edit', // Edit route for admins
-                element: <EditPage />,
+                path: 'modules/:moduleId/edit',
+                element: (
+                    <ProtectedRoute>
+                        <EditPage />
+                    </ProtectedRoute>
+                ),
             },
             {
                 path: 'create',
-                element: <CreatePage />,
+                element: (
+                    <ProtectedRoute>
+                        <CreatePage />
+                    </ProtectedRoute>
+                ),
             },
             {
                 path: '*', // Catch-all for 404
