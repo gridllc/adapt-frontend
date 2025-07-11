@@ -1,7 +1,8 @@
+
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAvailableModules, saveUploadedModule } from '@/data/modules';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -107,7 +108,7 @@ const HomePage: React.FC = () => {
             {isAuthenticated && (
                 <div className="mb-12 animate-fade-in-up">
                     <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Admin Tools</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-800/50 p-6 rounded-2xl border border-indigo-500/30">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-800/50 p-6 rounded-2xl border border-indigo-500/30">
                         <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
                             <h3 className="text-xl font-bold text-indigo-400 mb-2">Create with AI</h3>
                             <p className="text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
@@ -117,6 +118,14 @@ const HomePage: React.FC = () => {
                             </Link>
                         </div>
                         <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                            <h3 className="text-xl font-bold text-indigo-400 mb-2">Analytics Dashboard</h3>
+                            <p className="text-slate-300 mb-6 flex-grow">View trainee insights and see the most common questions.</p>
+                            <Link to="/dashboard" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
+                                <BarChartIcon className="h-6 w-6" />
+                                <span>View Dashboard</span>
+                            </Link>
+                        </div>
+                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col lg:col-span-1 md:col-span-2">
                             <h3 className="text-xl font-bold text-indigo-400 mb-2">Upload a Module</h3>
                             <p className="text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
 

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
@@ -7,6 +8,7 @@ import TrainingPage from './pages/TrainingPage';
 import CreatePage from './pages/CreatePage';
 import EditPage from './pages/EditPage';
 import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import './index.css';
@@ -28,6 +30,14 @@ const router = createBrowserRouter([
             {
                 path: 'login',
                 element: <LoginPage />,
+            },
+            {
+                path: 'dashboard',
+                element: (
+                    <ProtectedRoute>
+                        <DashboardPage />
+                    </ProtectedRoute>
+                ),
             },
             {
                 path: 'modules/:moduleId',
