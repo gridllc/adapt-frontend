@@ -1,12 +1,11 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getModule, saveUploadedModule } from '@/data/modules';
+import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types';
-import { BookOpenIcon } from '@/components/Icons';
+import { BookOpenIcon, TrashIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 
 const EditPage: React.FC = () => {
@@ -81,6 +80,19 @@ const EditPage: React.FC = () => {
         }
     };
 
+    const handleDelete = () => {
+        if (!module) return;
+
+        const confirmation = window.confirm(
+            'Are you sure you want to delete this module? This will also remove ALL associated training progress and chat histories. This action cannot be undone.'
+        );
+
+        if (confirmation) {
+            deleteModule(module.slug);
+            navigate('/');
+        }
+    }
+
     if (!module) {
         return <div className="text-center p-8">Loading editor...</div>;
     }
@@ -106,7 +118,14 @@ const EditPage: React.FC = () => {
                     showAnalysisButton={false}
                 />
                 {error && <p className="mt-4 text-red-500 text-center">{error}</p>}
-                <div className="mt-8 flex justify-center gap-4">
+                <div className="mt-8 flex justify-center items-center gap-4">
+                    <button
+                        onClick={handleDelete}
+                        className="flex items-center gap-2 bg-red-800/80 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                    >
+                        <TrashIcon className="h-5 w-5" />
+                        <span>Delete Module</span>
+                    </button>
                     <button onClick={() => navigate(`/modules/${module.slug}`)} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
                         Cancel
                     </button>

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startChat, getFallbackResponse } from '@/services/geminiService';
-import * as ttsService from '../services/ttsService';
+import * as ttsService from '@/services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
 import type { ChatMessage, ProcessStep } from '@/types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons';
