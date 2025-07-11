@@ -3,15 +3,17 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import RootLayout from '../RootLayout';
-import HomePage from '../pages/HomePage';
-import TrainingPage from '../pages/TrainingPage';
-import CreatePage from '../pages/CreatePage';
-import EditPage from '../pages/EditPage';
-import LoginPage from '../pages/LoginPage';
-import DashboardPage from '../pages/DashboardPage';
-import NotFoundPage from '../pages/NotFoundPage';
-import ProtectedRoute from '../components/ProtectedRoute';
+
+// Corrected import paths based on the project file structure
+import RootLayout from '@/RootLayout';
+import HomePage from '@/pages/HomePage';
+import TrainingPage from '@/pages/TrainingPage';
+import CreatePage from '@/pages/CreatePage';
+import EditPage from '@/pages/EditPage';
+import LoginPage from '@/pages/LoginPage';
+import DashboardPage from '@/pages/DashboardPage';
+import NotFoundPage from '@/pages/NotFoundPage';
+import ProtectedRoute from '@/components/ProtectedRoute';
 import './index.css';
 
 const rootElement = document.getElementById('root');
