@@ -1,6 +1,5 @@
-
 import type { TrainingModule, Suggestion } from '@/types';
-import { supabase } from './apiClient';
+import { supabase } from '@/services/apiClient';
 
 // Storage prefixes and keys
 const SESSION_PREFIX = 'adapt-session-';
