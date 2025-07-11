@@ -67,3 +67,11 @@ export interface RefinementSuggestion {
   newDescription: string;
   newAlternativeMethod: AlternativeMethod | null;
 }
+
+export interface PerformanceReportData {
+  moduleTitle: string;
+  completionDate: string;
+  aiFeedback: string;
+  unclearSteps: ProcessStep[];
+  userQuestions: string[];
+}

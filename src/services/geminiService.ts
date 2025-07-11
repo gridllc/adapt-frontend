@@ -369,3 +369,47 @@ export const generateRefinementSuggestion = async (
         throw new Error(`Failed to generate refinement suggestion. ${error instanceof Error ? error.message : ''}`);
     }
 };
+
+export const generatePerformanceSummary = async (
+    moduleTitle: string,
+    unclearSteps: ProcessStep[],
+    userQuestions: string[]
+): Promise<string> => {
+    const client = getAiClient();
+    const systemInstruction = `You are a friendly and encouraging training coach. Your task is to provide a brief, positive summary of a trainee's performance. The summary should be one paragraph long. Start by congratulating them. Then, if they had any areas of confusion, gently point them out and suggest they review those steps.`;
+
+    let prompt = `The trainee has just completed the module: "${moduleTitle}".\n\n`;
+
+    if (unclearSteps.length === 0 && userQuestions.length === 0) {
+        prompt += "They completed it perfectly without any issues or questions. Write a short, congratulatory message."
+    } else {
+        if (unclearSteps.length > 0) {
+            prompt += `They marked the following steps as "unclear":\n`
+            prompt += unclearSteps.map(s => `- ${s.title}`).join('\n') + '\n\n';
+        }
+        if (userQuestions.length > 0) {
+            prompt += `They asked the AI Tutor the following questions:\n`
+            prompt += userQuestions.map(q => `- "${q}"`).join('\n') + '\n\n';
+        }
+        prompt += "Based on this, write the summary paragraph."
+    }
+
+    try {
+        const result = await client.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                systemInstruction,
+            },
+        });
+        const text = result.text;
+        if (!text) {
+            return "Congratulations on completing the training! Well done.";
+        }
+        return text;
+    } catch (error) {
+        console.error("Error generating performance summary:", error);
+        // Return a graceful fallback message
+        return "Congratulations on completing the training module! You've done a great job."
+    }
+};

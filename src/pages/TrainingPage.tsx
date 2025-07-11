@@ -1,14 +1,17 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { TrainingModule, ProcessStep } from '@/types';
+import type { TrainingModule, ProcessStep, PerformanceReportData, ChatMessage } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { getModule } from '@/data/modules';
+import { generatePerformanceSummary } from '@/services/geminiService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
+import { PerformanceReport } from '@/components/PerformanceReport';
 
 const findActiveStepIndex = (time: number, steps: ProcessStep[]) => {
   let foundIndex = -1;
@@ -40,6 +43,8 @@ const TrainingPage: React.FC = () => {
   const [aiContext, setAiContext] = useState('');
   const [sessionToken, setSessionToken] = useState('');
   const [copied, setCopied] = useState(false);
+  const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   // Effect to manage session token in URL
   useEffect(() => {
@@ -74,11 +79,13 @@ const TrainingPage: React.FC = () => {
     setCurrentStepIndex,
     userActions,
     markStep,
+    isCompleted,
+    resetSession
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, moduleData?.steps.length ?? 0);
 
   // Generate a focused AI context based on the current step
   useEffect(() => {
-    if (!moduleData || currentStepIndex < 0) return;
+    if (!moduleData || currentStepIndex < 0 || isCompleted) return;
 
     const { title, steps } = moduleData;
 
@@ -104,7 +111,56 @@ const TrainingPage: React.FC = () => {
 
     setAiContext(context.trim());
 
-  }, [currentStepIndex, moduleData]);
+  }, [currentStepIndex, moduleData, isCompleted]);
+
+  // Effect to generate performance report upon completion
+  useEffect(() => {
+    if (isCompleted && moduleData && !performanceReport && !isGeneratingReport) {
+      const generateReport = async () => {
+        setIsGeneratingReport(true);
+
+        const unclearStepIndexes = new Set(
+          userActions.filter(a => a.status === 'unclear').map(a => a.stepIndex)
+        );
+        const unclearSteps = Array.from(unclearStepIndexes).map(i => moduleData.steps[i]).filter(Boolean);
+
+        const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}-${sessionToken}`;
+        const chatHistoryJson = localStorage.getItem(CHAT_HISTORY_KEY);
+        const userQuestions = chatHistoryJson
+          ? (JSON.parse(chatHistoryJson) as ChatMessage[])
+            .filter(msg => msg.role === 'user' && msg.text.trim())
+            .map(msg => msg.text.trim())
+          : [];
+
+        try {
+          const aiFeedback = await generatePerformanceSummary(moduleData.title, unclearSteps, userQuestions);
+
+          setPerformanceReport({
+            moduleTitle: moduleData.title,
+            completionDate: new Date().toLocaleDateString(),
+            aiFeedback,
+            unclearSteps,
+            userQuestions,
+          });
+
+        } catch (error) {
+          console.error("Failed to generate performance report:", error);
+          // Set a fallback report if AI fails
+          setPerformanceReport({
+            moduleTitle: moduleData.title,
+            completionDate: new Date().toLocaleDateString(),
+            aiFeedback: "Congratulations on completing the training! You did a great job.",
+            unclearSteps,
+            userQuestions,
+          });
+        } finally {
+          setIsGeneratingReport(false);
+        }
+      };
+      generateReport();
+    }
+  }, [isCompleted, moduleData, userActions, moduleId, sessionToken, performanceReport, isGeneratingReport]);
+
 
   const handleSeekTo = useCallback((time: number) => {
     if (videoRef.current) {
@@ -123,7 +179,7 @@ const TrainingPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!moduleData || userActions.length === 0) return;
+    if (!moduleData || userActions.length === 0 || isCompleted) return;
     const lastAction = userActions[userActions.length - 1];
 
     if (lastAction.status === 'done' && lastAction.stepIndex === currentStepIndex - 1) {
@@ -132,9 +188,10 @@ const TrainingPage: React.FC = () => {
         handleSeekTo(nextStep.start);
       }
     }
-  }, [currentStepIndex, userActions, handleSeekTo, moduleData]);
+  }, [currentStepIndex, userActions, handleSeekTo, moduleData, isCompleted]);
 
   const handleTimeUpdate = (time: number) => {
+    if (isCompleted) return;
     setCurrentTime(time);
     if (!moduleData) return;
     const activeStepFromVideo = findActiveStepIndex(time, moduleData.steps);
@@ -142,6 +199,11 @@ const TrainingPage: React.FC = () => {
       setCurrentStepIndex(activeStepFromVideo);
     }
   };
+
+  const handleRestart = () => {
+    setPerformanceReport(null);
+    resetSession();
+  }
 
   if (!moduleData || !sessionToken) {
     return (
@@ -183,53 +245,69 @@ const TrainingPage: React.FC = () => {
           />
         </div>
         <div className="lg:col-span-1 h-[75vh] bg-slate-800 rounded-lg shadow-xl overflow-hidden flex flex-col">
-          <div className="flex border-b border-slate-700">
-            <button
-              onClick={() => setActiveTab('steps')}
-              className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'steps' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'
-                }`}
-            >
-              <BookOpenIcon className="h-5 w-5" />
-              <span>Steps</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('transcript')}
-              className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'transcript' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'
-                }`}
-            >
-              <FileTextIcon className="h-5 w-5" />
-              <span>Transcript</span>
-            </button>
-          </div>
 
-          {activeTab === 'steps' && (
-            <ProcessSteps
-              steps={moduleData.steps}
-              currentStepIndex={currentStepIndex}
-              onStepClick={handleSeekTo}
-              markStep={markStep}
-            />
-          )}
-
-          {activeTab === 'transcript' && (
-            moduleData.transcript && moduleData.transcript.length > 0 ? (
-              <TranscriptViewer
-                transcript={moduleData.transcript}
-                currentTime={currentTime}
-                onLineClick={handleSeekTo}
-              />
-            ) : (
+          {isCompleted ? (
+            isGeneratingReport ? (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
-                <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-600" />
-                <h3 className="font-bold text-lg text-slate-300">No Transcript Available</h3>
-                <p className="text-sm mt-1">A transcript was not provided for this training module.</p>
+                <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-600 animate-pulse" />
+                <h3 className="font-bold text-lg text-slate-300">Generating Your Report...</h3>
+                <p className="text-sm mt-1">The AI is analyzing your performance.</p>
               </div>
-            )
+            ) : performanceReport ? (
+              <PerformanceReport report={performanceReport} onRestart={handleRestart} />
+            ) : null
+          ) : (
+            <>
+              <div className="flex border-b border-slate-700">
+                <button
+                  onClick={() => setActiveTab('steps')}
+                  className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'steps' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'
+                    }`}
+                >
+                  <BookOpenIcon className="h-5 w-5" />
+                  <span>Steps</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('transcript')}
+                  className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'transcript' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'
+                    }`}
+                >
+                  <FileTextIcon className="h-5 w-5" />
+                  <span>Transcript</span>
+                </button>
+              </div>
+
+              {activeTab === 'steps' && (
+                <ProcessSteps
+                  steps={moduleData.steps}
+                  currentStepIndex={currentStepIndex}
+                  onStepClick={handleSeekTo}
+                  markStep={markStep}
+                />
+              )}
+
+              {activeTab === 'transcript' && (
+                moduleData.transcript && moduleData.transcript.length > 0 ? (
+                  <TranscriptViewer
+                    transcript={moduleData.transcript}
+                    currentTime={currentTime}
+                    onLineClick={handleSeekTo}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
+                    <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-600" />
+                    <h3 className="font-bold text-lg text-slate-300">No Transcript Available</h3>
+                    <p className="text-sm mt-1">A transcript was not provided for this training module.</p>
+                  </div>
+                )
+              )}
+            </>
           )}
+
         </div>
       </main>
 
-      {!isChatOpen && (
+      {!isChatOpen && !isCompleted && (
         <button
           onClick={() => setIsChatOpen(true)}
           className="fixed bottom-6 right-6 bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-500 transition-transform transform hover:scale-110"
