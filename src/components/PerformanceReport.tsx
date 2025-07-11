@@ -1,7 +1,7 @@
 
 import React, { useCallback } from 'react';
-import type { PerformanceReportData } from '@/types';
-import { StarIcon, LightbulbIcon, HelpCircleIcon, DownloadIcon } from '@/components/Icons';
+import type { PerformanceReportData } from '@/types.ts';
+import { StarIcon, LightbulbIcon, HelpCircleIcon, DownloadIcon } from '@/components/Icons.tsx';
 
 interface PerformanceReportProps {
     report: PerformanceReportData;

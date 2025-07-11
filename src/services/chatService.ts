@@ -1,6 +1,6 @@
 
-import { supabase } from '@/services/apiClient';
-import type { ChatMessage } from '@/types';
+import { supabase } from '@/services/apiClient.ts';
+import type { ChatMessage } from '@/types.ts';
 
 const TABLE_NAME = 'chat_messages';
 
@@ -29,7 +29,7 @@ export const getChatHistory = async (moduleId: string, sessionToken: string): Pr
     }));
 };
 
-export const saveChatMessage = async (moduleId: string, sessionToken:string, message: ChatMessage): Promise<void> => {
+export const saveChatMessage = async (moduleId: string, sessionToken: string, message: ChatMessage): Promise<void> => {
     const { error } = await supabase
         .from(TABLE_NAME)
         .insert({

@@ -1,6 +1,6 @@
 
-import { supabase } from '@/services/apiClient';
-import type { UserAction } from '@/types';
+import { supabase } from '@/services/apiClient.ts';
+import type { UserAction } from '@/types.ts';
 
 export interface SessionState {
     moduleId: string;
@@ -19,12 +19,12 @@ export const getSession = async (moduleId: string, sessionToken: string): Promis
         .eq('module_id', moduleId)
         .eq('session_token', sessionToken)
         .single();
-    
+
     if (error && error.code !== 'PGRST116') { // Ignore "no rows" error, which is expected for new sessions
         console.error('Error fetching session:', error);
         throw error;
     }
-    
+
     if (!data) return null;
 
     return {

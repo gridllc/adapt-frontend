@@ -15,6 +15,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { ToastProvider } from '@/hooks/useToast';
+import { ThemeProvider } from '@/hooks/useTheme';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -78,9 +79,22 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
-            <ToastProvider>
-                <RouterProvider router={router} />
-            </ToastProvider>
+            <ThemeProvider>
+                <ToastProvider>
+                    <RouterProvider router={router} />
+                </ToastProvider>
+            </ThemeProvider>
         </QueryClientProvider>
     </React.StrictMode>
 );
+
+// Register the service worker for PWA functionality
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }, err => {
+            console.log('ServiceWorker registration failed: ', err);
+        });
+    });
+}

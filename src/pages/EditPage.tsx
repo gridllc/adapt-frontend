@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
-import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
-import { supabase } from '@/services/apiClient';
-import { ModuleEditor } from '@/components/ModuleEditor';
-import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types';
-import { BookOpenIcon, TrashIcon } from '@/components/Icons';
-import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/useToast';
+import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService.ts';
+import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService.ts';
+import { supabase } from '@/services/apiClient.ts';
+import { ModuleEditor } from '@/components/ModuleEditor.tsx';
+import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types.ts';
+import { BookOpenIcon, TrashIcon } from '@/components/Icons.tsx';
+import { useAuth } from '@/hooks/useAuth.ts';
+import { useToast } from '@/hooks/useToast.tsx';
 
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();

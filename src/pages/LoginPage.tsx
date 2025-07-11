@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { AtSignIcon, BookOpenIcon } from '@/components/Icons';
+import { useAuth } from '@/hooks/useAuth.ts';
+import { AtSignIcon, BookOpenIcon } from '@/components/Icons.tsx';
 import { useNavigate } from 'react-router-dom';
 
 const LoginPage: React.FC = () => {

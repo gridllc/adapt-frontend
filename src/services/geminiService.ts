@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
-import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion } from "@/types";
+import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion } from "@/types.ts";
 
 // --- AI Client Initialization ---
 

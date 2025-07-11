@@ -2,19 +2,19 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { VideoPlayer } from '@/components/VideoPlayer';
-import { ProcessSteps } from '@/components/ProcessSteps';
-import { ChatTutor } from '@/components/ChatTutor';
-import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData } from '@/types';
-import { useTrainingSession } from '@/hooks/useTrainingSession';
-import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/useToast';
-import { getModule } from '@/services/moduleService';
-import { getChatHistory } from '@/services/chatService';
-import { generatePerformanceSummary } from '@/services/geminiService';
-import { TranscriptViewer } from '@/components/TranscriptViewer';
-import { PerformanceReport } from '@/components/PerformanceReport';
+import { VideoPlayer } from '@/components/VideoPlayer.tsx';
+import { ProcessSteps } from '@/components/ProcessSteps.tsx';
+import { ChatTutor } from '@/components/ChatTutor.tsx';
+import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons.tsx';
+import type { ProcessStep, PerformanceReportData } from '@/types.ts';
+import { useTrainingSession } from '@/hooks/useTrainingSession.ts';
+import { useAuth } from '@/hooks/useAuth.ts';
+import { useToast } from '@/hooks/useToast.tsx';
+import { getModule } from '@/services/moduleService.ts';
+import { getChatHistory } from '@/services/chatService.ts';
+import { generatePerformanceSummary } from '@/services/geminiService.ts';
+import { TranscriptViewer } from '@/components/TranscriptViewer.tsx';
+import { PerformanceReport } from '@/components/PerformanceReport.tsx';
 
 const findActiveStepIndex = (time: number, steps: ProcessStep[]) => {
   let foundIndex = -1;

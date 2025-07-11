@@ -1,7 +1,7 @@
 
 import React, { useEffect } from 'react';
-import type { ProcessStep, RefinementSuggestion } from '@/types';
-import { XIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons';
+import type { ProcessStep, RefinementSuggestion } from '@/types.ts';
+import { XIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons.tsx';
 
 interface RefinementModalProps {
   isOpen: boolean;

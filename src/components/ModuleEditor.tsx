@@ -1,6 +1,7 @@
+
 import React from 'react';
-import type { TrainingModule, ProcessStep, AlternativeMethod, Suggestion } from '@/types';
-import { XIcon, SparklesIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons';
+import type { TrainingModule, ProcessStep, AlternativeMethod, Suggestion } from '@/types.ts';
+import { XIcon, SparklesIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons.tsx';
 
 interface ModuleEditorProps {
     module: TrainingModule;

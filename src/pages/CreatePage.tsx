@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
-import { saveUploadedModule } from '@/services/moduleService';
-import { ModuleEditor } from '@/components/ModuleEditor';
-import type { TrainingModule } from '@/types';
-import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
-import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/useToast';
+import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService.ts';
+import { saveUploadedModule } from '@/services/moduleService.ts';
+import { ModuleEditor } from '@/components/ModuleEditor.tsx';
+import type { TrainingModule } from '@/types.ts';
+import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons.tsx';
+import { useAuth } from '@/hooks/useAuth.ts';
+import { useToast } from '@/hooks/useToast.tsx';
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();

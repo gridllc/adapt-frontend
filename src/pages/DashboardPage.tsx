@@ -2,12 +2,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getAvailableModules, saveUploadedModule } from '@/services/moduleService';
-import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
-import { generateRefinementSuggestion } from '@/services/geminiService';
-import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons';
-import { RefinementModal } from '@/components/RefinementModal';
-import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types';
+import { getAvailableModules, saveUploadedModule } from '@/services/moduleService.ts';
+import { getQuestionFrequency, findHotspots } from '@/services/analyticsService.ts';
+import { generateRefinementSuggestion } from '@/services/geminiService.ts';
+import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons.tsx';
+import { RefinementModal } from '@/components/RefinementModal.tsx';
+import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types.ts';
 
 const DashboardPage: React.FC = () => {
     const navigate = useNavigate();

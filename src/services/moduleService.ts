@@ -1,6 +1,6 @@
 
-import type { TrainingModule } from '@/types';
-import { supabase } from '@/services/apiClient';
+import type { TrainingModule } from '@/types.ts';
+import { supabase } from '@/services/apiClient.ts';
 
 const isTrainingModule = (data: any): data is TrainingModule => {
     return (
