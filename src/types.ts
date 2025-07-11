@@ -55,3 +55,15 @@ export interface Suggestion {
   text: string;
   status: 'pending' | 'approved' | 'rejected';
 }
+
+export interface AnalysisHotspot {
+  stepIndex: number;
+  stepTitle: string;
+  questions: string[];
+  questionCount: number;
+}
+
+export interface RefinementSuggestion {
+  newDescription: string;
+  newAlternativeMethod: AlternativeMethod | null;
+}

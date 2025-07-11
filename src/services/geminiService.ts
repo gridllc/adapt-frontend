@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
-import type { ProcessStep, VideoAnalysisResult, ChatMessage } from "@/types";
+import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion } from "@/types";
 
 // --- AI Client Initialization ---
 
@@ -300,5 +301,71 @@ Respond ONLY with a single JSON object that strictly adheres to the provided sch
                 console.error("Failed to clean up uploaded file:", deleteError);
             }
         }
+    }
+};
+
+export const generateRefinementSuggestion = async (
+    step: ProcessStep,
+    questions: string[]
+): Promise<RefinementSuggestion> => {
+    const client = getAiClient();
+    const systemInstruction = `You are an expert instructional designer. Your task is to improve a confusing step in a training manual. You will be given the current step's text and a list of questions that trainees frequently ask about it. Your goal is to rewrite the step's description to be clearer and to proactively answer those questions. You may also suggest a new "Alternative Method" if it helps address the common points of confusion.`;
+
+    const prompt = `
+        **Current Step Title:**
+        "${step.title}"
+
+        **Current Step Description:**
+        "${step.description}"
+
+        **Common Trainee Questions:**
+        - ${questions.join('\n- ')}
+
+        **Your Task:**
+        Based on the questions, provide a JSON object with two properties:
+        1.  \`newDescription\`: A rewritten, clearer version of the step description that addresses the trainee questions.
+        2.  \`newAlternativeMethod\`: An object with 'title' and 'description' for a new method that could help, or \`null\` if no new method is needed.
+    `;
+
+    const refinementSchema = {
+        type: Type.OBJECT,
+        properties: {
+            newDescription: {
+                type: Type.STRING,
+                description: "The revised, clearer description for the process step.",
+            },
+            newAlternativeMethod: {
+                type: Type.OBJECT,
+                nullable: true,
+                description: "A new alternative method, or null.",
+                properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                },
+            },
+        },
+        required: ["newDescription", "newAlternativeMethod"],
+    };
+
+    try {
+        const result = await client.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: refinementSchema,
+            },
+        });
+
+        const jsonText = result.text?.trim();
+        if (!jsonText) {
+            throw new Error("Refinement AI returned an empty response.");
+        }
+        return JSON.parse(jsonText);
+
+    } catch (error) {
+        console.error("Error generating refinement suggestion:", error);
+        throw new Error(`Failed to generate refinement suggestion. ${error instanceof Error ? error.message : ''}`);
     }
 };
