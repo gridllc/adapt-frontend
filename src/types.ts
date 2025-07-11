@@ -47,3 +47,11 @@ export interface VideoAnalysisResult {
   timestamps: { start: number; end: number }[];
   transcript: TranscriptLine[];
 }
+
+export interface Suggestion {
+  id: string;
+  moduleId: string;
+  stepIndex: number;
+  text: string;
+  status: 'pending' | 'approved' | 'rejected';
+}

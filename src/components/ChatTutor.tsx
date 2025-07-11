@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { startChat, getFallbackResponse } from '../services/geminiService';
 import * as ttsService from '../services/ttsService';
+import { submitSuggestion } from '../services/suggestionsService';
 import type { ChatMessage, ProcessStep } from '@/types';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon } from '@/components/Icons';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
@@ -17,7 +17,6 @@ interface ChatTutorProps {
 }
 
 const parseTimestamp = (text: string): number | null => {
-    // This regex now supports MM:SS and HH:MM:SS formats
     const match = text.match(/\[(?:(\d{2}):)?(\d{2}):(\d{2})\]/);
     if (match) {
         const hours = parseInt(match[1] || '0', 10);
@@ -36,10 +35,10 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
+    const [submittedSuggestions, setSubmittedSuggestions] = useState<string[]>([]);
     const chatRef = useRef<Chat | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Load chat history and initialize chat session
     useEffect(() => {
         let loadedMessages: ChatMessage[] = [];
         try {
@@ -66,11 +65,10 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         }
 
         return () => {
-            ttsService.cancel(); // Stop any speech when the component unmounts
+            ttsService.cancel();
         }
     }, [transcriptContext, CHAT_HISTORY_KEY]);
 
-    // Save chat history to localStorage
     useEffect(() => {
         const handler = setTimeout(() => {
             try {
@@ -87,7 +85,6 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         return () => clearTimeout(handler);
     }, [messages, CHAT_HISTORY_KEY]);
 
-    // Scroll to the bottom of the chat
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isLoading]);
@@ -156,7 +153,6 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         } catch (err) {
             console.warn("Primary AI provider failed. Attempting fallback.", err);
             try {
-                // Fallback logic
                 const fallbackText = await getFallbackResponse(enrichedInput, currentMessages, transcriptContext);
                 setMessages(prev =>
                     prev.map(msg =>
@@ -171,7 +167,6 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
             } catch (fallbackErr) {
                 const errorMessage = fallbackErr instanceof Error ? fallbackErr.message : 'An unknown error occurred.';
                 setError(errorMessage);
-                // Clean up the optimistic user and empty model messages on final failure
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
             }
         } finally {
@@ -179,10 +174,23 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         }
     }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages]);
 
+    const handleSuggestionSubmit = useCallback((suggestionText: string) => {
+        try {
+            submitSuggestion(moduleId, currentStepIndex, suggestionText.trim());
+            setSubmittedSuggestions(prev => [...prev, suggestionText]);
+            alert("Suggestion submitted! The module owner will review it. Thank you for your feedback.");
+        } catch (error) {
+            console.error("Failed to submit suggestion", error);
+            setError("Could not submit suggestion at this time.");
+        }
+    }, [moduleId, currentStepIndex]);
+
     const renderMessageContent = (text: string) => {
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);
         if (suggestionMatch) {
             const suggestionText = suggestionMatch[1];
+            const isSubmitted = submittedSuggestions.includes(suggestionText);
+
             return (
                 <div className="bg-indigo-900/50 p-3 rounded-md mt-2 border border-indigo-700">
                     <div className="flex items-center gap-2 mb-2">
@@ -190,8 +198,16 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                         <h4 className="font-bold text-sm text-yellow-300">Suggestion</h4>
                     </div>
                     <p className="text-sm text-indigo-100 italic">"{suggestionText.trim()}"</p>
-                    <button className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-3 rounded-full mt-3 w-full">
-                        Propose to Owner
+                    <button
+                        onClick={() => handleSuggestionSubmit(suggestionText)}
+                        disabled={isSubmitted}
+                        className="text-xs w-full text-white font-semibold py-1.5 px-3 rounded-full mt-3 transition-colors flex items-center justify-center gap-2 disabled:bg-green-600 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700"
+                    >
+                        {isSubmitted ? (
+                            <><CheckCircleIcon className="h-4 w-4" /> Submitted</>
+                        ) : (
+                            'Propose to Owner'
+                        )}
                     </button>
                 </div>
             );
@@ -227,10 +243,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
 
         const chatContent = messages.map(msg => {
             const prefix = msg.role === 'user' ? 'User:' : 'AI Tutor:';
-            // Clean up text for the transcript file
             const text = msg.text
                 .replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, '\n--- Suggestion ---\n$1\n--- End Suggestion ---')
-                .replace(/\[\d{2}:\d{2}:\d{2}\]|\[\d{2}:\d{2}\]/g, ''); // Remove timestamps
+                .replace(/\[\d{2}:\d{2}:\d{2}\]|\[\d{2}:\d{2}\]/g, '');
             return `${prefix}\n${text.trim()}\n`;
         }).join('\n----------------------------------------\n\n');
 

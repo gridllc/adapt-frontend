@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getModule, saveUploadedModule } from '@/data/modules';
+import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { ModuleEditor } from '@/components/ModuleEditor';
-import type { TrainingModule } from '@/types';
+import type { TrainingModule, Suggestion, ProcessStep, AlternativeMethod } from '@/types';
 import { BookOpenIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -11,10 +12,10 @@ const EditPage: React.FC = () => {
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
     const [module, setModule] = useState<TrainingModule | null>(null);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // Redundancy check, main protection is at the router level
         if (!isAuthenticated) {
             navigate('/login');
             return;
@@ -24,19 +25,45 @@ const EditPage: React.FC = () => {
             navigate('/not-found');
             return;
         }
+
         const data = getModule(moduleId);
         if (data) {
             setModule(data);
+            const pendingSuggestions = getSuggestionsForModule(moduleId).filter(s => s.status === 'pending');
+            setSuggestions(pendingSuggestions);
         } else {
             navigate('/not-found');
         }
     }, [moduleId, navigate, isAuthenticated]);
 
+    const handleSuggestionAccept = (suggestion: Suggestion) => {
+        if (!module) return;
+
+        const newSteps = [...module.steps];
+        const stepToUpdate = newSteps[suggestion.stepIndex];
+
+        if (stepToUpdate) {
+            const newAlternativeMethod: AlternativeMethod = {
+                title: "AI-Suggested Improvement",
+                description: suggestion.text
+            };
+            stepToUpdate.alternativeMethods.push(newAlternativeMethod);
+
+            setModule({ ...module, steps: newSteps });
+        }
+
+        deleteSuggestion(suggestion.id);
+        setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+    };
+
+    const handleSuggestionReject = (suggestionId: string) => {
+        deleteSuggestion(suggestionId);
+        setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
+    };
+
     const handleSave = () => {
         if (!module) return;
 
-        // The slug cannot be changed during an edit, as it's the identifier.
-        // We'll ensure the original slug is preserved.
         const originalModule = getModule(moduleId!);
         if (!originalModule) {
             setError('Could not find the original module to save.');
@@ -71,7 +98,10 @@ const EditPage: React.FC = () => {
                 <ModuleEditor
                     module={module}
                     onModuleChange={setModule}
-                    showAnalysisButton={false} // Can't analyze video in edit mode
+                    suggestions={suggestions}
+                    onAcceptSuggestion={handleSuggestionAccept}
+                    onRejectSuggestion={handleSuggestionReject}
+                    showAnalysisButton={false}
                 />
                 {error && <p className="mt-4 text-red-500 text-center">{error}</p>}
                 <div className="mt-8 flex justify-center gap-4">
