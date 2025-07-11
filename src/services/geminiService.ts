@@ -1,6 +1,7 @@
 
 
 
+
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage } from "@/types";
 
@@ -98,7 +99,11 @@ export const getFallbackResponse = async (prompt: string, history: ChatMessage[]
             contents,
             config: { systemInstruction },
         });
-        return result.text;
+        const text = result.text;
+        if (!text) {
+            throw new Error("Fallback AI provider returned an empty response.");
+        }
+        return text;
     } catch (error) {
         console.error("Fallback AI provider also failed:", error);
         throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");

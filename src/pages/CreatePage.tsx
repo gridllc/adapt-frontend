@@ -6,9 +6,11 @@ import { saveUploadedModule } from '@/data/modules';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
 import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
+import { useAdminMode } from '@/hooks/useAdminMode';
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();
+    const [isAdmin] = useAdminMode();
     const [processText, setProcessText] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [videoBlobUrl, setVideoBlobUrl] = useState('');
@@ -16,6 +18,13 @@ const CreatePage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        // Protect this route from non-admin users
+        if (!isAdmin) {
+            navigate('/');
+        }
+    }, [isAdmin, navigate]);
 
     useEffect(() => {
         if (videoFile) {
@@ -172,7 +181,7 @@ const CreatePage: React.FC = () => {
                         onModuleChange={setGeneratedModule}
                         onAnalyze={handleAnalyzeVideo}
                         isAnalyzing={isAnalyzing}
-                        canAnalyze={!!videoFile}
+                        showAnalysisButton={!!videoFile}
                     />
                     {error && <p className="mt-4 text-red-500 text-center">{error}</p>}
                     <div className="mt-8 flex justify-center gap-4">
