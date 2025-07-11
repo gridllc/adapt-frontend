@@ -8,10 +8,12 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tsconfigPaths()],
     define: {
-      // Pass the API key from the build environment to the client-side code.
-      // This assumes `API_KEY` is set in the environment where `vite build` or `vite dev` is run.
-      'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
-      'process.env.API_KEY_PRO': JSON.stringify(process.env.API_KEY_PRO)
+      // Pass environment variables to the client-side code.
+      // Vite handles loading .env files. The VITE_ prefix is required for client-side exposure.
+      'process.env.API_KEY': JSON.stringify(process.env.VITE_API_KEY),
+      'process.env.API_KEY_PRO': JSON.stringify(process.env.VITE_API_KEY_PRO),
+      'process.env.SUPABASE_URL': JSON.stringify(process.env.VITE_SUPABASE_URL),
+      'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.VITE_SUPABASE_ANON_KEY),
     }
   }
 })

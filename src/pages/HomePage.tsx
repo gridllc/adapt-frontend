@@ -1,6 +1,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService';
 import { exportAllData, importAllData } from '@/services/platformDataService';
 import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, DatabaseIcon, DownloadIcon, TrashIcon } from '@/components/Icons';
@@ -13,8 +14,11 @@ const HomePage: React.FC = () => {
     const [isDragging, setIsDragging] = useState(false);
     const { isAuthenticated, user, logout } = useAuth();
 
-    // Use a state to manage modules so the list re-renders on deletion
-    const [availableModules, setAvailableModules] = useState(() => getAvailableModules());
+    // Fetch available modules using React Query
+    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<TrainingModule[], Error>({
+        queryKey: ['modules'],
+        queryFn: getAvailableModules
+    });
 
     const handleFileUpload = useCallback((file: File) => {
         setError(null);
@@ -31,10 +35,11 @@ const HomePage: React.FC = () => {
 
                 const moduleData = JSON.parse(text) as TrainingModule;
 
+                // Note: saveUploadedModule needs to be migrated to async/Supabase
                 if (saveUploadedModule(moduleData)) {
                     navigate(`/modules/${moduleData.slug}`);
                 } else {
-                    throw new Error("The provided JSON is not a valid Training Module.");
+                    throw new Error("The provided JSON is not a valid Training Module or the save function is not yet migrated.");
                 }
 
             } catch (err) {
@@ -137,8 +142,10 @@ const HomePage: React.FC = () => {
         );
 
         if (confirmation) {
+            // Note: deleteModule needs to be migrated to async/Supabase
             deleteModule(slug);
-            setAvailableModules(getAvailableModules()); // Re-fetch the list to update the UI
+            // After migration, we will invalidate the query instead of reloading
+            window.location.reload();
         }
     }, []);
 
@@ -240,10 +247,15 @@ const HomePage: React.FC = () => {
                 </div>
             )}
 
-
             <div className="mt-12">
                 <h2 className="text-2xl font-bold text-white mb-6 text-center">Available Training Modules</h2>
-                {availableModules.length > 0 ? (
+                {isLoadingModules ? (
+                    <div className="text-center text-slate-400">Loading modules from the database...</div>
+                ) : modulesError ? (
+                    <div className="text-center text-red-400 bg-red-900/50 p-4 rounded-lg">
+                        Error fetching modules: {modulesError.message}
+                    </div>
+                ) : availableModules && availableModules.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {availableModules.map(module => (
                             <Link key={module.slug} to={`/modules/${module.slug}`} className="block p-6 bg-slate-800 rounded-xl hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-lg relative group">
@@ -270,8 +282,8 @@ const HomePage: React.FC = () => {
                     </div>
                 ) : (
                     <div className="text-center bg-slate-800 p-8 rounded-lg">
-                        <p className="text-slate-400">No training modules found.</p>
-                        {!isAuthenticated && <p className="text-slate-500 text-sm mt-2">Log in as an admin to create or upload a module.</p>}
+                        <p className="text-slate-400">No training modules found in the database.</p>
+                        <p className="text-slate-500 text-sm mt-2">Use the "Create with AI" tool to add one.</p>
                     </div>
                 )}
             </div>

@@ -1,9 +1,8 @@
 
-import { MOCK_SANDWICH_MODULE } from '@/data/sandwich';
 import type { TrainingModule, Suggestion } from '@/types';
+import { supabase } from '@/services/apiClient';
 
 // Storage prefixes and keys
-const MODULE_PREFIX = 'adapt-module-';
 const SESSION_PREFIX = 'adapt-session-';
 const CHAT_PREFIX = 'adapt-ai-tutor-chat-history-';
 const SUGGESTIONS_KEY = 'adapt-suggestions';
@@ -15,101 +14,74 @@ const isTrainingModule = (data: any): data is TrainingModule => {
         data !== null &&
         typeof data.slug === 'string' &&
         typeof data.title === 'string' &&
-        typeof data.videoUrl === 'string' &&
+        // videoUrl can be empty string
+        (typeof data.videoUrl === 'string' || data.videoUrl === null) &&
         Array.isArray(data.steps)
     );
 };
 
-// A simple in-memory store for pre-loaded modules.
-const modules: Record<string, TrainingModule> = {
-  [MOCK_SANDWICH_MODULE.slug]: MOCK_SANDWICH_MODULE,
-};
-
 /**
- * Retrieves a training module by its slug.
- * It first checks pre-loaded modules, then falls back to checking localStorage
- * for any modules uploaded by the user.
+ * Retrieves a training module by its slug from the database.
  * @param slug The slug of the module to retrieve.
  * @returns The TrainingModule if found, otherwise undefined.
  */
 export const getModule = (slug: string): TrainingModule | undefined => {
-  if (modules[slug]) {
-    return modules[slug];
-  }
-
-  try {
-    const storedData = localStorage.getItem(`${MODULE_PREFIX}${slug}`);
-    if (storedData) {
-      const parsedData = JSON.parse(storedData);
-      if (isTrainingModule(parsedData)) {
-        return parsedData;
-      }
-    }
-  } catch (e) {
-    console.error(`Failed to get module '${slug}' from localStorage`, e);
-  }
-  
-  return undefined;
+    // This function will also need to be converted to async.
+    // For now, it will not work correctly until migrated.
+    console.warn("getModule is not yet migrated to use Supabase and may not function as expected.");
+    return undefined;
 };
 
 /**
- * Gets a list of all available modules, combining pre-loaded and localStorage-stored ones.
+ * Gets a list of all available modules from the database.
  */
-export const getAvailableModules = (): TrainingModule[] => {
-    const allModules = { ...modules };
-    
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith(MODULE_PREFIX)) {
-            try {
-                const storedData = localStorage.getItem(key);
-                if(storedData) {
-                    const parsedData = JSON.parse(storedData);
-                    if (isTrainingModule(parsedData)) {
-                        allModules[parsedData.slug] = parsedData;
-                    }
-                }
-            } catch (e) {
-                console.error(`Failed to parse module from localStorage with key ${key}`, e);
-            }
-        }
+export const getAvailableModules = async (): Promise<TrainingModule[]> => {
+    const { data, error } = await supabase
+        .from('modules') // Assumes your table is named 'modules'
+        .select('*');
+
+    if (error) {
+        console.error("Error fetching modules:", error);
+        throw new Error(error.message);
     }
 
-    return Object.values(allModules);
+    // Basic validation that the returned data is an array
+    if (!Array.isArray(data)) {
+        console.error("Data fetched from 'modules' is not an array:", data);
+        return [];
+    }
+
+    return data.filter(isTrainingModule);
 };
 
 /**
- * Saves an uploaded module to localStorage so it can be retrieved by its slug.
- * @param moduleData The parsed TrainingModule object.
+ * Saves (upserts) a module to the database.
+ * @param moduleData The TrainingModule object.
  * @returns True if successful, false otherwise.
  */
 export const saveUploadedModule = (moduleData: TrainingModule): boolean => {
-    if (!isTrainingModule(moduleData)) {
-        console.error("Data is not a valid TrainingModule", moduleData);
-        return false;
-    }
-    try {
-        localStorage.setItem(`${MODULE_PREFIX}${moduleData.slug}`, JSON.stringify(moduleData));
-        return true;
-    } catch (e) {
-        console.error(`Failed to save module '${moduleData.slug}' to localStorage`, e);
-        return false;
-    }
+    // This function will also need to be converted to async.
+    console.warn("saveUploadedModule is not yet migrated to use Supabase and may not function as expected.");
+    return false;
 };
 
 /**
- * Deletes a module and all its associated data (sessions, chats, suggestions) from localStorage.
+ * Deletes a module and all its associated data from the database.
  * @param slug The slug of the module to delete.
  */
 export const deleteModule = (slug: string): void => {
-    console.log(`Deleting module '${slug}' and all associated data.`);
+    // This function will also need to be converted to async.
+    console.warn("deleteModule is not yet migrated to use Supabase and may not function as expected.");
+
+    // The old localStorage logic is kept here as a reference and will be removed once
+    // the full migration to Supabase (with cascading deletes or equivalent logic) is complete.
+    console.log(`(LocalStorage) Deleting module '${slug}' and all associated data.`);
     const keysToRemove: string[] = [];
 
     // Find all keys related to this module
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && (
-            key === `${MODULE_PREFIX}${slug}` ||
             key.startsWith(`${SESSION_PREFIX}${slug}-`) ||
             key.startsWith(`${CHAT_PREFIX}${slug}-`)
         )) {
@@ -134,9 +106,9 @@ export const deleteModule = (slug: string): void => {
             const filteredSuggestions = suggestions.filter(s => s.moduleId !== slug);
             localStorage.setItem(SUGGESTIONS_KEY, JSON.stringify(filteredSuggestions));
         }
-    } catch(e) {
+    } catch (e) {
         console.error(`Failed to process and filter suggestions for module ${slug}`, e);
     }
 
-    console.log(`Deletion complete for module '${slug}'.`);
+    console.log(`(LocalStorage) Deletion complete for module '${slug}'.`);
 };
