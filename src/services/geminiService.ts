@@ -20,12 +20,12 @@ function getAiClient(): GoogleGenAI {
     }
 
     // Prioritize the Pro API key, but fall back to the standard key.
-    const apiKey = process.env.API_KEY_PRO || process.env.API_KEY;
+    const apiKey = import.meta.env.VITE_API_KEY_PRO || import.meta.env.VITE_API_KEY;
 
     if (!apiKey) {
         throw new Error(
             `AI features are unavailable. No API key found. ` +
-            `Please ensure either API_KEY_PRO or API_KEY environment variable is set.`
+            `Please ensure either VITE_API_KEY_PRO or VITE_API_KEY environment variable is set in your .env.local file.`
         );
     }
 
