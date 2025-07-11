@@ -37,7 +37,7 @@ const EditPage: React.FC = () => {
         queryFn: () => getSuggestionsForModule(moduleId!),
         enabled: !!moduleId,
         // Only show pending suggestions in the editor
-        select: (data) => data.filter(s => s.status === 'pending'),
+        select: (data: Suggestion[]) => data.filter(s => s.status === 'pending'),
     });
 
     useEffect(() => {

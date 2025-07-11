@@ -55,8 +55,8 @@ const DashboardPage: React.FC = () => {
         enabled: !!selectedModule,
     });
 
-    const questionStats = analysisData?.stats ?? [];
-    const hotspot = analysisData?.hotspot ?? null;
+    const questionStats: QuestionStats[] = analysisData?.stats ?? [];
+    const hotspot: AnalysisHotspot | null = analysisData?.hotspot ?? null;
     const refinement = analysisData?.refinement ?? null;
 
     const handleModuleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {

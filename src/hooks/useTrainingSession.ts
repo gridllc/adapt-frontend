@@ -42,7 +42,7 @@ export function useTrainingSession(moduleId: string, sessionToken: string, total
   const { mutate: persistSession } = useMutation({
     mutationFn: (newState: Omit<SessionState, 'moduleId' | 'sessionToken'>) =>
       saveSession({ moduleId, sessionToken, ...newState }),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       // Update the query cache with the new state
       queryClient.setQueryData(sessionQueryKey, (old: SessionState | null) => ({
         ...(old || {}),

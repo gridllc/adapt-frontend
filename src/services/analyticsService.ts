@@ -1,12 +1,6 @@
 
 import { supabase } from '@/services/apiClient';
-import type { TrainingModule, AnalysisHotspot, UserAction, ChatMessage } from '@/types';
-
-export interface QuestionStats {
-    question: string;
-    count: number;
-    stepIndex: number; // Add step index to track where the question was asked
-}
+import type { TrainingModule, AnalysisHotspot, UserAction, QuestionStats } from '@/types';
 
 /**
  * Scans the database for all chat histories associated with a given module,

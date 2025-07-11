@@ -83,3 +83,9 @@ export interface SessionState {
   userActions: UserAction[];
   isCompleted: boolean;
 }
+
+export interface QuestionStats {
+  question: string;
+  count: number;
+  stepIndex: number;
+}

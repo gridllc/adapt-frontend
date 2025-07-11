@@ -6,7 +6,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { TrainingModule, ProcessStep, PerformanceReportData } from '@/types';
+import type { ProcessStep, PerformanceReportData } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { getModule } from '@/services/moduleService';
