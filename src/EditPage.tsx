@@ -1,10 +1,11 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getModule, saveUploadedModule } from '@/data/modules';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { ModuleEditor } from '@/components/ModuleEditor';
-import type { TrainingModule, Suggestion, ProcessStep, AlternativeMethod } from '@/types';
+import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types';
 import { BookOpenIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 
