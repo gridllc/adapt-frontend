@@ -1,74 +1,39 @@
 
 
+
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
-import type { ProcessStep, VideoAnalysisResult } from "@/types";
-
-const PRO_PLAN_STORAGE_KEY = 'adapt-pro-plan-active';
-
-// --- Pro Plan Management ---
-
-export function isProPlanActive(): boolean {
-    try {
-        // Check localStorage to see if the user has enabled the Pro plan.
-        return localStorage.getItem(PRO_PLAN_STORAGE_KEY) === 'true';
-    } catch {
-        // If localStorage is unavailable, default to false.
-        return false;
-    }
-}
-
-export function setProPlanActive(isActive: boolean): void {
-    try {
-        localStorage.setItem(PRO_PLAN_STORAGE_KEY, String(isActive));
-        // When the plan changes, we must clear any cached AI clients
-        // to ensure the next call uses the correct API key.
-        cachedClients.standard = null;
-        cachedClients.pro = null;
-    } catch (e) {
-        console.error("Could not save Pro plan status to localStorage.", e);
-    }
-}
+import type { ProcessStep, VideoAnalysisResult, ChatMessage } from "@/types";
 
 // --- AI Client Initialization ---
 
-interface CachedClients {
-    standard: GoogleGenAI | null;
-    pro: GoogleGenAI | null;
-}
-const cachedClients: CachedClients = { standard: null, pro: null };
+// The client is cached to avoid re-initialization on every call.
+let cachedClient: GoogleGenAI | null = null;
 
 /**
- * Lazily initializes and returns the appropriate GoogleGenAI client instance.
- * It uses the 'Pro' or 'Standard' API key based on the user's plan selection
- * and caches the client instances to avoid re-initialization.
+ * Lazily initializes and returns the GoogleGenAI client instance.
+ * It prioritizes the 'Pro' API key and falls back to the standard key.
  * 
- * @throws {Error} If the required API key (Standard or Pro) is not found in the environment variables.
+ * @throws {Error} If no API key is found in the environment variables.
  * @returns {GoogleGenAI} The initialized Gemini AI client.
  */
 function getAiClient(): GoogleGenAI {
-    const isPro = isProPlanActive();
-    const cacheKey = isPro ? 'pro' : 'standard';
-    const apiKey = isPro ? process.env.API_KEY_PRO : process.env.API_KEY;
-
-    // Return the cached client if it already exists.
-    if (cachedClients[cacheKey]) {
-        return cachedClients[cacheKey] as GoogleGenAI;
+    if (cachedClient) {
+        return cachedClient;
     }
 
-    // Validate that the required API key is available.
+    // Prioritize the Pro API key, but fall back to the standard key.
+    const apiKey = process.env.API_KEY_PRO || process.env.API_KEY;
+
     if (!apiKey) {
-        const planName = isPro ? 'Pro' : 'Standard';
-        const envVar = isPro ? 'API_KEY_PRO' : 'API_KEY';
         throw new Error(
-            `AI features are unavailable. The API key for the ${planName} plan is not configured. ` +
-            `Please ensure the ${envVar} environment variable is set.`
+            `AI features are unavailable. No API key found. ` +
+            `Please ensure either API_KEY_PRO or API_KEY environment variable is set.`
         );
     }
 
     // Create and cache the new client.
-    const newClient = new GoogleGenAI({ apiKey });
-    cachedClients[cacheKey] = newClient;
-    return newClient;
+    cachedClient = new GoogleGenAI({ apiKey });
+    return cachedClient;
 }
 
 
@@ -105,6 +70,42 @@ export const startChat = (processContext: string, history: Content[] = []): Chat
     return chat;
 };
 
+/**
+ * Simulates a call to a fallback provider (e.g., GPT) if the primary one fails.
+ * For now, it uses a non-streaming Gemini call to demonstrate the mechanism.
+ * @param prompt The user's latest prompt.
+ * @param history The existing chat history to provide context.
+ * @param processContext The process steps to include in the system instruction.
+ * @returns The text of the fallback response.
+ */
+export const getFallbackResponse = async (prompt: string, history: ChatMessage[], processContext: string): Promise<string> => {
+    console.log("Attempting fallback AI provider...");
+    const client = getAiClient();
+    const systemInstruction = getSystemInstruction(processContext);
+
+    // Convert ChatMessage[] to Content[]
+    const geminiHistory: Content[] = history.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.text }]
+    }));
+
+    // Add the current prompt to the history for the one-off call
+    const contents = [...geminiHistory, { role: 'user', parts: [{ text: prompt }] }];
+
+    try {
+        const result = await client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents,
+            config: { systemInstruction },
+        });
+        return result.text;
+    } catch (error) {
+        console.error("Fallback AI provider also failed:", error);
+        throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");
+    }
+};
+
+
 const moduleSchema = {
     type: Type.OBJECT,
     properties: {
@@ -129,6 +130,22 @@ const moduleSchema = {
                     description: {
                         type: Type.STRING,
                         description: "A detailed explanation of how to perform this step."
+                    },
+                    checkpoint: {
+                        type: Type.STRING,
+                        description: "A question to verify the trainee's understanding of this step. Should be null if not applicable."
+                    },
+                    alternativeMethods: {
+                        type: Type.ARRAY,
+                        description: "Optional alternative ways to perform the step, like an expert tip or shortcut. Should be an empty array if not applicable.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: { type: Type.STRING },
+                                description: { type: Type.STRING }
+                            },
+                            required: ["title", "description"]
+                        }
                     }
                 },
                 required: ["title", "description"]
@@ -140,7 +157,7 @@ const moduleSchema = {
 
 export const createModuleFromText = async (processText: string) => {
     const client = getAiClient();
-    const systemInstruction = `You are an expert instructional designer. Your task is to analyze the provided text describing a process and convert it into a structured training module. Create a main title for the module and break the process down into logical, sequential steps. For each step, create a short, action-oriented title and a clear description. Ensure the final output is a valid JSON object adhering to the provided schema.`;
+    const systemInstruction = `You are an expert instructional designer. Your task is to analyze the provided text describing a process and convert it into a structured training module. Create a main title for the module and break the process down into logical, sequential steps. For each step, create a short, action-oriented title and a clear description. Where appropriate, also generate a 'checkpoint' question to test understanding, and any 'alternativeMethods' that might be relevant (like a pro-tip or shortcut). Ensure the final output is a valid JSON object adhering to the provided schema.`;
 
     try {
         const result = await client.models.generateContent({
@@ -167,8 +184,8 @@ export const createModuleFromText = async (processText: string) => {
                 ...step,
                 start: 0,
                 end: 0,
-                checkpoint: null,
-                alternativeMethods: [],
+                checkpoint: step.checkpoint || null,
+                alternativeMethods: step.alternativeMethods || [],
             })),
             transcript: []
         };

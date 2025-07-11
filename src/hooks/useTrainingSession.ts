@@ -1,8 +1,9 @@
+
 import { useState, useCallback, useEffect } from 'react';
 import type { UserAction, StepStatus } from '@/types';
 
-export function useTrainingSession(moduleId: string, totalSteps: number) {
-  const SESSION_KEY = `adapt-session-${moduleId}`;
+export function useTrainingSession(moduleId: string, sessionToken: string, totalSteps: number) {
+  const SESSION_KEY = `adapt-session-${moduleId}-${sessionToken}`;
 
   const getInitialState = useCallback(() => {
     try {

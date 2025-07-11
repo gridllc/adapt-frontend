@@ -81,7 +81,7 @@ const CreatePage: React.FC = () => {
     const handleSave = () => {
         if (!generatedModule) return;
         if (saveUploadedModule(generatedModule)) {
-            navigate(`/process/${generatedModule.slug}`);
+            navigate(`/modules/${generatedModule.slug}`);
         } else {
             setError('Could not save the module. Please try again.');
         }
@@ -99,7 +99,7 @@ const CreatePage: React.FC = () => {
     return (
         <div className="max-w-7xl mx-auto p-6">
             <header className="flex justify-between items-center mb-6">
-                <button onClick={() => navigate(-1)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
+                <button onClick={() => navigate('/')} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
                     <BookOpenIcon className="h-5 w-5" />
                     <span>Back to Home</span>
                 </button>

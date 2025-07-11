@@ -1,25 +1,48 @@
+
 import React from 'react';
-import type { TrainingModule, ProcessStep } from '@/types';
-import { XIcon, SparklesIcon } from '@/components/Icons';
+import type { TrainingModule, ProcessStep, AlternativeMethod } from '@/types';
+import { XIcon, SparklesIcon, LightbulbIcon } from '@/components/Icons';
 
 interface ModuleEditorProps {
     module: TrainingModule;
     onModuleChange: (module: TrainingModule) => void;
-    onAnalyze: () => void;
-    isAnalyzing: boolean;
-    canAnalyze: boolean;
+    onAnalyze?: () => void;
+    isAnalyzing?: boolean;
+    showAnalysisButton: boolean;
 }
 
-export const ModuleEditor: React.FC<ModuleEditorProps> = ({ module, onModuleChange, onAnalyze, isAnalyzing, canAnalyze }) => {
+export const ModuleEditor: React.FC<ModuleEditorProps> = ({ module, onModuleChange, onAnalyze, isAnalyzing, showAnalysisButton }) => {
 
     const handleFieldChange = (field: keyof TrainingModule, value: string) => {
         onModuleChange({ ...module, [field]: value });
     };
 
-    const handleStepChange = (index: number, field: keyof ProcessStep, value: string | number) => {
+    const handleStepChange = (index: number, field: keyof ProcessStep, value: string | number | null) => {
         const newSteps = [...module.steps];
         // @ts-ignore
         newSteps[index][field] = value;
+        onModuleChange({ ...module, steps: newSteps });
+    };
+
+    const handleAlternativeMethodChange = (stepIndex: number, altIndex: number, field: keyof AlternativeMethod, value: string) => {
+        const newSteps = [...module.steps];
+        const newAlternativeMethods = [...newSteps[stepIndex].alternativeMethods];
+        newAlternativeMethods[altIndex] = { ...newAlternativeMethods[altIndex], [field]: value };
+        newSteps[stepIndex] = { ...newSteps[stepIndex], alternativeMethods: newAlternativeMethods };
+        onModuleChange({ ...module, steps: newSteps });
+    };
+
+    const addAlternativeMethod = (stepIndex: number) => {
+        const newSteps = [...module.steps];
+        const newAlternativeMethods = [...newSteps[stepIndex].alternativeMethods, { title: 'New Method', description: '' }];
+        newSteps[stepIndex] = { ...newSteps[stepIndex], alternativeMethods: newAlternativeMethods };
+        onModuleChange({ ...module, steps: newSteps });
+    };
+
+    const removeAlternativeMethod = (stepIndex: number, altIndex: number) => {
+        const newSteps = [...module.steps];
+        const newAlternativeMethods = newSteps[stepIndex].alternativeMethods.filter((_, i) => i !== altIndex);
+        newSteps[stepIndex] = { ...newSteps[stepIndex], alternativeMethods: newAlternativeMethods };
         onModuleChange({ ...module, steps: newSteps });
     };
 
@@ -63,17 +86,19 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({ module, onModuleChan
                         placeholder="Upload a video to get a local URL, or paste one here."
                         className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <div className="mt-2">
-                        <button
-                            onClick={onAnalyze}
-                            disabled={!canAnalyze || isAnalyzing}
-                            className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-indigo-500 disabled:bg-slate-500 disabled:cursor-not-allowed disabled:scale-100"
-                        >
-                            <SparklesIcon className={`h-5 w-5 ${isAnalyzing ? 'animate-pulse' : ''}`} />
-                            {isAnalyzing ? 'Analyzing Video...' : 'Set Timestamps with AI'}
-                        </button>
-                        {!canAnalyze && <p className="text-xs text-slate-400 mt-1 inline-block ml-3">Upload a video on the 'Create' screen to enable AI analysis.</p>}
-                    </div>
+                    {showAnalysisButton && (
+                        <div className="mt-2">
+                            <button
+                                onClick={onAnalyze}
+                                disabled={isAnalyzing}
+                                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded-lg transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-indigo-500 disabled:bg-slate-500 disabled:cursor-not-allowed disabled:scale-100"
+                            >
+                                <SparklesIcon className={`h-5 w-5 ${isAnalyzing ? 'animate-pulse' : ''}`} />
+                                {isAnalyzing ? 'Analyzing Video...' : 'Set Timestamps with AI'}
+                            </button>
+                            {!showAnalysisButton && <p className="text-xs text-slate-400 mt-1 inline-block ml-3">Upload a video on the 'Create' screen to enable AI analysis.</p>}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -90,6 +115,8 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({ module, onModuleChan
                         >
                             <XIcon className="h-5 w-5" />
                         </button>
+
+                        {/* Title and Description */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="md:col-span-1">
                                 <label className="block text-sm font-medium text-slate-300 mb-1">Step {index + 1}: Title</label>
@@ -105,18 +132,63 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({ module, onModuleChan
                                 <textarea
                                     value={step.description}
                                     onChange={(e) => handleStepChange(index, 'description', e.target.value)}
-                                    rows={3}
+                                    rows={2}
                                     className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                 />
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+
+                        {/* Checkpoint */}
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-slate-300 mb-1">Checkpoint Question <span className="text-slate-400">(Optional)</span></label>
+                            <input
+                                type="text"
+                                value={step.checkpoint || ''}
+                                onChange={(e) => handleStepChange(index, 'checkpoint', e.target.value === '' ? null : e.target.value)}
+                                placeholder="e.g., How much turkey should be used?"
+                                className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                        </div>
+
+                        {/* Alternative Methods */}
+                        <div className="mt-4 pt-4 border-t border-slate-700/50">
+                            <h4 className="text-sm font-semibold text-indigo-300 mb-2 flex items-center gap-2"><LightbulbIcon className="h-4 w-4 text-yellow-400" />Alternative Methods</h4>
+                            {step.alternativeMethods.length > 0 && (
+                                <div className="space-y-3">
+                                    {step.alternativeMethods.map((alt, altIndex) => (
+                                        <div key={altIndex} className="bg-slate-700/50 p-3 rounded-lg relative pl-4">
+                                            <button
+                                                onClick={() => removeAlternativeMethod(index, altIndex)}
+                                                className="absolute top-2 right-2 p-1 text-slate-400 hover:text-red-400 rounded-full hover:bg-slate-600 transition-colors"
+                                                aria-label="Remove alternative method"
+                                            >
+                                                <XIcon className="h-4 w-4" />
+                                            </button>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-400 mb-1">Title</label>
+                                                    <input type="text" value={alt.title} onChange={(e) => handleAlternativeMethodChange(index, altIndex, 'title', e.target.value)} className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-400 mb-1">Description</label>
+                                                    <input type="text" value={alt.description} onChange={(e) => handleAlternativeMethodChange(index, altIndex, 'description', e.target.value)} className="w-full bg-slate-600 border border-slate-500 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <button onClick={() => addAlternativeMethod(index)} className="mt-3 text-sm text-indigo-400 hover:text-indigo-300 font-semibold">+ Add Method</button>
+                        </div>
+
+                        {/* Timestamps */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-700/50">
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">Start Time (s)</label>
                                 <input
                                     type="number"
                                     value={step.start}
-                                    onChange={(e) => handleStepChange(index, 'start', parseInt(e.target.value, 10))}
+                                    onChange={(e) => handleStepChange(index, 'start', parseInt(e.target.value, 10) || 0)}
                                     className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                 />
                             </div>
@@ -125,7 +197,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({ module, onModuleChan
                                 <input
                                     type="number"
                                     value={step.end}
-                                    onChange={(e) => handleStepChange(index, 'end', parseInt(e.target.value, 10))}
+                                    onChange={(e) => handleStepChange(index, 'end', parseInt(e.target.value, 10) || 0)}
                                     className="w-full bg-slate-700 border border-slate-600 rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                 />
                             </div>

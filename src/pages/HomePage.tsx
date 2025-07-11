@@ -1,32 +1,17 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAvailableModules, saveUploadedModule } from '@/data/modules';
-import { isProPlanActive, setProPlanActive } from '../services/geminiService';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, StarIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
+import { useAdminMode } from '@/hooks/useAdminMode';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
-    const [isPro, setIsPro] = useState(isProPlanActive());
+    const [isAdmin, setIsAdmin] = useAdminMode();
     const availableModules = getAvailableModules();
-
-    useEffect(() => {
-        // As per the project brief, default to the Pro plan if no setting is stored.
-        const storedPlan = localStorage.getItem('adapt-pro-plan-active');
-        if (storedPlan === null) {
-            setProPlanActive(true);
-            setIsPro(true);
-        }
-    }, []); // Runs once on initial component mount
-
-    const handleProPlanToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const isActive = e.target.checked;
-        setProPlanActive(isActive);
-        setIsPro(isActive);
-    };
 
     const handleFile = useCallback((file: File) => {
         setError(null);
@@ -44,7 +29,7 @@ const HomePage: React.FC = () => {
                 const moduleData = JSON.parse(text) as TrainingModule;
 
                 if (saveUploadedModule(moduleData)) {
-                    navigate(`/process/${moduleData.slug}`);
+                    navigate(`/modules/${moduleData.slug}`);
                 } else {
                     throw new Error("The provided JSON is not a valid Training Module.");
                 }
@@ -92,65 +77,66 @@ const HomePage: React.FC = () => {
 
     return (
         <div className="max-w-4xl mx-auto p-8">
-            <header className="text-center mb-12">
+            <header className="text-center mb-12 relative">
+                <div className="absolute top-0 right-0">
+                    <label className="flex items-center cursor-pointer">
+                        <span className="mr-3 text-sm font-medium text-slate-400">Admin Mode</span>
+                        <div className="relative">
+                            <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} className="sr-only" />
+                            <div className="block bg-slate-700 w-14 h-8 rounded-full"></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isAdmin ? 'transform translate-x-full bg-indigo-400' : ''}`}></div>
+                        </div>
+                    </label>
+                </div>
                 <h1 className="text-5xl font-bold text-white">Adapt Training Platform</h1>
                 <p className="mt-4 text-lg text-slate-400">Your interactive AI-powered training assistant.</p>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
-                    <h2 className="text-2xl font-bold text-indigo-400 mb-2">Create with AI</h2>
-                    <p className="text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
-                    <Link to="/create" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
-                        <LightbulbIcon className="h-6 w-6" />
-                        <span>Start Creating</span>
-                    </Link>
-                </div>
-                <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
-                    <h2 className="text-2xl font-bold text-indigo-400 mb-2">Upload a Module</h2>
-                    <p className="text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
+            {isAdmin && (
+                <div className="mb-12 animate-fade-in-up">
+                    <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Admin Tools</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-800/50 p-6 rounded-2xl border border-indigo-500/30">
+                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                            <h3 className="text-xl font-bold text-indigo-400 mb-2">Create with AI</h3>
+                            <p className="text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
+                            <Link to="/create" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
+                                <LightbulbIcon className="h-6 w-6" />
+                                <span>Start Creating</span>
+                            </Link>
+                        </div>
+                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                            <h3 className="text-xl font-bold text-indigo-400 mb-2">Upload a Module</h3>
+                            <p className="text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
 
-                    <label
-                        onDrop={handleDrop}
-                        onDragOver={handleDragOver}
-                        onDragEnter={handleDragEnter}
-                        onDragLeave={handleDragLeave}
-                        className={`flex justify-center w-full h-24 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
-                    >
-                        <span className="flex items-center space-x-2">
-                            <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
-                            <span className="font-medium text-slate-400">
-                                Drop file or
-                                <span className="text-indigo-400 underline ml-1">browse</span>
-                            </span>
-                        </span>
-                        <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
-                    </label>
-                    {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
-                </div>
-            </div>
-
-            <div className="mt-12 bg-slate-800 p-8 rounded-2xl shadow-2xl">
-                <h2 className="text-2xl font-bold text-indigo-400 mb-4 text-center">Manage Your Plan</h2>
-                <div className="flex items-center justify-center bg-slate-900/50 p-4 rounded-lg">
-                    <StarIcon className={`h-6 w-6 mr-4 ${isPro ? 'text-yellow-400' : 'text-slate-500'}`} />
-                    <div className="flex-grow">
-                        <h3 className="font-bold text-slate-100">Pro Plan Access</h3>
-                        <p className="text-sm text-slate-400">Enable to use your Pro plan with higher API quotas.</p>
+                            <label
+                                onDrop={handleDrop}
+                                onDragOver={handleDragOver}
+                                onDragEnter={handleDragEnter}
+                                onDragLeave={handleDragLeave}
+                                className={`flex justify-center w-full h-32 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
+                            >
+                                <span className="flex items-center space-x-2">
+                                    <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
+                                    <span className="font-medium text-slate-400">
+                                        Drop file or
+                                        <span className="text-indigo-400 underline ml-1">browse</span>
+                                    </span>
+                                </span>
+                                <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
+                            </label>
+                            {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+                        </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={isPro} onChange={handleProPlanToggle} className="sr-only peer" />
-                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </label>
                 </div>
-            </div>
+            )}
+
 
             <div className="mt-12">
-                <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Or Select an Existing Module</h2>
+                <h2 className="text-2xl font-bold text-white mb-6 text-center">Available Training Modules</h2>
                 {availableModules.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {availableModules.map(module => (
-                            <Link key={module.slug} to={`/process/${module.slug}`} className="block p-6 bg-slate-800 rounded-xl hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-lg">
+                            <Link key={module.slug} to={`/modules/${module.slug}`} className="block p-6 bg-slate-800 rounded-xl hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-lg">
                                 <div className="flex items-center gap-4">
                                     <div className="bg-indigo-600/30 p-3 rounded-lg">
                                         <BookOpenIcon className="h-6 w-6 text-indigo-300" />
@@ -166,7 +152,7 @@ const HomePage: React.FC = () => {
                 ) : (
                     <div className="text-center bg-slate-800 p-8 rounded-lg">
                         <p className="text-slate-400">No training modules found.</p>
-                        <p className="text-slate-500 text-sm mt-2">Upload a module JSON file to get started.</p>
+                        <p className="text-slate-500 text-sm mt-2">Enable Admin Mode to create or upload a module.</p>
                     </div>
                 )}
             </div>

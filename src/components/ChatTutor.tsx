@@ -1,17 +1,19 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { startChat } from '../services/geminiService';
+import { startChat, getFallbackResponse } from '../services/geminiService';
 import * as ttsService from '../services/ttsService';
 import type { ChatMessage, ProcessStep } from '@/types';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from '@/components/Icons';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon } from '@/components/Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
     moduleId: string;
+    sessionToken: string;
     transcriptContext: string;
     onTimestampClick: (time: number) => void;
     currentStepIndex: number;
     steps: ProcessStep[];
+    onClose: () => void;
 }
 
 const parseTimestamp = (text: string): number | null => {
@@ -26,8 +28,8 @@ const parseTimestamp = (text: string): number | null => {
     return null;
 };
 
-export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContext, onTimestampClick, currentStepIndex, steps }) => {
-    const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}`;
+export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, transcriptContext, onTimestampClick, currentStepIndex, steps, onClose }) => {
+    const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}-${sessionToken}`;
 
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -106,7 +108,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
 
         ttsService.cancel();
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
-        setMessages(prev => [...prev, userMessage]);
+        const currentMessages = [...messages, userMessage];
+        setMessages(currentMessages);
 
         const enrichedInput = enrichPromptIfNeeded(input);
         setInput('');
@@ -151,14 +154,30 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
                 ttsService.speak(finalModelText.replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, 'I have a suggestion. $1'));
             }
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            console.error("Gemini API Error:", errorMessage);
-            setError("Sorry, I couldn't get a response. Please try again.");
-            setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
+            console.warn("Primary AI provider failed. Attempting fallback.", err);
+            try {
+                // Fallback logic
+                const fallbackText = await getFallbackResponse(enrichedInput, currentMessages, transcriptContext);
+                setMessages(prev =>
+                    prev.map(msg =>
+                        msg.id === modelMessageId
+                            ? { ...msg, text: fallbackText, isFallback: true }
+                            : msg
+                    )
+                );
+                if (isAutoSpeakEnabled && fallbackText) {
+                    ttsService.speak(fallbackText);
+                }
+            } catch (fallbackErr) {
+                const errorMessage = fallbackErr instanceof Error ? fallbackErr.message : 'An unknown error occurred.';
+                setError(errorMessage);
+                // Clean up the optimistic user and empty model messages on final failure
+                setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
+            }
         } finally {
             setIsLoading(false);
         }
-    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, CHAT_HISTORY_KEY, transcriptContext]);
+    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages]);
 
     const renderMessageContent = (text: string) => {
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);
@@ -201,19 +220,61 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
             if (!prev === false) ttsService.cancel();
             return !prev;
         });
-    }
+    };
+
+    const handleDownloadChat = useCallback(() => {
+        if (messages.length === 0) return;
+
+        const chatContent = messages.map(msg => {
+            const prefix = msg.role === 'user' ? 'User:' : 'AI Tutor:';
+            // Clean up text for the transcript file
+            const text = msg.text
+                .replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, '\n--- Suggestion ---\n$1\n--- End Suggestion ---')
+                .replace(/\[\d{2}:\d{2}:\d{2}\]|\[\d{2}:\d{2}\]/g, ''); // Remove timestamps
+            return `${prefix}\n${text.trim()}\n`;
+        }).join('\n----------------------------------------\n\n');
+
+        const blob = new Blob([chatContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `adapt-chat-history-${moduleId}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, [messages, moduleId]);
 
     return (
         <div className="flex flex-col h-full">
-            <div className="p-4 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
-                <h3 className="font-bold text-white">AI Tutor Controls</h3>
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">Auto-Speak</span>
-                    <button onClick={toggleAutoSpeak} className="p-1 rounded-full bg-slate-700 hover:bg-slate-600">
-                        {isAutoSpeakEnabled ? <SpeakerOnIcon className="h-5 w-5 text-green-400" /> : <SpeakerOffIcon className="h-5 w-5 text-slate-400" />}
+            <header className="flex items-center justify-between p-4 border-b border-slate-700 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                    <MessageSquareIcon className="h-6 w-6 text-indigo-400" />
+                    <h2 className="font-bold text-lg text-white">Adapt AI Tutor</h2>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleDownloadChat}
+                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        aria-label="Download chat history"
+                        title="Download chat history"
+                        disabled={messages.length === 0}
+                    >
+                        <DownloadIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                        onClick={toggleAutoSpeak}
+                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        aria-label={isAutoSpeakEnabled ? "Disable auto-speak" : "Enable auto-speak"}
+                        title={isAutoSpeakEnabled ? "Disable auto-speak" : "Enable auto-speak"}
+                    >
+                        {isAutoSpeakEnabled ? <SpeakerOnIcon className="h-5 w-5 text-green-400" /> : <SpeakerOffIcon className="h-5 w-5" />}
+                    </button>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+                        <XIcon className="h-6 w-6" />
                     </button>
                 </div>
-            </div>
+            </header>
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
                 {messages.length === 0 && !isLoading && !error && (
                     <div className="flex items-start gap-3 animate-fade-in-up">
@@ -228,8 +289,13 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
                 {messages.map((msg) => (
                     <div key={msg.id} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''} animate-fade-in-up`}>
                         {msg.role === 'model' && (
-                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
+                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center relative">
                                 <BotIcon className="h-5 w-5 text-white" />
+                                {msg.isFallback && (
+                                    <div className="absolute -bottom-2 -right-2 text-xs bg-amber-500 text-white rounded-full px-1 py-0.5" title="Response from fallback provider">
+                                        F
+                                    </div>
+                                )}
                             </div>
                         )}
                         <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-700 text-slate-200 rounded-bl-none'}`}>

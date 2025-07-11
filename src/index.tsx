@@ -5,7 +5,9 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import RootLayout from './RootLayout';
 import HomePage from './pages/HomePage';
 import TrainingPage from './pages/TrainingPage';
-import CreatePage from './pages/CreatePage'; // Import the new page
+import CreatePage from './pages/CreatePage';
+import EditPage from './pages/EditPage'; // Import the Edit page
+import NotFoundPage from './pages/NotFoundPage';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -23,13 +25,21 @@ const router = createBrowserRouter([
                 element: <HomePage />,
             },
             {
-                path: 'process/:moduleId',
+                path: 'modules/:moduleId',
                 element: <TrainingPage />,
             },
             {
-                path: 'create', // Add the new route
+                path: 'modules/:moduleId/edit', // Edit route for admins
+                element: <EditPage />,
+            },
+            {
+                path: 'create',
                 element: <CreatePage />,
             },
+            {
+                path: '*', // Catch-all for 404
+                element: <NotFoundPage />,
+            }
         ],
     },
 ]);

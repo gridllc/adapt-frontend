@@ -32,6 +32,7 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   citations?: { uri: string; title: string; }[];
+  isFallback?: boolean;
 }
 
 export type StepStatus = 'done' | 'unclear' | 'skipped';
