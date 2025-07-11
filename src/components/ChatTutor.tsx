@@ -7,6 +7,7 @@ import { submitSuggestion } from '@/services/suggestionsService';
 import { getChatHistory, saveChatMessage } from '@/services/chatService';
 import type { ChatMessage, ProcessStep } from '@/types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons';
+import { useToast } from '@/hooks/useToast';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
@@ -33,6 +34,7 @@ const parseTimestamp = (text: string): number | null => {
 export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, transcriptContext, onTimestampClick, currentStepIndex, steps, onClose }) => {
     const queryClient = useQueryClient();
     const chatHistoryQueryKey = ['chatHistory', moduleId, sessionToken];
+    const { addToast } = useToast();
 
     const { data: initialMessages = [], isLoading: isLoadingHistory } = useQuery<ChatMessage[]>({
         queryKey: chatHistoryQueryKey,
@@ -51,8 +53,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
 
     const { mutate: persistMessage } = useMutation({
         mutationFn: (message: ChatMessage) => saveChatMessage(moduleId, sessionToken, message),
-        onError: (error) => {
-            console.error("Failed to save message:", error);
+        onError: (err) => {
+            console.error("Failed to save message:", err);
             setError("Failed to save message. Your conversation may not be persisted.");
         },
         onSuccess: () => {
@@ -195,12 +197,13 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         try {
             await submitSuggestion(moduleId, currentStepIndex, suggestionText.trim());
             setSubmittedSuggestions(prev => [...prev, suggestionText]);
-            alert("Suggestion submitted! The module owner will review it. Thank you for your feedback.");
-        } catch (error) {
-            console.error("Failed to submit suggestion", error);
-            setError("Could not submit suggestion at this time.");
+            addToast('success', 'Suggestion Submitted', 'Thank you for your feedback! The module owner will review it.');
+        } catch (err) {
+            console.error("Failed to submit suggestion", err);
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            addToast('error', 'Submission Failed', `Could not submit suggestion: ${errorMessage}`);
         }
-    }, [moduleId, currentStepIndex]);
+    }, [moduleId, currentStepIndex, addToast]);
 
     const renderMessageContent = (text: string) => {
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);

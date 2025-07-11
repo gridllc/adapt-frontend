@@ -9,6 +9,7 @@ import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/c
 import type { ProcessStep, PerformanceReportData } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { getChatHistory } from '@/services/chatService';
 import { generatePerformanceSummary } from '@/services/geminiService';
@@ -38,12 +39,12 @@ const TrainingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuth();
+  const { addToast } = useToast();
 
   const [currentTime, setCurrentTime] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>('steps');
   const [aiContext, setAiContext] = useState('');
   const [sessionToken, setSessionToken] = useState('');
-  const [copied, setCopied] = useState(false);
   const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
@@ -178,10 +179,12 @@ const TrainingPage: React.FC = () => {
 
   const handleCopyLink = useCallback(() => {
     navigator.clipboard.writeText(window.location.href).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      addToast('success', 'Link Copied', 'The training session link is now in your clipboard.');
+    }, (err) => {
+      addToast('error', 'Copy Failed', 'Could not copy the link to your clipboard.');
+      console.error('Failed to copy link: ', err);
     });
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     if (!moduleData || userActions.length === 0 || isCompleted) return;
@@ -228,7 +231,7 @@ const TrainingPage: React.FC = () => {
           </button>
           <button onClick={handleCopyLink} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
             <Share2Icon className="h-5 w-5" />
-            <span>{copied ? 'Copied!' : 'Share'}</span>
+            <span>Share</span>
           </button>
           {isAuthenticated && (
             <button onClick={() => navigate(`/modules/${moduleId}/edit`)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">

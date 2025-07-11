@@ -6,11 +6,12 @@ import { getAvailableModules, saveUploadedModule, deleteModule } from '@/service
 import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const [error, setError] = useState<string | null>(null);
+    const { addToast } = useToast();
     const [isDragging, setIsDragging] = useState(false);
     const { isAuthenticated, user, logout } = useAuth();
 
@@ -21,9 +22,8 @@ const HomePage: React.FC = () => {
     });
 
     const handleFileUpload = useCallback(async (file: File) => {
-        setError(null);
         if (file.type !== 'application/json') {
-            setError('Invalid file type. Please upload a .json file.');
+            addToast('error', 'Invalid File', 'Please upload a .json file.');
             return;
         }
 
@@ -37,18 +37,20 @@ const HomePage: React.FC = () => {
 
                 const savedModule = await saveUploadedModule(moduleData);
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
+                addToast('success', 'Upload Complete', `Module "${savedModule.title}" was uploaded.`);
                 navigate(`/modules/${savedModule.slug}`);
 
             } catch (err) {
                 console.error(err);
-                setError(err instanceof Error ? err.message : 'Failed to parse or save the module file.');
+                const errorMessage = err instanceof Error ? err.message : 'Failed to parse or save the module file.';
+                addToast('error', 'Upload Failed', errorMessage);
             }
         };
         reader.onerror = () => {
-            setError('Error reading file.');
+            addToast('error', 'Read Error', 'Could not read the selected file.');
         };
         reader.readAsText(file);
-    }, [navigate, queryClient]);
+    }, [navigate, queryClient, addToast]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -92,12 +94,14 @@ const HomePage: React.FC = () => {
             try {
                 await deleteModule(slug);
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
+                addToast('success', 'Module Deleted', `The module was successfully removed.`);
             } catch (err) {
                 console.error("Failed to delete module:", err);
-                setError(err instanceof Error ? err.message : 'An error occurred during deletion.');
+                const errorMessage = err instanceof Error ? err.message : 'An error occurred during deletion.';
+                addToast('error', 'Deletion Failed', errorMessage);
             }
         }
-    }, [queryClient]);
+    }, [queryClient, addToast]);
 
 
     return (
@@ -172,7 +176,6 @@ const HomePage: React.FC = () => {
                             </label>
                         </div>
                     </div>
-                    {error && <p className="mt-4 text-center text-sm text-red-500">{error}</p>}
                 </div>
             )}
 

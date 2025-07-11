@@ -7,10 +7,12 @@ import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
 import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
+    const { addToast } = useToast();
     const [processText, setProcessText] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [videoBlobUrl, setVideoBlobUrl] = useState('');
@@ -18,7 +20,6 @@ const CreatePage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         // Redundancy check, main protection is at the router level
@@ -45,11 +46,10 @@ const CreatePage: React.FC = () => {
 
     const handleGenerate = async () => {
         if (!processText.trim()) {
-            setError('Please provide a description of the process.');
+            addToast('error', 'Input Required', 'Please provide a description of the process.');
             return;
         }
         setIsLoading(true);
-        setError(null);
         setGeneratedModule(null);
 
         try {
@@ -58,8 +58,10 @@ const CreatePage: React.FC = () => {
                 moduleData.videoUrl = videoBlobUrl;
             }
             setGeneratedModule(moduleData);
+            addToast('success', 'Module Generated', 'The AI has created a draft. Please review and edit.');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            addToast('error', 'Generation Failed', errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -69,7 +71,6 @@ const CreatePage: React.FC = () => {
         if (!generatedModule || !videoFile) return;
 
         setIsAnalyzing(true);
-        setError(null);
         try {
             const { timestamps, transcript } = await analyzeVideoContent(videoFile, generatedModule.steps);
 
@@ -80,9 +81,11 @@ const CreatePage: React.FC = () => {
             }));
 
             setGeneratedModule({ ...generatedModule, steps: updatedSteps, transcript });
+            addToast('success', 'Analysis Complete', 'Timestamps and transcript have been added.');
 
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred during video analysis.');
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during video analysis.';
+            addToast('error', 'Analysis Failed', errorMessage);
         } finally {
             setIsAnalyzing(false);
         }
@@ -91,12 +94,13 @@ const CreatePage: React.FC = () => {
     const handleSave = async () => {
         if (!generatedModule) return;
         setIsSaving(true);
-        setError(null);
         try {
             const savedModule = await saveUploadedModule(generatedModule);
+            addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
             navigate(`/modules/${savedModule.slug}`);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not save the module. Please try again.');
+            const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
+            addToast('error', 'Save Failed', errorMessage);
             setIsSaving(false);
         }
     };
@@ -105,7 +109,6 @@ const CreatePage: React.FC = () => {
         setProcessText('');
         setVideoFile(null);
         setGeneratedModule(null);
-        setError(null);
         setIsLoading(false);
         setIsAnalyzing(false);
         setIsSaving(false);
@@ -168,7 +171,6 @@ const CreatePage: React.FC = () => {
                         >
                             {isLoading ? 'Generating...' : 'Generate Training'}
                         </button>
-                        {error && <p className="mt-4 text-red-500">{error}</p>}
                     </div>
                 </div>
             )}
@@ -189,7 +191,6 @@ const CreatePage: React.FC = () => {
                         isAnalyzing={isAnalyzing}
                         showAnalysisButton={!!videoFile}
                     />
-                    {error && <p className="mt-4 text-red-500 text-center">{error}</p>}
                     <div className="mt-8 flex justify-center gap-4">
                         <button onClick={resetForm} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                             Start Over

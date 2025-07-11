@@ -1,20 +1,23 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
+import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types';
 import { BookOpenIcon, TrashIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
 
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { isAuthenticated } = useAuth();
+    const { addToast } = useToast();
     const [module, setModule] = useState<TrainingModule | null>(null);
-    const [error, setError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -37,7 +40,28 @@ const EditPage: React.FC = () => {
         enabled: !!moduleId,
     });
 
-    // Memoize the filtering logic to avoid re-calculating on every render
+    // Real-time subscription for new suggestions
+    useEffect(() => {
+        if (!moduleId) return;
+
+        const channel = supabase
+            .channel(`suggestions-for-${moduleId}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'suggestions', filter: `module_id=eq.${moduleId}` },
+                (payload) => {
+                    console.log('New suggestion received!', payload);
+                    queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
+                    addToast('info', 'New Suggestion', 'A trainee has submitted a new suggestion for this module.');
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [moduleId, queryClient, addToast]);
+
     const suggestions = useMemo(() => {
         return allSuggestions.filter((s: Suggestion) => s.status === 'pending');
     }, [allSuggestions]);
@@ -79,25 +103,28 @@ const EditPage: React.FC = () => {
 
         await deleteSuggestion(suggestion.id);
         queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
+        addToast('success', 'Suggestion Accepted', 'The new method has been added to the step.');
     };
 
     const handleSuggestionReject = async (suggestionId: string) => {
         await deleteSuggestion(suggestionId);
         queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
+        addToast('info', 'Suggestion Rejected', 'The suggestion has been removed.');
     };
 
     const handleSave = async () => {
         if (!module) return;
         setIsSaving(true);
-        setError(null);
 
         try {
             const savedModule = await saveUploadedModule(module);
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             await queryClient.invalidateQueries({ queryKey: ['modules'] });
+            addToast('success', 'Changes Saved', 'The module has been updated successfully.');
             navigate(`/modules/${savedModule.slug}`);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not save the module. Please try again.');
+            const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
+            addToast('error', 'Save Failed', errorMessage);
             setIsSaving(false);
         }
     };
@@ -111,14 +138,15 @@ const EditPage: React.FC = () => {
 
         if (confirmation) {
             setIsDeleting(true);
-            setError(null);
             try {
                 await deleteModule(module.slug);
                 await queryClient.invalidateQueries({ queryKey: ['module', module.slug] });
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
+                addToast('success', 'Module Deleted', 'The module and all its data have been removed.');
                 navigate('/');
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Could not delete the module.');
+                const errorMessage = err instanceof Error ? err.message : 'Could not delete the module.';
+                addToast('error', 'Delete Failed', errorMessage);
                 setIsDeleting(false);
             }
         }
@@ -148,7 +176,6 @@ const EditPage: React.FC = () => {
                     onRejectSuggestion={handleSuggestionReject}
                     showAnalysisButton={false}
                 />
-                {error && <p className="mt-4 text-red-500 text-center">{error}</p>}
                 <div className="mt-8 flex justify-center items-center gap-4">
                     <button
                         onClick={handleDelete}

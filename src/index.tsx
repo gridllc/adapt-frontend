@@ -14,6 +14,7 @@ import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { ToastProvider } from '@/hooks/useToast';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -77,7 +78,9 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
-            <RouterProvider router={router} />
+            <ToastProvider>
+                <RouterProvider router={router} />
+            </ToastProvider>
         </QueryClientProvider>
     </React.StrictMode>
 );
