@@ -153,17 +153,17 @@ const EditPage: React.FC = () => {
     }
 
     if (isLoading || !module) {
-        return <div className="text-center p-8">Loading editor...</div>;
+        return <div className="text-center p-8 text-slate-500 dark:text-slate-400">Loading editor...</div>;
     }
 
     return (
         <div className="max-w-7xl mx-auto p-6">
             <header className="flex justify-between items-center mb-6">
-                <button onClick={() => navigate(`/modules/${module.slug}`)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
+                <button onClick={() => navigate(`/modules/${module.slug}`)} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
                     <BookOpenIcon className="h-5 w-5" />
                     <span>Back to Training</span>
                 </button>
-                <h1 className="text-3xl font-bold text-white text-center">Edit Module</h1>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center">Edit Module</h1>
                 <span className="w-40"></span>
             </header>
 
@@ -180,15 +180,15 @@ const EditPage: React.FC = () => {
                     <button
                         onClick={handleDelete}
                         disabled={isSaving || isDeleting}
-                        className="flex items-center gap-2 bg-red-800/80 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-500"
+                        className="flex items-center gap-2 bg-red-700 dark:bg-red-800/80 hover:bg-red-800 dark:hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-400 dark:disabled:bg-slate-500"
                     >
                         <TrashIcon className="h-5 w-5" />
                         <span>{isDeleting ? 'Deleting...' : 'Delete Module'}</span>
                     </button>
-                    <button onClick={() => navigate(`/modules/${module.slug}`)} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving || isDeleting}>
+                    <button onClick={() => navigate(`/modules/${module.slug}`)} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving || isDeleting}>
                         Cancel
                     </button>
-                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-500" disabled={isSaving || isDeleting}>
+                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-400 dark:disabled:bg-slate-500" disabled={isSaving || isDeleting}>
                         {isSaving ? 'Saving...' : 'Save Changes'}
                     </button>
                 </div>

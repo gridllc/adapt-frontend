@@ -99,28 +99,28 @@ const DashboardPage: React.FC = () => {
     return (
         <div className="max-w-4xl mx-auto p-8">
             <header className="flex justify-between items-center mb-8">
-                <button onClick={() => navigate('/')} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
+                <button onClick={() => navigate('/')} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
                     <BookOpenIcon className="h-5 w-5" />
                     <span>Back to Home</span>
                 </button>
-                <h1 className="text-3xl font-bold text-white text-center flex items-center gap-3">
-                    <BarChartIcon className="h-8 w-8 text-indigo-400" />
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center flex items-center gap-3">
+                    <BarChartIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
                     Analytics Dashboard
                 </h1>
                 <span className="w-40"></span>
             </header>
 
-            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl animate-fade-in-up border border-slate-700">
-                <h2 className="text-xl font-bold text-indigo-400 mb-4">Module Performance</h2>
-                <p className="text-slate-400 mb-6">Select a module to see trainee question patterns and AI-driven suggestions for improvement.</p>
+            <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
+                <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Module Performance</h2>
+                <p className="text-slate-500 dark:text-slate-400 mb-6">Select a module to see trainee question patterns and AI-driven suggestions for improvement.</p>
 
                 <div className="mb-8">
-                    <label htmlFor="module-select" className="block text-sm font-medium text-slate-300 mb-1">Select a Training Module</label>
+                    <label htmlFor="module-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select a Training Module</label>
                     <select
                         id="module-select"
                         value={selectedModule?.slug || ''}
                         onChange={handleModuleChange}
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         disabled={modules.length === 0}
                     >
                         {modules.map(module => (
@@ -132,33 +132,33 @@ const DashboardPage: React.FC = () => {
 
                 {/* AI Refinement Section */}
                 {isAnalyzing && (
-                    <div className="text-center p-6 bg-slate-900/50 rounded-lg">
-                        <SparklesIcon className="h-8 w-8 mx-auto text-indigo-400 animate-pulse" />
-                        <p className="mt-2 text-slate-300">AI is analyzing trainee data...</p>
+                    <div className="text-center p-6 bg-slate-200 dark:bg-slate-900/50 rounded-lg">
+                        <SparklesIcon className="h-8 w-8 mx-auto text-indigo-500 dark:text-indigo-400 animate-pulse" />
+                        <p className="mt-2 text-slate-600 dark:text-slate-300">AI is analyzing trainee data...</p>
                     </div>
                 )}
 
                 {!isAnalyzing && hotspot && refinement && (
-                    <div className="bg-gradient-to-br from-indigo-900/70 to-slate-900/50 p-6 rounded-xl border border-indigo-700 mb-8 animate-fade-in-up">
+                    <div className="bg-gradient-to-br from-indigo-200 dark:from-indigo-900/70 to-slate-200/50 dark:to-slate-900/50 p-6 rounded-xl border border-indigo-300 dark:border-indigo-700 mb-8 animate-fade-in-up">
                         <div className="flex items-center gap-3 mb-4">
-                            <LightbulbIcon className="h-8 w-8 text-yellow-400 flex-shrink-0" />
+                            <LightbulbIcon className="h-8 w-8 text-yellow-500 dark:text-yellow-400 flex-shrink-0" />
                             <div>
-                                <h3 className="text-lg font-bold text-yellow-300">AI Refinement Suggestion</h3>
-                                <p className="text-sm text-indigo-200">The AI found a point of confusion and suggests this improvement.</p>
+                                <h3 className="text-lg font-bold text-yellow-700 dark:text-yellow-300">AI Refinement Suggestion</h3>
+                                <p className="text-sm text-indigo-800 dark:text-indigo-200">The AI found a point of confusion and suggests this improvement.</p>
                             </div>
                         </div>
 
-                        <div className="bg-slate-900/60 p-4 rounded-lg">
-                            <p className="text-xs text-slate-400 font-semibold uppercase">Confusing Step</p>
-                            <p className="text-md font-bold text-slate-200 mb-3">{hotspot.stepTitle}</p>
+                        <div className="bg-white/60 dark:bg-slate-900/60 p-4 rounded-lg">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Confusing Step</p>
+                            <p className="text-md font-bold text-slate-800 dark:text-slate-200 mb-3">{hotspot.stepTitle}</p>
 
-                            <p className="text-xs text-slate-400 font-semibold uppercase">Common Questions</p>
-                            <ul className="list-disc list-inside text-sm text-slate-300 mb-4">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Common Questions</p>
+                            <ul className="list-disc list-inside text-sm text-slate-700 dark:text-slate-300 mb-4">
                                 {hotspot.questions.slice(0, 3).map((q, i) => <li key={i} className="italic truncate">"{q}"</li>)}
                             </ul>
 
-                            <p className="text-xs text-slate-400 font-semibold uppercase">Suggested New Description</p>
-                            <p className="text-sm text-slate-200 bg-slate-800 p-2 rounded-md">"{refinement.newDescription}"</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Suggested New Description</p>
+                            <p className="text-sm text-slate-800 dark:text-slate-200 bg-slate-200 dark:bg-slate-800 p-2 rounded-md">"{refinement.newDescription}"</p>
                         </div>
 
                         <div className="text-center mt-4">
@@ -173,18 +173,18 @@ const DashboardPage: React.FC = () => {
                 )}
 
                 {/* Question Frequency Section */}
-                <h3 className="text-lg font-bold text-indigo-400 mb-4">All Common Questions</h3>
+                <h3 className="text-lg font-bold text-indigo-500 dark:text-indigo-400 mb-4">All Common Questions</h3>
                 {questionStats.length > 0 ? (
                     <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
                         {questionStats.map((stat, index) => (
-                            <div key={index} className="bg-slate-900/50 p-4 rounded-lg flex items-center justify-between">
-                                <p className="text-slate-200 italic">"{stat.question}"</p>
+                            <div key={index} className="bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg flex items-center justify-between">
+                                <p className="text-slate-800 dark:text-slate-200 italic">"{stat.question}"</p>
                                 <span className="bg-indigo-600 text-white text-xs font-bold rounded-full px-3 py-1 flex-shrink-0 ml-4">{stat.count} {stat.count > 1 ? 'times' : 'time'}</span>
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <div className="text-center text-slate-500 bg-slate-900/50 p-6 rounded-lg">
+                    <div className="text-center text-slate-500 bg-slate-200 dark:bg-slate-900/50 p-6 rounded-lg">
                         {!isAnalyzing && "No question data found for this module."}
                     </div>
                 )}

@@ -212,12 +212,12 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
             const isSubmitted = submittedSuggestions.includes(suggestionText);
 
             return (
-                <div className="bg-indigo-900/50 p-3 rounded-md mt-2 border border-indigo-700">
+                <div className="bg-indigo-200/50 dark:bg-indigo-900/50 p-3 rounded-md mt-2 border border-indigo-300 dark:border-indigo-700">
                     <div className="flex items-center gap-2 mb-2">
-                        <LightbulbIcon className="h-5 w-5 text-yellow-400" />
-                        <h4 className="font-bold text-sm text-yellow-300">Suggestion</h4>
+                        <LightbulbIcon className="h-5 w-5 text-yellow-500 dark:text-yellow-400" />
+                        <h4 className="font-bold text-sm text-yellow-700 dark:text-yellow-300">Suggestion</h4>
                     </div>
-                    <p className="text-sm text-indigo-100 italic">"{suggestionText.trim()}"</p>
+                    <p className="text-sm text-indigo-800 dark:text-indigo-100 italic">"{suggestionText.trim()}"</p>
                     <button
                         onClick={() => handleSuggestionSubmit(suggestionText)}
                         disabled={isSubmitted}
@@ -281,16 +281,16 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
     }, [messages, moduleId]);
 
     return (
-        <div className="flex flex-col h-full">
-            <header className="flex items-center justify-between p-4 border-b border-slate-700 flex-shrink-0">
+        <div className="flex flex-col h-full bg-white dark:bg-slate-800/50 rounded-2xl">
+            <header className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
                 <div className="flex items-center gap-3">
-                    <MessageSquareIcon className="h-6 w-6 text-indigo-400" />
-                    <h2 className="font-bold text-lg text-white">Adapt AI Tutor</h2>
+                    <MessageSquareIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
+                    <h2 className="font-bold text-lg text-slate-900 dark:text-white">Adapt AI Tutor</h2>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handleDownloadChat}
-                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                         aria-label="Download chat history"
                         title="Download chat history"
                         disabled={messages.length === 0}
@@ -299,26 +299,26 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                     </button>
                     <button
                         onClick={toggleAutoSpeak}
-                        className="p-1 text-slate-400 hover:text-white transition-colors"
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                         aria-label={isAutoSpeakEnabled ? "Disable auto-speak" : "Enable auto-speak"}
                         title={isAutoSpeakEnabled ? "Disable auto-speak" : "Enable auto-speak"}
                     >
-                        {isAutoSpeakEnabled ? <SpeakerOnIcon className="h-5 w-5 text-green-400" /> : <SpeakerOffIcon className="h-5 w-5" />}
+                        {isAutoSpeakEnabled ? <SpeakerOnIcon className="h-5 w-5 text-green-500 dark:text-green-400" /> : <SpeakerOffIcon className="h-5 w-5" />}
                     </button>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+                    <button onClick={onClose} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
                         <XIcon className="h-6 w-6" />
                     </button>
                 </div>
             </header>
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-                {isLoadingHistory && <div className="text-center text-slate-400">Loading chat history...</div>}
+                {isLoadingHistory && <div className="text-center text-slate-500 dark:text-slate-400">Loading chat history...</div>}
 
                 {!isLoadingHistory && messages.length === 0 && !isLoading && !error && (
                     <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white" />
                         </div>
-                        <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-700 text-slate-200 rounded-bl-none">
+                        <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none">
                             <p className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I've been trained on your company's specific process for this task. Ask me anything, and I'll guide you using the official steps.</p>
                         </div>
                     </div>
@@ -335,14 +335,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                                 )}
                             </div>
                         )}
-                        <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-700 text-slate-200 rounded-bl-none'}`}>
+                        <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none'}`}>
                             <div className="text-base whitespace-pre-wrap">{renderMessageContent(msg.text)}</div>
                             {msg.citations && msg.citations.length > 0 && (
-                                <div className="mt-2 pt-2 border-t border-slate-600">
-                                    <h4 className="text-xs font-bold text-slate-400 mb-1">Sources:</h4>
+                                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Sources:</h4>
                                     <div className="space-y-1">
                                         {msg.citations.map((citation, idx) => (
-                                            citation?.uri && <a key={idx} href={citation.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-300 hover:underline">
+                                            citation?.uri && <a key={idx} href={citation.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 hover:underline">
                                                 <LinkIcon className="h-3 w-3 flex-shrink-0" />
                                                 <span className="truncate">{citation.title || new URL(citation.uri).hostname}</span>
                                             </a>
@@ -352,7 +352,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                             )}
                         </div>
                         {msg.role === 'user' && (
-                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-slate-600 flex items-center justify-center">
+                            <div className="flex-shrink-0 h-8 w-8 rounded-full bg-slate-400 dark:bg-slate-600 flex items-center justify-center">
                                 <UserIcon className="h-5 w-5 text-white" />
                             </div>
                         )}
@@ -363,32 +363,32 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white animate-pulse" />
                         </div>
-                        <div className="bg-slate-700 p-3 rounded-lg rounded-bl-none">
+                        <div className="bg-slate-100 dark:bg-slate-700 p-3 rounded-lg rounded-bl-none">
                             <div className="flex items-center space-x-1">
-                                <div className="h-2 w-2 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                <div className="h-2 w-2 bg-slate-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                <div className="h-2 w-2 bg-slate-400 rounded-full animate-bounce"></div>
+                                <div className="h-2 w-2 bg-slate-400 dark:bg-slate-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                <div className="h-2 w-2 bg-slate-400 dark:bg-slate-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                <div className="h-2 w-2 bg-slate-400 dark:bg-slate-400 rounded-full animate-bounce"></div>
                             </div>
                         </div>
                     </div>
                 )}
-                {error && <p className="text-red-400 text-center text-sm p-2 bg-red-900/50 rounded-md">{error}</p>}
+                {error && <p className="text-red-500 dark:text-red-400 text-center text-sm p-2 bg-red-100 dark:bg-red-900/50 rounded-md">{error}</p>}
                 <div ref={messagesEndRef} />
             </div>
-            <div className="p-4 border-t border-slate-700 flex-shrink-0">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
                 <form onSubmit={handleSendMessage} className="flex items-center gap-2">
                     <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder={error ? "AI Tutor is unavailable" : "Ask a question..."}
-                        className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white disabled:opacity-50"
+                        className="flex-1 bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white disabled:opacity-50"
                         disabled={isLoading || !!error || isLoadingHistory}
                     />
                     <button
                         type="submit"
                         disabled={isLoading || !input.trim() || !!error || isLoadingHistory}
-                        className="bg-indigo-600 text-white p-2.5 rounded-lg disabled:bg-slate-500 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
+                        className="bg-indigo-600 text-white p-2.5 rounded-lg disabled:bg-slate-400 dark:disabled:bg-slate-500 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
                     >
                         <SendIcon className="h-5 w-5" />
                     </button>

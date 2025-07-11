@@ -215,50 +215,50 @@ const TrainingPage: React.FC = () => {
 
   if (isLoadingModule || isLoadingSession || !sessionToken || !moduleData) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-xl">Loading Training Module...</p>
+      <div className="flex items-center justify-center h-screen bg-white dark:bg-slate-900">
+        <p className="text-xl text-slate-700 dark:text-slate-300">Loading Training Module...</p>
       </div>
     );
   }
 
   return (
     <>
-      <header className="bg-slate-800/50 backdrop-blur-sm border-b border-slate-700 p-4 sticky top-0 z-20 flex justify-between items-center">
+      <header className="bg-white/80 dark:bg-slate-800/50 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 p-4 sticky top-0 z-20 flex justify-between items-center">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/')} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
+          <button onClick={() => navigate('/')} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
             <BookOpenIcon className="h-5 w-5" />
             <span>Home</span>
           </button>
-          <button onClick={handleCopyLink} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
+          <button onClick={handleCopyLink} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
             <Share2Icon className="h-5 w-5" />
             <span>Share</span>
           </button>
           {isAuthenticated && (
-            <button onClick={() => navigate(`/modules/${moduleId}/edit`)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
+            <button onClick={() => navigate(`/modules/${moduleId}/edit`)} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
               <PencilIcon className="h-5 w-5" />
               <span>Edit Module</span>
             </button>
           )}
         </div>
-        <h1 className="text-2xl font-bold text-white text-center absolute left-1/2 -translate-x-1/2">{moduleData.title}</h1>
-        <span className="font-bold text-lg text-indigo-400">Adapt</span>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white text-center absolute left-1/2 -translate-x-1/2">{moduleData.title}</h1>
+        <span className="font-bold text-lg text-indigo-500 dark:text-indigo-400">Adapt</span>
       </header>
 
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-7xl mx-auto">
-        <div className="lg:col-span-2 bg-slate-800 rounded-lg shadow-xl overflow-hidden">
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden">
           <VideoPlayer
             ref={videoRef}
             videoUrl={moduleData.videoUrl}
             onTimeUpdate={handleTimeUpdate}
           />
         </div>
-        <div className="lg:col-span-1 h-[75vh] bg-slate-800 rounded-lg shadow-xl overflow-hidden flex flex-col">
+        <div className="lg:col-span-1 h-[75vh] bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden flex flex-col">
 
           {isCompleted ? (
             isGeneratingReport ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
-                <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-600 animate-pulse" />
-                <h3 className="font-bold text-lg text-slate-300">Generating Your Report...</h3>
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500 dark:text-slate-400">
+                <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-400 dark:text-slate-600 animate-pulse" />
+                <h3 className="font-bold text-lg text-slate-700 dark:text-slate-300">Generating Your Report...</h3>
                 <p className="text-sm mt-1">The AI is analyzing your performance.</p>
               </div>
             ) : performanceReport ? (
@@ -266,10 +266,10 @@ const TrainingPage: React.FC = () => {
             ) : null
           ) : (
             <>
-              <div className="flex border-b border-slate-700">
+              <div className="flex border-b border-slate-200 dark:border-slate-700">
                 <button
                   onClick={() => setActiveTab('steps')}
-                  className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'steps' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'
+                  className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'steps' ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'
                     }`}
                 >
                   <BookOpenIcon className="h-5 w-5" />
@@ -277,7 +277,7 @@ const TrainingPage: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setActiveTab('transcript')}
-                  className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'transcript' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'
+                  className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'transcript' ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'
                     }`}
                 >
                   <FileTextIcon className="h-5 w-5" />
@@ -302,9 +302,9 @@ const TrainingPage: React.FC = () => {
                     onLineClick={handleSeekTo}
                   />
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
-                    <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-600" />
-                    <h3 className="font-bold text-lg text-slate-300">No Transcript Available</h3>
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500 dark:text-slate-400">
+                    <FileTextIcon className="h-12 w-12 mx-auto mb-4 text-slate-400 dark:text-slate-600" />
+                    <h3 className="font-bold text-lg text-slate-700 dark:text-slate-300">No Transcript Available</h3>
                     <p className="text-sm mt-1">A transcript was not provided for this training module.</p>
                   </div>
                 )
@@ -326,7 +326,7 @@ const TrainingPage: React.FC = () => {
       )}
 
       {isChatOpen && moduleId && sessionToken && moduleData && (
-        <div className="fixed bottom-6 right-6 h-[85vh] w-[90vw] max-w-md bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-2xl flex flex-col border border-slate-700 z-50 animate-fade-in-up">
+        <div className="fixed bottom-6 right-6 h-[85vh] w-[90vw] max-w-md bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-slate-700 z-50 animate-fade-in-up">
           <ChatTutor
             moduleId={moduleId}
             sessionToken={sessionToken}
