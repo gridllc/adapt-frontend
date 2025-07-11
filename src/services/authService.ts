@@ -1,13 +1,13 @@
 import { supabase } from '@/services/apiClient.ts';
-import type { AuthTokenResponse, SignUpWithPasswordCredentials } from '@supabase/supabase-js';
+import type { AuthResponse, SignUpWithPasswordCredentials } from '@supabase/supabase-js';
 
 // --- Sign Up ---
-export const signUp = async (credentials: SignUpWithPasswordCredentials): Promise<AuthTokenResponse> => {
+export const signUp = async (credentials: SignUpWithPasswordCredentials): Promise<AuthResponse> => {
     return supabase.auth.signUp(credentials);
 };
 
 // --- Sign In ---
-export const signInWithPassword = async (credentials: SignUpWithPasswordCredentials): Promise<AuthTokenResponse> => {
+export const signInWithPassword = async (credentials: SignUpWithPasswordCredentials): Promise<AuthResponse> => {
     return supabase.auth.signInWithPassword(credentials);
 };
 

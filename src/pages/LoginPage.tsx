@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth.ts';
-import { BookOpenIcon, UserIcon, EyeIcon, EyeOffIcon } from '@/components/Icons.tsx';
+import { BookOpenIcon, EyeIcon, EyeOffIcon } from '@/components/Icons.tsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const LoginPage: React.FC = () => {

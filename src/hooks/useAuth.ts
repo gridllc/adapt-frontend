@@ -34,7 +34,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         fetchSession();
 
-        const { data: authListener } = authService.onAuthStateChange((event, session) => {
+        const { data: authListener } = authService.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             setIsLoading(false);
