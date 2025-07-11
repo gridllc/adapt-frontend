@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { startChat } from '@/services/geminiService';
-import * as ttsService from '@/services/ttsService';
+import { startChat } from '../services/geminiService';
+import * as ttsService from '../services/ttsService';
 import type { ChatMessage, ProcessStep } from '@/types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon } from '@/components/Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';

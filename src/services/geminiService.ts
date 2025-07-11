@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
-import type { ProcessStep, TranscriptLine, VideoAnalysisResult } from "@/types";
+import type { ProcessStep, VideoAnalysisResult } from "@/types";
 
 const PRO_PLAN_STORAGE_KEY = 'adapt-pro-plan-active';
 
@@ -187,7 +187,7 @@ export const analyzeVideoContent = async (
     steps: ProcessStep[]
 ): Promise<VideoAnalysisResult> => {
     const client = getAiClient();
-    let uploadResult;
+    let fileResource: any; // Using `any` to handle potential SDK response inconsistencies
 
     const systemInstruction = `You are a precise video analysis AI. Your task is to perform two actions on the provided video:
 1.  Identify the start and end times (in seconds) for each of a given list of process steps.
@@ -230,12 +230,15 @@ Respond ONLY with a single JSON object that strictly adheres to the provided sch
     };
 
     try {
-        uploadResult = await client.files.upload({
+        const uploadResponse = await client.files.upload({
             file: videoFile,
-            displayName: videoFile.name,
         });
 
-        const videoPart = { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } };
+        // The SDK is expected to return { file: ... }, but compiler errors suggest it might return the file object directly.
+        // This handles both cases by checking for the presence of the `file` property.
+        fileResource = (uploadResponse as any).file ?? uploadResponse;
+
+        const videoPart = { fileData: { mimeType: fileResource.mimeType, fileUri: fileResource.uri } };
         const textPart = { text: prompt };
 
         const result = await client.models.generateContent({
@@ -249,7 +252,7 @@ Respond ONLY with a single JSON object that strictly adheres to the provided sch
             throw new Error("The AI returned an empty response from video analysis.");
         }
 
-        const analysisResult = JSON.parse(jsonText);
+        const analysisResult: VideoAnalysisResult = JSON.parse(jsonText);
 
         // More robust validation of the AI's response
         if (!analysisResult || !Array.isArray(analysisResult.timestamps) || !Array.isArray(analysisResult.transcript)) {
@@ -271,9 +274,9 @@ Respond ONLY with a single JSON object that strictly adheres to the provided sch
         throw new Error(`${baseMessage} ${error instanceof Error ? error.message : ''}`);
     } finally {
         // Ensure uploaded file is cleaned up even if analysis fails
-        if (uploadResult?.file?.name) {
+        if (fileResource?.name) {
             try {
-                await client.files.delete({ name: uploadResult.file.name });
+                await client.files.delete({ name: fileResource.name });
             } catch (deleteError) {
                 // Log cleanup error, but don't throw, as the primary error is more important.
                 console.error("Failed to clean up uploaded file:", deleteError);

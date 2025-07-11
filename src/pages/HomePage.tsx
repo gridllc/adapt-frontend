@@ -1,14 +1,32 @@
-import React, { useState, useCallback } from 'react';
+
+import React, { useState, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAvailableModules, saveUploadedModule } from '@/data/modules';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon } from '@/components/Icons';
+import { isProPlanActive, setProPlanActive } from '../services/geminiService';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, StarIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [isPro, setIsPro] = useState(isProPlanActive());
     const availableModules = getAvailableModules();
+
+    useEffect(() => {
+        // As per the project brief, default to the Pro plan if no setting is stored.
+        const storedPlan = localStorage.getItem('adapt-pro-plan-active');
+        if (storedPlan === null) {
+            setProPlanActive(true);
+            setIsPro(true);
+        }
+    }, []); // Runs once on initial component mount
+
+    const handleProPlanToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const isActive = e.target.checked;
+        setProPlanActive(isActive);
+        setIsPro(isActive);
+    };
 
     const handleFile = useCallback((file: File) => {
         setError(null);
@@ -109,6 +127,21 @@ const HomePage: React.FC = () => {
                         <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
                     </label>
                     {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+                </div>
+            </div>
+
+            <div className="mt-12 bg-slate-800 p-8 rounded-2xl shadow-2xl">
+                <h2 className="text-2xl font-bold text-indigo-400 mb-4 text-center">Manage Your Plan</h2>
+                <div className="flex items-center justify-center bg-slate-900/50 p-4 rounded-lg">
+                    <StarIcon className={`h-6 w-6 mr-4 ${isPro ? 'text-yellow-400' : 'text-slate-500'}`} />
+                    <div className="flex-grow">
+                        <h3 className="font-bold text-slate-100">Pro Plan Access</h3>
+                        <p className="text-sm text-slate-400">Enable to use your Pro plan with higher API quotas.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" checked={isPro} onChange={handleProPlanToggle} className="sr-only peer" />
+                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
                 </div>
             </div>
 

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
+import { createModuleFromText, analyzeVideoContent } from '../services/geminiService';
 import { saveUploadedModule } from '@/data/modules';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
