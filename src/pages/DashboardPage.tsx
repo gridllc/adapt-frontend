@@ -19,11 +19,18 @@ const DashboardPage: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
-        const availableModules = getAvailableModules();
-        setModules(availableModules);
-        if (availableModules.length > 0) {
-            setSelectedModule(availableModules[0]);
-        }
+        const fetchModules = async () => {
+            try {
+                const availableModules = await getAvailableModules();
+                setModules(availableModules);
+                if (availableModules.length > 0) {
+                    setSelectedModule(availableModules[0]);
+                }
+            } catch (error) {
+                console.error("Failed to fetch modules:", error);
+            }
+        };
+        fetchModules();
     }, []);
 
     useEffect(() => {

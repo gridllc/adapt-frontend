@@ -1,6 +1,6 @@
 
 import type { TrainingModule, Suggestion } from '@/types';
-import { supabase } from '@/services/apiClient';
+import { supabase } from './apiClient';
 
 // Storage prefixes and keys
 const SESSION_PREFIX = 'adapt-session-';
@@ -25,7 +25,7 @@ const isTrainingModule = (data: any): data is TrainingModule => {
  * @param slug The slug of the module to retrieve.
  * @returns The TrainingModule if found, otherwise undefined.
  */
-export const getModule = (slug: string): TrainingModule | undefined => {
+export const getModule = (_slug: string): TrainingModule | undefined => {
     // This function will also need to be converted to async.
     // For now, it will not work correctly until migrated.
     console.warn("getModule is not yet migrated to use Supabase and may not function as expected.");
@@ -59,7 +59,7 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
  * @param moduleData The TrainingModule object.
  * @returns True if successful, false otherwise.
  */
-export const saveUploadedModule = (moduleData: TrainingModule): boolean => {
+export const saveUploadedModule = (_moduleData: TrainingModule): boolean => {
     // This function will also need to be converted to async.
     console.warn("saveUploadedModule is not yet migrated to use Supabase and may not function as expected.");
     return false;
