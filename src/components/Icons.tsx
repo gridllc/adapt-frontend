@@ -238,3 +238,9 @@ export const EyeOffIcon: React.FC<IconProps> = (props) => (
     <line x1="2" y1="2" x2="22" y2="22" />
   </svg>
 );
+
+import { AtSign } from 'lucide-react';
+
+export const AtSignIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <AtSign {...props} />
+);
