@@ -67,7 +67,7 @@ export function useTrainingSession(moduleId: string, sessionToken: string, total
         if (currentStepIndex === totalSteps - 1) {
           setIsCompleted(true);
         } else {
-          setCurrentStepIndex(prevIndex => prevIndex + 1);
+          setCurrentStepIndex((prevIndex: number) => prevIndex + 1);
         }
       }
     },

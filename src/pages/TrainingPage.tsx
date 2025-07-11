@@ -122,7 +122,7 @@ const TrainingPage: React.FC = () => {
         const unclearStepIndexes = new Set(
           userActions.filter(a => a.status === 'unclear').map(a => a.stepIndex)
         );
-        const unclearSteps = Array.from(unclearStepIndexes).map(i => moduleData.steps[i]).filter(Boolean);
+        const unclearSteps = Array.from(unclearStepIndexes).map((i: number) => moduleData.steps[i]).filter(Boolean);
 
         const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}-${sessionToken}`;
         const chatHistoryJson = localStorage.getItem(CHAT_HISTORY_KEY);
