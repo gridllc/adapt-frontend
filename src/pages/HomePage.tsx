@@ -14,7 +14,7 @@ const HomePage: React.FC = () => {
     const queryClient = useQueryClient();
     const { addToast } = useToast();
     const [isDragging, setIsDragging] = useState(false);
-    const { isAuthenticated, user, logout } = useAuth();
+    const { isAuthenticated, user, signOut } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -129,9 +129,9 @@ const HomePage: React.FC = () => {
                     </button>
                     {isAuthenticated && user ? (
                         <>
-                            <span className="text-sm text-slate-500 dark:text-slate-400 hidden sm:inline">{user.email}</span>
+                            <span className="text-sm text-slate-500 dark:text-slate-400 hidden sm:inline" title={user.email}>{user.email}</span>
                             <button
-                                onClick={logout}
+                                onClick={signOut}
                                 className="flex items-center gap-2 bg-slate-200 dark:bg-slate-700 hover:bg-red-500/20 dark:hover:bg-red-500/80 text-slate-700 dark:text-white text-sm font-semibold py-2 px-4 rounded-full transition-colors"
                                 title="Logout"
                             >

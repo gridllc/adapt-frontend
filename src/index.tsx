@@ -5,17 +5,18 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Corrected import paths based on the project file structure
-import RootLayout from '@/RootLayout';
-import HomePage from '@/pages/HomePage';
-import TrainingPage from '@/pages/TrainingPage';
-import CreatePage from '@/pages/CreatePage';
-import EditPage from '@/pages/EditPage';
-import LoginPage from '@/pages/LoginPage';
-import DashboardPage from '@/pages/DashboardPage';
-import NotFoundPage from '@/pages/NotFoundPage';
-import ProtectedRoute from '@/components/ProtectedRoute';
-import { ToastProvider } from '@/hooks/useToast';
-import { ThemeProvider } from '@/hooks/useTheme';
+import RootLayout from '@/RootLayout.tsx';
+import HomePage from '@/pages/HomePage.tsx';
+import TrainingPage from '@/pages/TrainingPage.tsx';
+import CreatePage from '@/pages/CreatePage.tsx';
+import EditPage from '@/pages/EditPage.tsx';
+import LoginPage from '@/pages/LoginPage.tsx';
+import DashboardPage from '@/pages/DashboardPage.tsx';
+import NotFoundPage from '@/pages/NotFoundPage.tsx';
+import ProtectedRoute from '@/components/ProtectedRoute.tsx';
+import { ToastProvider } from '@/hooks/useToast.tsx';
+import { ThemeProvider } from '@/hooks/useTheme.tsx';
+import { AuthProvider } from '@/hooks/useAuth.ts';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -80,9 +81,11 @@ root.render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
             <ThemeProvider>
-                <ToastProvider>
-                    <RouterProvider router={router} />
-                </ToastProvider>
+                <AuthProvider>
+                    <ToastProvider>
+                        <RouterProvider router={router} />
+                    </ToastProvider>
+                </AuthProvider>
             </ThemeProvider>
         </QueryClientProvider>
     </React.StrictMode>

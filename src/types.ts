@@ -98,3 +98,12 @@ export interface Toast {
   title: string;
   message: string;
 }
+
+export interface AuthUser {
+  id: string;
+  email?: string;
+  app_metadata: {
+    provider?: string;
+    [key: string]: any;
+  };
+}
