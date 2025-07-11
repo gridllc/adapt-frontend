@@ -1,14 +1,16 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { TrainingModule, ProcessStep, PerformanceReportData, ChatMessage } from '@/types';
+import type { TrainingModule, ProcessStep, PerformanceReportData } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { getModule } from '@/services/moduleService';
+import { getChatHistory } from '@/services/chatService';
 import { generatePerformanceSummary } from '@/services/geminiService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
@@ -37,7 +39,6 @@ const TrainingPage: React.FC = () => {
   const location = useLocation();
   const { isAuthenticated } = useAuth();
 
-  const [moduleData, setModuleData] = useState<TrainingModule | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>('steps');
   const [aiContext, setAiContext] = useState('');
@@ -60,19 +61,17 @@ const TrainingPage: React.FC = () => {
     setSessionToken(token);
   }, [location.search, location.pathname, navigate]);
 
-  useEffect(() => {
-    if (!moduleId) {
-      navigate('/');
-      return;
-    }
-    const data = getModule(moduleId);
-    if (data) {
-      setModuleData(data);
-    } else {
-      console.error(`Module with slug "${moduleId}" not found.`);
-      navigate('/not-found'); // Redirect to not found page
-    }
-  }, [moduleId, navigate]);
+  const {
+    data: moduleData,
+    isLoading: isLoadingModule,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['module', moduleId],
+    queryFn: () => getModule(moduleId!),
+    enabled: !!moduleId && !!sessionToken,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
 
   const {
     currentStepIndex,
@@ -80,8 +79,16 @@ const TrainingPage: React.FC = () => {
     userActions,
     markStep,
     isCompleted,
-    resetSession
+    resetSession,
+    isLoadingSession,
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, moduleData?.steps.length ?? 0);
+
+  useEffect(() => {
+    if (!isLoadingModule && (isError || !moduleData)) {
+      console.error(`Module with slug "${moduleId}" not found or failed to load.`, error);
+      navigate('/not-found');
+    }
+  }, [isLoadingModule, isError, moduleData, moduleId, navigate, error]);
 
   // Generate a focused AI context based on the current step
   useEffect(() => {
@@ -117,6 +124,7 @@ const TrainingPage: React.FC = () => {
   useEffect(() => {
     if (isCompleted && moduleData && !performanceReport && !isGeneratingReport) {
       const generateReport = async () => {
+        if (!moduleId || !sessionToken) return;
         setIsGeneratingReport(true);
 
         const unclearStepIndexes = new Set(
@@ -124,13 +132,10 @@ const TrainingPage: React.FC = () => {
         );
         const unclearSteps = Array.from(unclearStepIndexes).map((i: number) => moduleData.steps[i]).filter(Boolean);
 
-        const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}-${sessionToken}`;
-        const chatHistoryJson = localStorage.getItem(CHAT_HISTORY_KEY);
-        const userQuestions = chatHistoryJson
-          ? (JSON.parse(chatHistoryJson) as ChatMessage[])
-            .filter(msg => msg.role === 'user' && msg.text.trim())
-            .map(msg => msg.text.trim())
-          : [];
+        const chatHistory = await getChatHistory(moduleId, sessionToken);
+        const userQuestions = chatHistory
+          .filter(msg => msg.role === 'user' && msg.text.trim())
+          .map(msg => msg.text.trim());
 
         try {
           const aiFeedback = await generatePerformanceSummary(moduleData.title, unclearSteps, userQuestions);
@@ -205,7 +210,7 @@ const TrainingPage: React.FC = () => {
     resetSession();
   }
 
-  if (!moduleData || !sessionToken) {
+  if (isLoadingModule || isLoadingSession || !sessionToken || !moduleData) {
     return (
       <div className="flex items-center justify-center h-screen">
         <p className="text-xl">Loading Training Module...</p>

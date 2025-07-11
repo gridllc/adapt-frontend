@@ -7,6 +7,11 @@ export interface PlatformData {
     auth?: any; // Include auth for completeness, but handle with care
 }
 
+// NOTE: With the migration to a Supabase backend, these localStorage-based
+// import/export functions are now largely obsolete. They are no longer
+// wired up to the UI. A proper backup/restore solution would now be
+// handled at the database level (e.g., pg_dump).
+
 const MODULE_PREFIX = 'adapt-module-';
 const CHAT_PREFIX = 'adapt-ai-tutor-chat-history-';
 const SESSION_PREFIX = 'adapt-session-';
@@ -36,7 +41,7 @@ export const exportAllData = (): PlatformData => {
                 data.auth = value;
                 continue;
             }
-            
+
             const parsedValue = JSON.parse(value);
 
             if (key.startsWith(MODULE_PREFIX)) {
@@ -90,7 +95,7 @@ export const importAllData = (dataToImport: string): boolean => {
         writeJson(parsedData.modules);
         writeJson(parsedData.chatHistories);
         writeJson(parsedData.sessions);
-        
+
         if (parsedData.suggestions) {
             localStorage.setItem(SUGGESTIONS_KEY, JSON.stringify(parsedData.suggestions));
         }

@@ -1,21 +1,18 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { getAvailableModules, saveUploadedModule } from '@/services/moduleService';
-import { getQuestionFrequency, findHotspots, QuestionStats } from '@/services/analyticsService';
+import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
 import { generateRefinementSuggestion } from '@/services/geminiService';
 import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons';
 import { RefinementModal } from '@/components/RefinementModal';
-import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep } from '@/types';
+import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types';
 
 const DashboardPage: React.FC = () => {
     const navigate = useNavigate();
     const [modules, setModules] = useState<TrainingModule[]>([]);
     const [selectedModule, setSelectedModule] = useState<TrainingModule | null>(null);
-    const [questionStats, setQuestionStats] = useState<QuestionStats[]>([]);
-    const [hotspot, setHotspot] = useState<AnalysisHotspot | null>(null);
-    const [refinement, setRefinement] = useState<RefinementSuggestion | null>(null);
-    const [isRefining, setIsRefining] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
@@ -33,46 +30,34 @@ const DashboardPage: React.FC = () => {
         fetchModules();
     }, []);
 
-    useEffect(() => {
-        const analyzeModule = async () => {
-            if (!selectedModule) {
-                setQuestionStats([]);
-                setHotspot(null);
-                setRefinement(null);
-                return;
-            }
+    const { data: analysisData, isLoading: isAnalyzing } = useQuery({
+        queryKey: ['dashboardAnalysis', selectedModule?.slug],
+        queryFn: async () => {
+            if (!selectedModule) return { stats: [], hotspot: null, refinement: null };
 
-            // Reset state for new module
-            setHotspot(null);
-            setRefinement(null);
-            setIsRefining(true);
+            const stats = await getQuestionFrequency(selectedModule.slug);
+            const hotspot = findHotspots(stats, selectedModule);
+            let refinement: RefinementSuggestion | null = null;
 
-            // 1. Get question frequency
-            const stats = getQuestionFrequency(selectedModule.slug);
-            setQuestionStats(stats);
-
-            // 2. Find the biggest point of confusion ("hotspot")
-            const foundHotspot = findHotspots(stats, selectedModule);
-            setHotspot(foundHotspot);
-
-            // 3. If a hotspot is found, ask the AI for a refinement suggestion
-            if (foundHotspot) {
+            if (hotspot) {
                 try {
-                    const stepToRefine = selectedModule.steps[foundHotspot.stepIndex];
+                    const stepToRefine = selectedModule.steps[hotspot.stepIndex];
                     if (stepToRefine) {
-                        const suggestion = await generateRefinementSuggestion(stepToRefine, foundHotspot.questions);
-                        setRefinement(suggestion);
+                        refinement = await generateRefinementSuggestion(stepToRefine, hotspot.questions);
                     }
                 } catch (error) {
                     console.error("Failed to get AI refinement:", error);
                     // Silently fail, don't show an error to the user for this background task
                 }
             }
-            setIsRefining(false);
-        };
+            return { stats, hotspot, refinement };
+        },
+        enabled: !!selectedModule,
+    });
 
-        analyzeModule();
-    }, [selectedModule]);
+    const questionStats = analysisData?.stats ?? [];
+    const hotspot = analysisData?.hotspot ?? null;
+    const refinement = analysisData?.refinement ?? null;
 
     const handleModuleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
         const newSelectedModuleId = event.target.value;
@@ -80,7 +65,7 @@ const DashboardPage: React.FC = () => {
         setSelectedModule(module || null);
     };
 
-    const handleApplyRefinement = useCallback(() => {
+    const handleApplyRefinement = useCallback(async () => {
         if (!selectedModule || !hotspot || !refinement) return;
 
         const updatedModule = { ...selectedModule };
@@ -100,10 +85,11 @@ const DashboardPage: React.FC = () => {
         updatedModule.steps = newSteps;
 
         // Save the updated module and navigate to the editor for final review
-        if (saveUploadedModule(updatedModule)) {
-            navigate(`/modules/${updatedModule.slug}/edit`);
-        } else {
-            alert("Failed to apply changes. Please try again.");
+        try {
+            const savedModule = await saveUploadedModule(updatedModule);
+            navigate(`/modules/${savedModule.slug}/edit`);
+        } catch (err) {
+            alert(`Failed to apply changes. ${err instanceof Error ? err.message : 'Please try again.'}`);
         }
 
         setIsModalOpen(false);
@@ -145,14 +131,14 @@ const DashboardPage: React.FC = () => {
                 </div>
 
                 {/* AI Refinement Section */}
-                {isRefining && (
+                {isAnalyzing && (
                     <div className="text-center p-6 bg-slate-900/50 rounded-lg">
                         <SparklesIcon className="h-8 w-8 mx-auto text-indigo-400 animate-pulse" />
                         <p className="mt-2 text-slate-300">AI is analyzing trainee data...</p>
                     </div>
                 )}
 
-                {!isRefining && hotspot && refinement && (
+                {!isAnalyzing && hotspot && refinement && (
                     <div className="bg-gradient-to-br from-indigo-900/70 to-slate-900/50 p-6 rounded-xl border border-indigo-700 mb-8 animate-fade-in-up">
                         <div className="flex items-center gap-3 mb-4">
                             <LightbulbIcon className="h-8 w-8 text-yellow-400 flex-shrink-0" />
@@ -199,7 +185,7 @@ const DashboardPage: React.FC = () => {
                     </div>
                 ) : (
                     <div className="text-center text-slate-500 bg-slate-900/50 p-6 rounded-lg">
-                        {!isRefining && "No question data found for this module."}
+                        {!isAnalyzing && "No question data found for this module."}
                     </div>
                 )}
             </div>

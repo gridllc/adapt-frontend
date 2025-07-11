@@ -1,15 +1,15 @@
 
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService';
-import { exportAllData, importAllData } from '@/services/platformDataService';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, DatabaseIcon, DownloadIcon, TrashIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const { isAuthenticated, user, logout } = useAuth();
@@ -20,7 +20,7 @@ const HomePage: React.FC = () => {
         queryFn: getAvailableModules
     });
 
-    const handleFileUpload = useCallback((file: File) => {
+    const handleFileUpload = useCallback(async (file: File) => {
         setError(null);
         if (file.type !== 'application/json') {
             setError('Invalid file type. Please upload a .json file.');
@@ -28,30 +28,27 @@ const HomePage: React.FC = () => {
         }
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const text = e.target?.result;
                 if (typeof text !== 'string') throw new Error("Could not read file.");
 
                 const moduleData = JSON.parse(text) as TrainingModule;
 
-                // Note: saveUploadedModule needs to be migrated to async/Supabase
-                if (saveUploadedModule(moduleData)) {
-                    navigate(`/modules/${moduleData.slug}`);
-                } else {
-                    throw new Error("The provided JSON is not a valid Training Module or the save function is not yet migrated.");
-                }
+                const savedModule = await saveUploadedModule(moduleData);
+                await queryClient.invalidateQueries({ queryKey: ['modules'] });
+                navigate(`/modules/${savedModule.slug}`);
 
             } catch (err) {
                 console.error(err);
-                setError(err instanceof Error ? err.message : 'Failed to parse JSON file.');
+                setError(err instanceof Error ? err.message : 'Failed to parse or save the module file.');
             }
         };
         reader.onerror = () => {
             setError('Error reading file.');
         };
         reader.readAsText(file);
-    }, [navigate]);
+    }, [navigate, queryClient]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -83,71 +80,24 @@ const HomePage: React.FC = () => {
         setIsDragging(false);
     };
 
-    const handleExport = useCallback(() => {
-        try {
-            const platformData = exportAllData();
-            const dataStr = JSON.stringify(platformData, null, 2);
-            const blob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `adapt-platform-backup-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to export data.');
-        }
-    }, []);
-
-    const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        setError(null);
-        if (file.type !== 'application/json') {
-            setError('Invalid file type. Please upload a .json backup file.');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const text = e.target?.result;
-                if (typeof text !== 'string') throw new Error("Could not read import file.");
-
-                if (importAllData(text)) {
-                    alert('Import successful! The application will now reload.');
-                    window.location.reload();
-                }
-            } catch (err) {
-                console.error(err);
-                setError(err instanceof Error ? err.message : 'Failed to process import file.');
-            }
-        };
-        reader.onerror = () => setError('Error reading import file.');
-        reader.readAsText(file);
-
-        // Reset the input value so the same file can be selected again
-        event.target.value = '';
-    }, []);
-
-    const handleDeleteModule = useCallback((e: React.MouseEvent, slug: string) => {
+    const handleDeleteModule = useCallback(async (e: React.MouseEvent, slug: string) => {
         e.preventDefault();
         e.stopPropagation();
 
         const confirmation = window.confirm(
-            'Are you sure you want to delete this module? This will also remove ALL associated training progress and chat histories. This action cannot be undone.'
+            'Are you sure you want to delete this module? This will also remove ALL associated training progress and chat histories from the database. This action cannot be undone.'
         );
 
         if (confirmation) {
-            // Note: deleteModule needs to be migrated to async/Supabase
-            deleteModule(slug);
-            // After migration, we will invalidate the query instead of reloading
-            window.location.reload();
+            try {
+                await deleteModule(slug);
+                await queryClient.invalidateQueries({ queryKey: ['modules'] });
+            } catch (err) {
+                console.error("Failed to delete module:", err);
+                setError(err instanceof Error ? err.message : 'An error occurred during deletion.');
+            }
         }
-    }, []);
+    }, [queryClient]);
 
 
     return (
@@ -200,28 +150,7 @@ const HomePage: React.FC = () => {
                                 <span>View Dashboard</span>
                             </Link>
                         </div>
-                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
-                            <div className="flex items-center gap-3 mb-2">
-                                <DatabaseIcon className="h-6 w-6 text-indigo-400" />
-                                <h3 className="text-xl font-bold text-indigo-400">Data Management</h3>
-                            </div>
-                            <p className="text-slate-300 mb-6 flex-grow">Export all platform data to a file, or import a backup to restore state.</p>
-                            <div className="flex items-center gap-4 mt-auto">
-                                <button
-                                    onClick={handleExport}
-                                    className="flex-1 text-center bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <DownloadIcon className="h-5 w-5" />
-                                    <span>Export</span>
-                                </button>
-                                <label className="flex-1 text-center bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-2">
-                                    <UploadCloudIcon className="h-5 w-5" />
-                                    <span>Import</span>
-                                    <input type="file" className="hidden" accept=".json" onChange={handleImport} />
-                                </label>
-                            </div>
-                        </div>
-                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col md:col-span-2">
                             <h3 className="text-xl font-bold text-indigo-400 mb-2">Upload a Module</h3>
                             <p className="text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
 
@@ -230,7 +159,7 @@ const HomePage: React.FC = () => {
                                 onDragOver={handleDragOver}
                                 onDragEnter={handleDragEnter}
                                 onDragLeave={handleDragLeave}
-                                className={`flex justify-center w-full h-20 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
+                                className={`flex justify-center w-full h-24 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
                             >
                                 <span className="flex items-center space-x-2">
                                     <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { ModuleEditor } from '@/components/ModuleEditor';
@@ -11,33 +12,54 @@ import { useAuth } from '@/hooks/useAuth';
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { isAuthenticated } = useAuth();
     const [module, setModule] = useState<TrainingModule | null>(null);
-    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const {
+        data: initialModuleData,
+        isLoading,
+        isError,
+        error: queryError
+    } = useQuery({
+        queryKey: ['module', moduleId],
+        queryFn: () => getModule(moduleId!),
+        enabled: !!moduleId,
+        staleTime: 1000 * 60 * 5, // 5 minutes,
+        retry: false, // Don't retry on not found
+    });
+
+    const { data: suggestions = [] } = useQuery<Suggestion[]>({
+        queryKey: ['suggestions', moduleId],
+        queryFn: () => getSuggestionsForModule(moduleId!),
+        enabled: !!moduleId,
+        // Only show pending suggestions in the editor
+        select: (data) => data.filter(s => s.status === 'pending'),
+    });
 
     useEffect(() => {
         if (!isAuthenticated) {
             navigate('/login');
-            return;
         }
+    }, [isAuthenticated, navigate]);
 
-        if (!moduleId) {
-            navigate('/not-found');
-            return;
+    useEffect(() => {
+        if (initialModuleData) {
+            setModule(initialModuleData);
         }
+    }, [initialModuleData]);
 
-        const data = getModule(moduleId);
-        if (data) {
-            setModule(data);
-            const pendingSuggestions = getSuggestionsForModule(moduleId).filter(s => s.status === 'pending');
-            setSuggestions(pendingSuggestions);
-        } else {
+    useEffect(() => {
+        if (!isLoading && (isError || !initialModuleData)) {
+            console.error(`Failed to load module for editing: ${moduleId}`, queryError);
             navigate('/not-found');
         }
-    }, [moduleId, navigate, isAuthenticated]);
+    }, [isLoading, isError, initialModuleData, moduleId, navigate, queryError]);
 
-    const handleSuggestionAccept = (suggestion: Suggestion) => {
+    const handleSuggestionAccept = async (suggestion: Suggestion) => {
         if (!module) return;
 
         const newSteps = [...module.steps];
@@ -53,34 +75,32 @@ const EditPage: React.FC = () => {
             setModule({ ...module, steps: newSteps });
         }
 
-        deleteSuggestion(suggestion.id);
-        setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+        await deleteSuggestion(suggestion.id);
+        queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
     };
 
-    const handleSuggestionReject = (suggestionId: string) => {
-        deleteSuggestion(suggestionId);
-        setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
+    const handleSuggestionReject = async (suggestionId: string) => {
+        await deleteSuggestion(suggestionId);
+        queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!module) return;
+        setIsSaving(true);
+        setError(null);
 
-        const originalModule = getModule(moduleId!);
-        if (!originalModule) {
-            setError('Could not find the original module to save.');
-            return;
-        }
-
-        const moduleToSave = { ...module, slug: originalModule.slug };
-
-        if (saveUploadedModule(moduleToSave)) {
-            navigate(`/modules/${moduleToSave.slug}`);
-        } else {
-            setError('Could not save the module. Please try again.');
+        try {
+            const savedModule = await saveUploadedModule(module);
+            await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
+            await queryClient.invalidateQueries({ queryKey: ['modules'] });
+            navigate(`/modules/${savedModule.slug}`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not save the module. Please try again.');
+            setIsSaving(false);
         }
     };
 
-    const handleDelete = () => {
+    const handleDelete = async () => {
         if (!module) return;
 
         const confirmation = window.confirm(
@@ -88,12 +108,21 @@ const EditPage: React.FC = () => {
         );
 
         if (confirmation) {
-            deleteModule(module.slug);
-            navigate('/');
+            setIsDeleting(true);
+            setError(null);
+            try {
+                await deleteModule(module.slug);
+                await queryClient.invalidateQueries({ queryKey: ['module', module.slug] });
+                await queryClient.invalidateQueries({ queryKey: ['modules'] });
+                navigate('/');
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Could not delete the module.');
+                setIsDeleting(false);
+            }
         }
     }
 
-    if (!module) {
+    if (isLoading || !module) {
         return <div className="text-center p-8">Loading editor...</div>;
     }
 
@@ -121,16 +150,17 @@ const EditPage: React.FC = () => {
                 <div className="mt-8 flex justify-center items-center gap-4">
                     <button
                         onClick={handleDelete}
-                        className="flex items-center gap-2 bg-red-800/80 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                        disabled={isSaving || isDeleting}
+                        className="flex items-center gap-2 bg-red-800/80 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-500"
                     >
                         <TrashIcon className="h-5 w-5" />
-                        <span>Delete Module</span>
+                        <span>{isDeleting ? 'Deleting...' : 'Delete Module'}</span>
                     </button>
-                    <button onClick={() => navigate(`/modules/${module.slug}`)} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                    <button onClick={() => navigate(`/modules/${module.slug}`)} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving || isDeleting}>
                         Cancel
                     </button>
-                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
-                        Save Changes
+                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-500" disabled={isSaving || isDeleting}>
+                        {isSaving ? 'Saving...' : 'Save Changes'}
                     </button>
                 </div>
             </div>

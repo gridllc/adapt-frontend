@@ -1,73 +1,100 @@
 
 import { useState, useCallback, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getSession, saveSession } from '@/services/sessionService';
+import type { SessionState } from '@/services/sessionService';
 import type { UserAction, StepStatus } from '@/types';
 
+// This hook now manages state synchronization with the database.
 export function useTrainingSession(moduleId: string, sessionToken: string, totalSteps: number) {
-  const SESSION_KEY = `adapt-session-${moduleId}-${sessionToken}`;
+  const queryClient = useQueryClient();
+  const sessionQueryKey = ['session', moduleId, sessionToken];
 
-  const getInitialState = useCallback(() => {
-    try {
-      const savedState = localStorage.getItem(SESSION_KEY);
-      if (savedState) {
-        const parsed = JSON.parse(savedState);
-        // Add more robust validation to ensure the parsed data has the expected shape
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          'currentStepIndex' in parsed &&
-          typeof parsed.currentStepIndex === 'number' &&
-          'userActions' in parsed &&
-          Array.isArray(parsed.userActions)
-        ) {
-          // Also validate the content of userActions using a type guard
-          const validUserActions = parsed.userActions.filter(
-            (action: any): action is UserAction =>
-              action &&
-              typeof action === 'object' &&
-              typeof action.stepIndex === 'number' &&
-              typeof action.status === 'string' &&
-              typeof action.timestamp === 'number'
-          );
+  // Fetch initial session state from the database
+  const { data: sessionState, isLoading: isLoadingSession } = useQuery<SessionState | null>({
+    queryKey: sessionQueryKey,
+    queryFn: () => getSession(moduleId, sessionToken),
+    enabled: !!moduleId && !!sessionToken,
+    staleTime: Infinity, // We manage state locally and sync, no need to refetch in background
+    refetchOnWindowFocus: false,
+  });
 
-          return {
-            initialStepIndex: parsed.currentStepIndex,
-            initialUserActions: validUserActions,
-            initialIsCompleted: !!parsed.isCompleted,
-          };
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load session state, starting fresh.", e);
-      localStorage.removeItem(SESSION_KEY); // Clear corrupted data
-    }
-    return { initialStepIndex: 0, initialUserActions: [], initialIsCompleted: false };
-  }, [SESSION_KEY]);
+  // Local state that reflects the database, or a default initial state
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [userActions, setUserActions] = useState<UserAction[]>([]);
+  const [isCompleted, setIsCompleted] = useState(false);
 
-
-  const [currentStepIndex, setCurrentStepIndex] = useState(getInitialState().initialStepIndex);
-  const [userActions, setUserActions] = useState<UserAction[]>(getInitialState().initialUserActions);
-  const [isCompleted, setIsCompleted] = useState(getInitialState().initialIsCompleted);
-
-
+  // When session data loads from DB, update local state
   useEffect(() => {
-    try {
-      const stateToSave = JSON.stringify({ currentStepIndex, userActions, isCompleted });
-      localStorage.setItem(SESSION_KEY, stateToSave);
-    } catch (e) {
-      console.error("Failed to save session state.", e);
+    if (sessionState) {
+      setCurrentStepIndex(sessionState.currentStepIndex);
+      setUserActions(sessionState.userActions);
+      setIsCompleted(sessionState.isCompleted);
+    } else {
+      // If no session in DB, reset to initial state
+      setCurrentStepIndex(0);
+      setUserActions([]);
+      setIsCompleted(false);
     }
-  }, [currentStepIndex, userActions, isCompleted, SESSION_KEY]);
+  }, [sessionState]);
+
+  // Mutation to save session state to the database
+  const { mutate: persistSession } = useMutation({
+    mutationFn: (newState: Omit<SessionState, 'moduleId' | 'sessionToken'>) =>
+      saveSession({ moduleId, sessionToken, ...newState }),
+    onSuccess: (data, variables) => {
+      // Update the query cache with the new state
+      queryClient.setQueryData(sessionQueryKey, (old: SessionState | null) => ({
+        ...(old || {}),
+        moduleId,
+        sessionToken,
+        ...variables,
+      }));
+    },
+    onError: (error) => {
+      console.error("Failed to save session state:", error);
+      // Here you could implement retry logic or show a user-facing error
+    }
+  });
+
+  // Debounce the save operation to avoid hammering the DB on rapid state changes
+  useEffect(() => {
+    // Don't save on initial load if we are still waiting for data
+    if (isLoadingSession) return;
+
+    const currentStateInDb = {
+      currentStepIndex: sessionState?.currentStepIndex ?? 0,
+      userActions: sessionState?.userActions ?? [],
+      isCompleted: sessionState?.isCompleted ?? false,
+    };
+
+    const localState = { currentStepIndex, userActions, isCompleted };
+
+    // Only save if there's a change
+    if (JSON.stringify(currentStateInDb) === JSON.stringify(localState)) {
+      return;
+    }
+
+    const handler = setTimeout(() => {
+      persistSession(localState);
+    }, 1000); // Debounce for 1 second
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [currentStepIndex, userActions, isCompleted, persistSession, isLoadingSession, sessionState]);
+
 
   const markStep = useCallback(
     (status: StepStatus) => {
-      const timestamp = Date.now();
-      setUserActions(prevActions => [...prevActions, { stepIndex: currentStepIndex, status, timestamp }]);
+      const newAction: UserAction = { stepIndex: currentStepIndex, status, timestamp: Date.now() };
+      setUserActions(prevActions => [...prevActions, newAction]);
 
       if (status === 'done') {
         if (currentStepIndex === totalSteps - 1) {
           setIsCompleted(true);
         } else {
-          setCurrentStepIndex((prevIndex: number) => prevIndex + 1);
+          setCurrentStepIndex(prevIndex => prevIndex + 1);
         }
       }
     },
@@ -75,11 +102,13 @@ export function useTrainingSession(moduleId: string, sessionToken: string, total
   );
 
   const resetSession = useCallback(() => {
+    // This now resets the local state, and the useEffect will trigger a save
     setCurrentStepIndex(0);
     setUserActions([]);
     setIsCompleted(false);
-    localStorage.removeItem(SESSION_KEY);
-  }, [SESSION_KEY]);
+    // Also immediately trigger a save to clear the DB state
+    persistSession({ currentStepIndex: 0, userActions: [], isCompleted: false });
+  }, [persistSession]);
 
   return {
     currentStepIndex,
@@ -88,5 +117,6 @@ export function useTrainingSession(moduleId: string, sessionToken: string, total
     markStep,
     isCompleted,
     resetSession,
+    isLoadingSession, // Expose loading state
   };
 }

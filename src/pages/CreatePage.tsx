@@ -17,6 +17,7 @@ const CreatePage: React.FC = () => {
     const [generatedModule, setGeneratedModule] = useState<TrainingModule | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -87,12 +88,16 @@ const CreatePage: React.FC = () => {
         }
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!generatedModule) return;
-        if (saveUploadedModule(generatedModule)) {
-            navigate(`/modules/${generatedModule.slug}`);
-        } else {
-            setError('Could not save the module. Please try again.');
+        setIsSaving(true);
+        setError(null);
+        try {
+            const savedModule = await saveUploadedModule(generatedModule);
+            navigate(`/modules/${savedModule.slug}`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not save the module. Please try again.');
+            setIsSaving(false);
         }
     };
 
@@ -103,6 +108,7 @@ const CreatePage: React.FC = () => {
         setError(null);
         setIsLoading(false);
         setIsAnalyzing(false);
+        setIsSaving(false);
     }
 
     return (
@@ -185,11 +191,11 @@ const CreatePage: React.FC = () => {
                     />
                     {error && <p className="mt-4 text-red-500 text-center">{error}</p>}
                     <div className="mt-8 flex justify-center gap-4">
-                        <button onClick={resetForm} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                        <button onClick={resetForm} className="bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                             Start Over
                         </button>
-                        <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
-                            Save and Start Training
+                        <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-500" disabled={isSaving}>
+                            {isSaving ? 'Saving...' : 'Save and Start Training'}
                         </button>
                     </div>
                 </div>

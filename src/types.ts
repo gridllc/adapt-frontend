@@ -75,3 +75,11 @@ export interface PerformanceReportData {
   unclearSteps: ProcessStep[];
   userQuestions: string[];
 }
+
+export interface SessionState {
+  moduleId: string;
+  sessionToken: string;
+  currentStepIndex: number;
+  userActions: UserAction[];
+  isCompleted: boolean;
+}

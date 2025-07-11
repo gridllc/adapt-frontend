@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse } from '@/services/geminiService';
-import * as ttsService from '@/services/ttsService';
+import * as ttsService from '../services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
+import { getChatHistory, saveChatMessage } from '@/services/chatService';
 import type { ChatMessage, ProcessStep } from '@/types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
@@ -29,9 +31,16 @@ const parseTimestamp = (text: string): number | null => {
 };
 
 export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, transcriptContext, onTimestampClick, currentStepIndex, steps, onClose }) => {
-    const CHAT_HISTORY_KEY = `adapt-ai-tutor-chat-history-${moduleId}-${sessionToken}`;
+    const queryClient = useQueryClient();
+    const chatHistoryQueryKey = ['chatHistory', moduleId, sessionToken];
 
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const { data: initialMessages = [], isLoading: isLoadingHistory } = useQuery<ChatMessage[]>({
+        queryKey: chatHistoryQueryKey,
+        queryFn: () => getChatHistory(moduleId, sessionToken),
+        enabled: !!moduleId && !!sessionToken,
+    });
+
+    const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -40,20 +49,23 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
     const chatRef = useRef<Chat | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        let loadedMessages: ChatMessage[] = [];
-        try {
-            const savedHistoryJSON = localStorage.getItem(CHAT_HISTORY_KEY);
-            if (savedHistoryJSON) {
-                loadedMessages = JSON.parse(savedHistoryJSON);
-            }
-        } catch (e) {
-            console.error("Failed to parse chat history, starting fresh.", e);
-            localStorage.removeItem(CHAT_HISTORY_KEY);
+    const { mutate: persistMessage } = useMutation({
+        mutationFn: (message: ChatMessage) => saveChatMessage(moduleId, sessionToken, message),
+        onError: (error) => {
+            console.error("Failed to save message:", error);
+            setError("Failed to save message. Your conversation may not be persisted.");
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: chatHistoryQueryKey });
         }
-        setMessages(loadedMessages);
+    });
 
-        const geminiHistory: Content[] = loadedMessages.map(msg => ({
+    useEffect(() => {
+        setMessages(initialMessages);
+    }, [initialMessages]);
+
+    useEffect(() => {
+        const geminiHistory: Content[] = messages.map(msg => ({
             role: msg.role,
             parts: [{ text: msg.text }]
         }));
@@ -68,23 +80,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         return () => {
             ttsService.cancel();
         }
-    }, [transcriptContext, CHAT_HISTORY_KEY]);
-
-    useEffect(() => {
-        const handler = setTimeout(() => {
-            try {
-                if (messages.length > 0) {
-                    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
-                } else {
-                    localStorage.removeItem(CHAT_HISTORY_KEY);
-                }
-            } catch (e) {
-                console.error("Failed to save chat history.", e);
-            }
-        }, 500);
-
-        return () => clearTimeout(handler);
-    }, [messages, CHAT_HISTORY_KEY]);
+    }, [transcriptContext, messages]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -106,8 +102,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
 
         ttsService.cancel();
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
-        const currentMessages = [...messages, userMessage];
-        setMessages(currentMessages);
+        setMessages(prev => [...prev, userMessage]);
+        persistMessage(userMessage);
 
         const enrichedInput = enrichPromptIfNeeded(input);
         setInput('');
@@ -118,6 +114,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '', citations: [] }]);
 
         let finalModelText = '';
+        let finalCitations: ChatMessage['citations'] = [];
+        let isFallback = false;
+
         try {
             if (!chatRef.current) {
                 throw new Error("Chat not initialized");
@@ -132,7 +131,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                 setMessages(prev =>
                     prev.map(msg => {
                         if (msg.id !== modelMessageId) return msg;
-                        const updatedMsg: ChatMessage = { ...msg, text: msg.text + chunkText };
+                        const updatedMsg: ChatMessage = { ...msg, text: finalModelText };
                         if (groundingChunks && groundingChunks.length > 0) {
                             const newCitations = groundingChunks
                                 .map((c: GroundingChunk) => c.web)
@@ -142,6 +141,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                                 const currentCitations = msg.citations || [];
                                 const combined = [...currentCitations, ...newCitations];
                                 updatedMsg.citations = combined.filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i);
+                                finalCitations = updatedMsg.citations;
                             }
                         }
                         return updatedMsg;
@@ -154,7 +154,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         } catch (err) {
             console.warn("Primary AI provider failed. Attempting fallback.", err);
             try {
-                const fallbackText = await getFallbackResponse(enrichedInput, currentMessages, transcriptContext);
+                const fallbackText = await getFallbackResponse(enrichedInput, messages, transcriptContext);
+                finalModelText = fallbackText;
+                isFallback = true;
                 setMessages(prev =>
                     prev.map(msg =>
                         msg.id === modelMessageId
@@ -168,16 +170,30 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
             } catch (fallbackErr) {
                 const errorMessage = fallbackErr instanceof Error ? fallbackErr.message : 'An unknown error occurred.';
                 setError(errorMessage);
+                // remove placeholder and user message on total failure
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
             }
         } finally {
             setIsLoading(false);
+            if (finalModelText) {
+                const finalModelMessage: ChatMessage = {
+                    id: modelMessageId,
+                    role: 'model',
+                    text: finalModelText,
+                    citations: finalCitations,
+                    isFallback
+                };
+                persistMessage(finalModelMessage);
+            } else {
+                // Clean up placeholder if no response was generated
+                setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
+            }
         }
-    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages]);
+    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages, persistMessage]);
 
-    const handleSuggestionSubmit = useCallback((suggestionText: string) => {
+    const handleSuggestionSubmit = useCallback(async (suggestionText: string) => {
         try {
-            submitSuggestion(moduleId, currentStepIndex, suggestionText.trim());
+            await submitSuggestion(moduleId, currentStepIndex, suggestionText.trim());
             setSubmittedSuggestions(prev => [...prev, suggestionText]);
             alert("Suggestion submitted! The module owner will review it. Thank you for your feedback.");
         } catch (error) {
@@ -292,7 +308,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                 </div>
             </header>
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-                {messages.length === 0 && !isLoading && !error && (
+                {isLoadingHistory && <div className="text-center text-slate-400">Loading chat history...</div>}
+
+                {!isLoadingHistory && messages.length === 0 && !isLoading && !error && (
                     <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white" />
@@ -337,7 +355,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                         )}
                     </div>
                 ))}
-                {isLoading && messages[messages.length - 1]?.role === 'model' && (
+                {isLoading && (
                     <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white animate-pulse" />
@@ -362,11 +380,11 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                         onChange={(e) => setInput(e.target.value)}
                         placeholder={error ? "AI Tutor is unavailable" : "Ask a question..."}
                         className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white disabled:opacity-50"
-                        disabled={isLoading || !!error}
+                        disabled={isLoading || !!error || isLoadingHistory}
                     />
                     <button
                         type="submit"
-                        disabled={isLoading || !input.trim() || !!error}
+                        disabled={isLoading || !input.trim() || !!error || isLoadingHistory}
                         className="bg-indigo-600 text-white p-2.5 rounded-lg disabled:bg-slate-500 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
                     >
                         <SendIcon className="h-5 w-5" />

@@ -1,11 +1,6 @@
-import type { TrainingModule, Suggestion } from '@/types';
+
+import type { TrainingModule } from '@/types';
 import { supabase } from '@/services/apiClient';
-
-// Storage prefixes and keys
-const SESSION_PREFIX = 'adapt-session-';
-const CHAT_PREFIX = 'adapt-ai-tutor-chat-history-';
-const SUGGESTIONS_KEY = 'adapt-suggestions';
-
 
 const isTrainingModule = (data: any): data is TrainingModule => {
     return (
@@ -24,10 +19,29 @@ const isTrainingModule = (data: any): data is TrainingModule => {
  * @param slug The slug of the module to retrieve.
  * @returns The TrainingModule if found, otherwise undefined.
  */
-export const getModule = (_slug: string): TrainingModule | undefined => {
-    // This function will also need to be converted to async.
-    // For now, it will not work correctly until migrated.
-    console.warn("getModule is not yet migrated to use Supabase and may not function as expected.");
+export const getModule = async (slug: string): Promise<TrainingModule | undefined> => {
+    if (!slug) return undefined;
+
+    const { data, error } = await supabase
+        .from('modules')
+        .select('*')
+        .eq('slug', slug)
+        .single(); // Use .single() to get one object instead of an array
+
+    if (error) {
+        // .single() throws an error if no rows are found or more than one is found.
+        console.error(`Error fetching module with slug "${slug}":`, error.message);
+        if (error.code === 'PGRST116') { // PGRST116 is the code for "The result contains 0 rows"
+            return undefined; // Not found is not a throw-worthy error, just return undefined
+        }
+        throw new Error(error.message); // Other errors should be thrown
+    }
+
+    if (data && isTrainingModule(data)) {
+        return data;
+    }
+
+    console.warn(`Data received for slug "${slug}" is not a valid TrainingModule.`, data);
     return undefined;
 };
 
@@ -55,59 +69,59 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
 
 /**
  * Saves (upserts) a module to the database.
- * @param moduleData The TrainingModule object.
- * @returns True if successful, false otherwise.
+ * If a module with the same slug exists, it will be updated. Otherwise, a new one will be created.
+ * @param moduleData The TrainingModule object to save.
+ * @returns The saved TrainingModule on success.
+ * @throws An error if the save operation fails.
  */
-export const saveUploadedModule = (_moduleData: TrainingModule): boolean => {
-    // This function will also need to be converted to async.
-    console.warn("saveUploadedModule is not yet migrated to use Supabase and may not function as expected.");
-    return false;
+export const saveUploadedModule = async (moduleData: TrainingModule): Promise<TrainingModule> => {
+    const { data, error } = await supabase
+        .from('modules')
+        .upsert(moduleData, { onConflict: 'slug' })
+        .select()
+        .single();
+
+    if (error) {
+        console.error("Error saving module:", error);
+        throw new Error(`Failed to save module: ${error.message}`);
+    }
+
+    if (!data || !isTrainingModule(data)) {
+        throw new Error("Data returned after save is not a valid TrainingModule.");
+    }
+
+    return data;
 };
 
 /**
- * Deletes a module and all its associated data from the database.
+ * Deletes a module from the database and all its associated data.
  * @param slug The slug of the module to delete.
+ * @throws An error if the deletion fails.
  */
-export const deleteModule = (slug: string): void => {
-    // This function will also need to be converted to async.
-    console.warn("deleteModule is not yet migrated to use Supabase and may not function as expected.");
+export const deleteModule = async (slug: string): Promise<void> => {
+    // Note: In a production environment, you would ideally set up cascading deletes
+    // in your database schema. For this app, explicit deletion is clear and effective.
+    const tablesToDeleteFrom = ['chat_messages', 'training_sessions', 'suggestions'];
 
-    // The old localStorage logic is kept here as a reference and will be removed once
-    // the full migration to Supabase (with cascading deletes or equivalent logic) is complete.
-    console.log(`(LocalStorage) Deleting module '${slug}' and all associated data.`);
-    const keysToRemove: string[] = [];
-
-    // Find all keys related to this module
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (
-            key.startsWith(`${SESSION_PREFIX}${slug}-`) ||
-            key.startsWith(`${CHAT_PREFIX}${slug}-`)
-        )) {
-            keysToRemove.push(key);
+    console.log(`Deleting all associated data for module '${slug}'...`);
+    for (const table of tablesToDeleteFrom) {
+        const { error } = await supabase.from(table).delete().eq('module_id', slug);
+        if (error) {
+            console.error(`Error deleting from ${table} for module ${slug}:`, error);
+            throw new Error(`Failed to clean up associated data in ${table}.`);
         }
     }
 
-    // Remove the identified keys
-    keysToRemove.forEach(key => {
-        try {
-            localStorage.removeItem(key);
-        } catch (e) {
-            console.error(`Failed to remove key ${key} from localStorage`, e);
-        }
-    });
+    // Finally, delete the module itself
+    const { error: moduleError } = await supabase
+        .from('modules')
+        .delete()
+        .eq('slug', slug);
 
-    // Handle suggestions, which are all in one key
-    try {
-        const suggestionsJson = localStorage.getItem(SUGGESTIONS_KEY);
-        if (suggestionsJson) {
-            let suggestions: Suggestion[] = JSON.parse(suggestionsJson);
-            const filteredSuggestions = suggestions.filter(s => s.moduleId !== slug);
-            localStorage.setItem(SUGGESTIONS_KEY, JSON.stringify(filteredSuggestions));
-        }
-    } catch (e) {
-        console.error(`Failed to process and filter suggestions for module ${slug}`, e);
+    if (moduleError) {
+        console.error("Error deleting module from database:", moduleError);
+        throw new Error(`Failed to delete module from database: ${moduleError.message}`);
     }
 
-    console.log(`(LocalStorage) Deletion complete for module '${slug}'.`);
+    console.log(`Deletion complete for module '${slug}' and all associated database records.`);
 };
