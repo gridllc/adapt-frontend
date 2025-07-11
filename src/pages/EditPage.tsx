@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
@@ -31,13 +31,16 @@ const EditPage: React.FC = () => {
         retry: false, // Don't retry on not found
     });
 
-    const { data: suggestions = [] } = useQuery<Suggestion[]>({
+    const { data: allSuggestions = [] } = useQuery<Suggestion[]>({
         queryKey: ['suggestions', moduleId],
         queryFn: () => getSuggestionsForModule(moduleId!),
         enabled: !!moduleId,
-        // Only show pending suggestions in the editor
-        select: (data: Suggestion[]) => data.filter(s => s.status === 'pending'),
     });
+
+    // Memoize the filtering logic to avoid re-calculating on every render
+    const suggestions = useMemo(() => {
+        return allSuggestions.filter((s: Suggestion) => s.status === 'pending');
+    }, [allSuggestions]);
 
     useEffect(() => {
         if (!isAuthenticated) {
