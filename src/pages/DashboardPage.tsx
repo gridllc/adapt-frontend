@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAvailableModules, saveUploadedModule } from '@/data/modules';
+import { getAvailableModules, saveUploadedModule } from '@/services/moduleService';
 import { getQuestionFrequency, findHotspots, QuestionStats } from '@/services/analyticsService';
 import { generateRefinementSuggestion } from '@/services/geminiService';
 import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons';

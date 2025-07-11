@@ -8,7 +8,7 @@ import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/c
 import type { TrainingModule, ProcessStep, PerformanceReportData, ChatMessage } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
-import { getModule } from '@/data/modules';
+import { getModule } from '@/services/moduleService';
 import { generatePerformanceSummary } from '@/services/geminiService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';

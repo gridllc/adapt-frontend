@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
-import { saveUploadedModule } from '@/data/modules';
+import { saveUploadedModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
 import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';

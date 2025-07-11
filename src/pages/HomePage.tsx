@@ -1,8 +1,9 @@
 
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getAvailableModules, saveUploadedModule } from '@/data/modules';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon } from '@/components/Icons';
+import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService';
+import { exportAllData, importAllData } from '@/services/platformDataService';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, DatabaseIcon, DownloadIcon, TrashIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -11,9 +12,11 @@ const HomePage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const { isAuthenticated, user, logout } = useAuth();
-    const availableModules = getAvailableModules();
 
-    const handleFile = useCallback((file: File) => {
+    // Use a state to manage modules so the list re-renders on deletion
+    const [availableModules, setAvailableModules] = useState(() => getAvailableModules());
+
+    const handleFileUpload = useCallback((file: File) => {
         setError(null);
         if (file.type !== 'application/json') {
             setError('Invalid file type. Please upload a .json file.');
@@ -47,7 +50,7 @@ const HomePage: React.FC = () => {
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (file) handleFile(file);
+        if (file) handleFileUpload(file);
     };
 
     const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
@@ -55,8 +58,8 @@ const HomePage: React.FC = () => {
         event.stopPropagation();
         setIsDragging(false);
         const file = event.dataTransfer.files?.[0];
-        if (file) handleFile(file);
-    }, [handleFile]);
+        if (file) handleFileUpload(file);
+    }, [handleFileUpload]);
 
     const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
@@ -74,6 +77,71 @@ const HomePage: React.FC = () => {
         event.stopPropagation();
         setIsDragging(false);
     };
+
+    const handleExport = useCallback(() => {
+        try {
+            const platformData = exportAllData();
+            const dataStr = JSON.stringify(platformData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `adapt-platform-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to export data.');
+        }
+    }, []);
+
+    const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setError(null);
+        if (file.type !== 'application/json') {
+            setError('Invalid file type. Please upload a .json backup file.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const text = e.target?.result;
+                if (typeof text !== 'string') throw new Error("Could not read import file.");
+
+                if (importAllData(text)) {
+                    alert('Import successful! The application will now reload.');
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error(err);
+                setError(err instanceof Error ? err.message : 'Failed to process import file.');
+            }
+        };
+        reader.onerror = () => setError('Error reading import file.');
+        reader.readAsText(file);
+
+        // Reset the input value so the same file can be selected again
+        event.target.value = '';
+    }, []);
+
+    const handleDeleteModule = useCallback((e: React.MouseEvent, slug: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const confirmation = window.confirm(
+            'Are you sure you want to delete this module? This will also remove ALL associated training progress and chat histories. This action cannot be undone.'
+        );
+
+        if (confirmation) {
+            deleteModule(slug);
+            setAvailableModules(getAvailableModules()); // Re-fetch the list to update the UI
+        }
+    }, []);
+
 
     return (
         <div className="max-w-4xl mx-auto p-8">
@@ -108,7 +176,7 @@ const HomePage: React.FC = () => {
             {isAuthenticated && (
                 <div className="mb-12 animate-fade-in-up">
                     <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Admin Tools</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-slate-800/50 p-6 rounded-2xl border border-indigo-500/30">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-800/50 p-6 rounded-2xl border border-indigo-500/30">
                         <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
                             <h3 className="text-xl font-bold text-indigo-400 mb-2">Create with AI</h3>
                             <p className="text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
@@ -125,7 +193,28 @@ const HomePage: React.FC = () => {
                                 <span>View Dashboard</span>
                             </Link>
                         </div>
-                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col lg:col-span-1 md:col-span-2">
+                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                            <div className="flex items-center gap-3 mb-2">
+                                <DatabaseIcon className="h-6 w-6 text-indigo-400" />
+                                <h3 className="text-xl font-bold text-indigo-400">Data Management</h3>
+                            </div>
+                            <p className="text-slate-300 mb-6 flex-grow">Export all platform data to a file, or import a backup to restore state.</p>
+                            <div className="flex items-center gap-4 mt-auto">
+                                <button
+                                    onClick={handleExport}
+                                    className="flex-1 text-center bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <DownloadIcon className="h-5 w-5" />
+                                    <span>Export</span>
+                                </button>
+                                <label className="flex-1 text-center bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-2">
+                                    <UploadCloudIcon className="h-5 w-5" />
+                                    <span>Import</span>
+                                    <input type="file" className="hidden" accept=".json" onChange={handleImport} />
+                                </label>
+                            </div>
+                        </div>
+                        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
                             <h3 className="text-xl font-bold text-indigo-400 mb-2">Upload a Module</h3>
                             <p className="text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
 
@@ -134,7 +223,7 @@ const HomePage: React.FC = () => {
                                 onDragOver={handleDragOver}
                                 onDragEnter={handleDragEnter}
                                 onDragLeave={handleDragLeave}
-                                className={`flex justify-center w-full h-32 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
+                                className={`flex justify-center w-full h-20 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
                             >
                                 <span className="flex items-center space-x-2">
                                     <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
@@ -145,9 +234,9 @@ const HomePage: React.FC = () => {
                                 </span>
                                 <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
                             </label>
-                            {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
                         </div>
                     </div>
+                    {error && <p className="mt-4 text-center text-sm text-red-500">{error}</p>}
                 </div>
             )}
 
@@ -157,7 +246,7 @@ const HomePage: React.FC = () => {
                 {availableModules.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {availableModules.map(module => (
-                            <Link key={module.slug} to={`/modules/${module.slug}`} className="block p-6 bg-slate-800 rounded-xl hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-lg">
+                            <Link key={module.slug} to={`/modules/${module.slug}`} className="block p-6 bg-slate-800 rounded-xl hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-lg relative group">
                                 <div className="flex items-center gap-4">
                                     <div className="bg-indigo-600/30 p-3 rounded-lg">
                                         <BookOpenIcon className="h-6 w-6 text-indigo-300" />
@@ -167,6 +256,15 @@ const HomePage: React.FC = () => {
                                         <p className="text-slate-400">{module.steps.length} steps</p>
                                     </div>
                                 </div>
+                                {isAuthenticated && (
+                                    <button
+                                        onClick={(e) => handleDeleteModule(e, module.slug)}
+                                        className="absolute top-4 right-4 p-2 bg-slate-700/50 rounded-full text-slate-400 hover:bg-red-500/80 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                                        aria-label="Delete module"
+                                    >
+                                        <TrashIcon className="h-5 w-5" />
+                                    </button>
+                                )}
                             </Link>
                         ))}
                     </div>
