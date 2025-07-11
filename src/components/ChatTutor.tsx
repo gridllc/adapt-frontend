@@ -56,7 +56,12 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
             parts: [{ text: msg.text }]
         }));
 
-        chatRef.current = startChat(transcriptContext, geminiHistory);
+        try {
+            chatRef.current = startChat(transcriptContext, geminiHistory);
+        } catch (err) {
+            console.error("Failed to initialize chat:", err);
+            setError(err instanceof Error ? err.message : 'Could not start AI chat.');
+        }
 
         return () => {
             ttsService.cancel(); // Stop any speech when the component unmounts
@@ -87,7 +92,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
 
     const enrichPromptIfNeeded = useCallback((prompt: string): string => {
         const vagueQueryRegex = /\bdid i do this (right|correctly|okay)\??/i;
-        
+
         if (vagueQueryRegex.test(prompt.trim()) && steps?.[currentStepIndex]) {
             const step = steps[currentStepIndex];
             return `The user is on step ${currentStepIndex + 1}: "${step.title}". Their question is: "${prompt}". Based on the process instructions for this step, please confirm if they are likely doing it correctly and guide them on what to do next.`;
@@ -97,12 +102,12 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
 
     const handleSendMessage = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim() || isLoading) return;
+        if (!input.trim() || isLoading || !chatRef.current) return;
 
         ttsService.cancel();
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
-        
+
         const enrichedInput = enrichPromptIfNeeded(input);
         setInput('');
         setIsLoading(true);
@@ -210,7 +215,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
                 </div>
             </div>
             <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-                {messages.length === 0 && !isLoading && (
+                {messages.length === 0 && !isLoading && !error && (
                     <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white" />
@@ -264,7 +269,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
                         </div>
                     </div>
                 )}
-                {error && <p className="text-red-400 text-center text-sm">{error}</p>}
+                {error && <p className="text-red-400 text-center text-sm p-2 bg-red-900/50 rounded-md">{error}</p>}
                 <div ref={messagesEndRef} />
             </div>
             <div className="p-4 border-t border-slate-700 flex-shrink-0">
@@ -273,13 +278,13 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, transcriptContex
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask a question..."
-                        className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white"
-                        disabled={isLoading}
+                        placeholder={error ? "AI Tutor is unavailable" : "Ask a question..."}
+                        className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white disabled:opacity-50"
+                        disabled={isLoading || !!error}
                     />
                     <button
                         type="submit"
-                        disabled={isLoading || !input.trim()}
+                        disabled={isLoading || !input.trim() || !!error}
                         className="bg-indigo-600 text-white p-2.5 rounded-lg disabled:bg-slate-500 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
                     >
                         <SendIcon className="h-5 w-5" />

@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import RootLayout from './RootLayout';
 import HomePage from './pages/HomePage';
 import TrainingPage from './pages/TrainingPage';
+import CreatePage from './pages/CreatePage'; // Import the new page
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -24,6 +25,10 @@ const router = createBrowserRouter([
             {
                 path: 'process/:moduleId',
                 element: <TrainingPage />,
+            },
+            {
+                path: 'create', // Add the new route
+                element: <CreatePage />,
             },
         ],
     },

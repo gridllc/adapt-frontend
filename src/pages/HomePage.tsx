@@ -1,8 +1,7 @@
-
 import React, { useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAvailableModules, saveUploadedModule } from '@/data/modules';
-import { UploadCloudIcon, BookOpenIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 
 const HomePage: React.FC = () => {
@@ -38,7 +37,7 @@ const HomePage: React.FC = () => {
             }
         };
         reader.onerror = () => {
-             setError('Error reading file.');
+            setError('Error reading file.');
         };
         reader.readAsText(file);
     }, [navigate]);
@@ -60,7 +59,7 @@ const HomePage: React.FC = () => {
         event.preventDefault();
         event.stopPropagation();
     };
-    
+
     const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -80,53 +79,63 @@ const HomePage: React.FC = () => {
                 <p className="mt-4 text-lg text-slate-400">Your interactive AI-powered training assistant.</p>
             </header>
 
-            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl">
-                <h2 className="text-2xl font-bold text-indigo-400 mb-2">Upload a Training Module</h2>
-                <p className="text-slate-300 mb-6">Create your own training by uploading a JSON file.</p>
-                
-                <label
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    onDragEnter={handleDragEnter}
-                    onDragLeave={handleDragLeave}
-                    className={`flex justify-center w-full h-48 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
-                >
-                    <span className="flex items-center space-x-2">
-                        <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
-                        <span className="font-medium text-slate-400">
-                            Drop files to attach, or
-                            <span className="text-indigo-400 underline ml-1">browse</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                    <h2 className="text-2xl font-bold text-indigo-400 mb-2">Create with AI</h2>
+                    <p className="text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
+                    <Link to="/create" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
+                        <LightbulbIcon className="h-6 w-6" />
+                        <span>Start Creating</span>
+                    </Link>
+                </div>
+                <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col">
+                    <h2 className="text-2xl font-bold text-indigo-400 mb-2">Upload a Module</h2>
+                    <p className="text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
+
+                    <label
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragEnter={handleDragEnter}
+                        onDragLeave={handleDragLeave}
+                        className={`flex justify-center w-full h-24 px-4 transition bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
+                    >
+                        <span className="flex items-center space-x-2">
+                            <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-500'}`} />
+                            <span className="font-medium text-slate-400">
+                                Drop file or
+                                <span className="text-indigo-400 underline ml-1">browse</span>
+                            </span>
                         </span>
-                    </span>
-                    <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
-                </label>
-                {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+                        <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
+                    </label>
+                    {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+                </div>
             </div>
 
             <div className="mt-12">
-                 <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Or Select an Existing Module</h2>
-                 {availableModules.length > 0 ? (
+                <h2 className="text-2xl font-bold text-indigo-400 mb-6 text-center">Or Select an Existing Module</h2>
+                {availableModules.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {availableModules.map(module => (
                             <Link key={module.slug} to={`/process/${module.slug}`} className="block p-6 bg-slate-800 rounded-xl hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-lg">
                                 <div className="flex items-center gap-4">
-                                <div className="bg-indigo-600/30 p-3 rounded-lg">
+                                    <div className="bg-indigo-600/30 p-3 rounded-lg">
                                         <BookOpenIcon className="h-6 w-6 text-indigo-300" />
-                                </div>
-                                <div>
+                                    </div>
+                                    <div>
                                         <h3 className="text-xl font-bold text-slate-100">{module.title}</h3>
                                         <p className="text-slate-400">{module.steps.length} steps</p>
-                                </div>
+                                    </div>
                                 </div>
                             </Link>
                         ))}
                     </div>
-                 ) : (
+                ) : (
                     <div className="text-center bg-slate-800 p-8 rounded-lg">
                         <p className="text-slate-400">No training modules found.</p>
                         <p className="text-slate-500 text-sm mt-2">Upload a module JSON file to get started.</p>
                     </div>
-                 )}
+                )}
             </div>
         </div>
     );

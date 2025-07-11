@@ -41,3 +41,8 @@ export interface UserAction {
   status: StepStatus;
   timestamp: number;
 }
+
+export interface VideoAnalysisResult {
+  timestamps: { start: number; end: number }[];
+  transcript: TranscriptLine[];
+}
