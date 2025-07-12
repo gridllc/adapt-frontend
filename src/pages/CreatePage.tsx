@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService.ts';
-import { saveUploadedModule } from '@/services/moduleService.ts';
-import { ModuleEditor } from '@/components/ModuleEditor.tsx';
-import type { TrainingModule } from '@/types.ts';
-import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons.tsx';
-import { useAuth } from '@/hooks/useAuth.ts';
-import { useToast } from '@/hooks/useToast.tsx';
+import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
+import { saveUploadedModule } from '@/services/moduleService';
+import { ModuleEditor } from '@/components/ModuleEditor';
+import type { TrainingModule } from '@/types';
+import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const { addToast } = useToast();
     const [processText, setProcessText] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -124,9 +124,15 @@ const CreatePage: React.FC = () => {
 
     const handleSave = async () => {
         if (!generatedModule) return;
+        if (!user) {
+            addToast('error', 'Authentication Error', 'Cannot save module without a logged-in user.');
+            setIsSaving(false);
+            return;
+        }
+
         setIsSaving(true);
         try {
-            const savedModule = await saveUploadedModule(generatedModule);
+            const savedModule = await saveUploadedModule(generatedModule, user.id);
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
             navigate(`/modules/${savedModule.slug}`);
         } catch (err) {

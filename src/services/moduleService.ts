@@ -23,6 +23,7 @@ const mapToTrainingModule = (data: any): TrainingModule | null => {
         videoUrl: data.video_url || '',
         steps: data.steps || [],
         transcript: data.transcript || [],
+        userId: data.user_id,
     };
     return isTrainingModule(module) ? module : null;
 }
@@ -84,10 +85,11 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
  * Saves (upserts) a module to the database.
  * If a module with the same slug exists, it will be updated. Otherwise, a new one will be created.
  * @param moduleData The TrainingModule object to save.
+ * @param userId The ID of the currently authenticated user.
  * @returns The saved TrainingModule on success.
  * @throws An error if the save operation fails.
  */
-export const saveUploadedModule = async (moduleData: TrainingModule): Promise<TrainingModule> => {
+export const saveUploadedModule = async (moduleData: TrainingModule, userId: string): Promise<TrainingModule> => {
     // Map from JS camelCase to database snake_case before sending
     const dbData = {
         slug: moduleData.slug,
@@ -95,6 +97,7 @@ export const saveUploadedModule = async (moduleData: TrainingModule): Promise<Tr
         steps: moduleData.steps,
         transcript: moduleData.transcript,
         video_url: moduleData.videoUrl,
+        user_id: userId,
     };
 
     const { data, error } = await supabase

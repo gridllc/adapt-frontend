@@ -33,6 +33,11 @@ const HomePage: React.FC = () => {
     }, [availableModules, searchTerm]);
 
     const handleFileUpload = useCallback(async (file: File) => {
+        if (!user) {
+            addToast('error', 'Authentication Error', 'You must be logged in to upload a module.');
+            return;
+        }
+
         if (file.type !== 'application/json') {
             addToast('error', 'Invalid File', 'Please upload a .json file.');
             return;
@@ -46,7 +51,7 @@ const HomePage: React.FC = () => {
 
                 const moduleData = JSON.parse(text) as TrainingModule;
 
-                const savedModule = await saveUploadedModule(moduleData);
+                const savedModule = await saveUploadedModule(moduleData, user.id);
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
                 addToast('success', 'Upload Complete', `Module "${savedModule.title}" was uploaded.`);
                 navigate(`/modules/${savedModule.slug}`);
@@ -61,7 +66,7 @@ const HomePage: React.FC = () => {
             addToast('error', 'Read Error', 'Could not read the selected file.');
         };
         reader.readAsText(file);
-    }, [navigate, queryClient, addToast]);
+    }, [navigate, queryClient, addToast, user]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];

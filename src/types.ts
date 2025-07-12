@@ -25,6 +25,7 @@ export interface TrainingModule {
   videoUrl: string;
   steps: ProcessStep[];
   transcript?: TranscriptLine[];
+  userId?: string;
 }
 
 export interface ChatMessage {

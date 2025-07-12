@@ -2,20 +2,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService.ts';
-import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService.ts';
-import { supabase } from '@/services/apiClient.ts';
-import { ModuleEditor } from '@/components/ModuleEditor.tsx';
-import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types.ts';
-import { BookOpenIcon, TrashIcon } from '@/components/Icons.tsx';
-import { useAuth } from '@/hooks/useAuth.ts';
-import { useToast } from '@/hooks/useToast.tsx';
+import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
+import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
+import { supabase } from '@/services/apiClient';
+import { ModuleEditor } from '@/components/ModuleEditor';
+import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types';
+import { BookOpenIcon, TrashIcon } from '@/components/Icons';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
 
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const { addToast } = useToast();
     const [module, setModule] = useState<TrainingModule | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -114,10 +114,15 @@ const EditPage: React.FC = () => {
 
     const handleSave = async () => {
         if (!module) return;
+        if (!user) {
+            addToast('error', 'Authentication Error', 'Cannot save module without a logged-in user.');
+            setIsSaving(false);
+            return;
+        }
         setIsSaving(true);
 
         try {
-            const savedModule = await saveUploadedModule(module);
+            const savedModule = await saveUploadedModule(module, user.id);
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             await queryClient.invalidateQueries({ queryKey: ['modules'] });
             addToast('success', 'Changes Saved', 'The module has been updated successfully.');

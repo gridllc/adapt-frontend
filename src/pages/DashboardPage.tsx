@@ -2,15 +2,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getAvailableModules, saveUploadedModule } from '@/services/moduleService.ts';
-import { getQuestionFrequency, findHotspots } from '@/services/analyticsService.ts';
-import { generateRefinementSuggestion } from '@/services/geminiService.ts';
-import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons.tsx';
-import { RefinementModal } from '@/components/RefinementModal.tsx';
-import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types.ts';
+import { getAvailableModules, saveUploadedModule } from '@/services/moduleService';
+import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
+import { generateRefinementSuggestion } from '@/services/geminiService';
+import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons';
+import { RefinementModal } from '@/components/RefinementModal';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
+import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types';
 
 const DashboardPage: React.FC = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const { addToast } = useToast();
     const [modules, setModules] = useState<TrainingModule[]>([]);
     const [selectedModule, setSelectedModule] = useState<TrainingModule | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -66,7 +70,11 @@ const DashboardPage: React.FC = () => {
     };
 
     const handleApplyRefinement = useCallback(async () => {
-        if (!selectedModule || !hotspot || !refinement) return;
+        if (!selectedModule || !hotspot || !refinement || !user) {
+            const reason = !user ? 'You must be logged in.' : 'Missing required data.';
+            addToast('error', 'Cannot Apply', `Could not apply refinement. ${reason}`);
+            return;
+        }
 
         const updatedModule = { ...selectedModule };
         const newSteps = [...updatedModule.steps];
@@ -86,15 +94,17 @@ const DashboardPage: React.FC = () => {
 
         // Save the updated module and navigate to the editor for final review
         try {
-            const savedModule = await saveUploadedModule(updatedModule);
+            const savedModule = await saveUploadedModule(updatedModule, user.id);
+            addToast('success', 'Changes Applied', 'Redirecting to the editor for your final review.');
             navigate(`/modules/${savedModule.slug}/edit`);
         } catch (err) {
-            alert(`Failed to apply changes. ${err instanceof Error ? err.message : 'Please try again.'}`);
+            const errorMessage = err instanceof Error ? err.message : 'Please try again.';
+            addToast('error', 'Save Failed', `Failed to apply changes. ${errorMessage}`);
         }
 
         setIsModalOpen(false);
 
-    }, [selectedModule, hotspot, refinement, navigate]);
+    }, [selectedModule, hotspot, refinement, user, navigate, addToast]);
 
     return (
         <div className="max-w-4xl mx-auto p-8">
