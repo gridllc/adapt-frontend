@@ -18,7 +18,7 @@ self.addEventListener('install', (event) => {
       console.log('Service Worker: Caching app shell');
       return cache.addAll(APP_SHELL_URLS);
     }).catch(error => {
-        console.error('Failed to cache app shell:', error);
+      console.error('Failed to cache app shell:', error);
     })
   );
 });
@@ -42,10 +42,11 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const { url } = event.request;
+  const { url, method } = event.request;
 
-  // Strategy for API calls: Network first, then cache
-  if (url.includes(API_URL_PATTERN)) {
+  // Strategy for API GET calls: Network first, then cache.
+  // Only GET requests are cacheable.
+  if (url.includes(API_URL_PATTERN) && method === 'GET') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -62,7 +63,7 @@ self.addEventListener('fetch', (event) => {
           return caches.match(event.request);
         })
     );
-  } 
+  }
   // Strategy for App Shell & other assets: Cache first
   else {
     event.respondWith(
@@ -73,8 +74,8 @@ self.addEventListener('fetch', (event) => {
         }
         // Otherwise, fetch from the network
         return fetch(event.request).catch(error => {
-            console.log(`Service Worker: Fetch failed for ${url}; returning offline fallback if available.`);
-            // Optionally, return a generic offline page/response here
+          console.log(`Service Worker: Fetch failed for ${url}; returning offline fallback if available.`);
+          // Optionally, return a generic offline page/response here
         });
       })
     );
