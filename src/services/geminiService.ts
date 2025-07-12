@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion } from "@/types.ts";
 
@@ -10,9 +9,9 @@ let cachedClient: GoogleGenAI | null = null;
 
 /**
  * Lazily initializes and returns the GoogleGenAI client instance.
- * It prioritizes the 'Pro' API key and falls back to the standard key.
+ * It uses the API key from the execution environment.
  * 
- * @throws {Error} If no API key is found in the environment variables.
+ * @throws {Error} If no API key is found in the environment.
  * @returns {GoogleGenAI} The initialized Gemini AI client.
  */
 function getAiClient(): GoogleGenAI {
@@ -20,13 +19,13 @@ function getAiClient(): GoogleGenAI {
         return cachedClient;
     }
 
-    // Prioritize the Pro API key, but fall back to the standard key.
-    const apiKey = import.meta.env.VITE_API_KEY_PRO || import.meta.env.VITE_API_KEY;
+    // Per the coding guidelines, the API key MUST be obtained from `process.env.API_KEY`.
+    // The execution environment is expected to provide this variable.
+    const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
         throw new Error(
-            `AI features are unavailable. No API key found. ` +
-            `Please ensure either VITE_API_KEY_PRO or VITE_API_KEY environment variable is set in your .env.local file.`
+            "AI features are unavailable. The required API key is missing from the environment."
         );
     }
 
