@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService.ts';
 import { saveUploadedModule } from '@/services/moduleService.ts';
@@ -20,6 +20,8 @@ const CreatePage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+
 
     useEffect(() => {
         // Redundancy check, main protection is at the router level
@@ -42,6 +44,35 @@ const CreatePage: React.FC = () => {
         if (file) {
             setVideoFile(file);
         }
+    };
+
+    const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(false);
+        const file = event.dataTransfer.files?.[0];
+        if (file && file.type.startsWith('video/')) {
+            setVideoFile(file);
+        } else if (file) {
+            addToast('error', 'Invalid File Type', 'Please upload a video file.');
+        }
+    }, [addToast]);
+
+    const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (event: React.DragEvent<HTMLLabelElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsDragging(false);
     };
 
     const handleGenerate = async () => {
@@ -153,8 +184,14 @@ const CreatePage: React.FC = () => {
                                     </button>
                                 </div>
                             ) : (
-                                <label className="flex flex-col items-center justify-center w-full h-32 px-4 transition bg-slate-200 dark:bg-slate-900/50 border-2 border-slate-300 dark:border-slate-700 border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none">
-                                    <UploadCloudIcon className="w-8 h-8 text-slate-400 dark:text-slate-500" />
+                                <label
+                                    onDrop={handleDrop}
+                                    onDragOver={handleDragOver}
+                                    onDragEnter={handleDragEnter}
+                                    onDragLeave={handleDragLeave}
+                                    className={`flex flex-col items-center justify-center w-full h-32 px-4 transition bg-slate-200 dark:bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-300 dark:border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
+                                >
+                                    <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-400 dark:text-slate-500'}`} />
                                     <span className="mt-2 font-medium text-slate-500 dark:text-slate-400">
                                         Drop video file or <span className="text-indigo-500 dark:text-indigo-400 underline">browse</span>
                                     </span>
