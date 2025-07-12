@@ -1,6 +1,6 @@
 
-import type { TrainingModule } from '@/types.ts';
-import { supabase } from '@/services/apiClient.ts';
+import type { TrainingModule } from '@/types';
+import { supabase } from '@/services/apiClient';
 
 const isTrainingModule = (data: any): data is TrainingModule => {
     return (
@@ -122,29 +122,51 @@ export const saveUploadedModule = async (moduleData: TrainingModule): Promise<Tr
  * @throws An error if the deletion fails.
  */
 export const deleteModule = async (slug: string): Promise<void> => {
-    // Note: In a production environment, you would ideally set up cascading deletes
-    // in your database schema. For this app, explicit deletion is clear and effective.
-    const tablesToDeleteFrom = ['chat_messages', 'training_sessions', 'suggestions'];
+    // In a production environment with Foreign Key constraints and `ON DELETE CASCADE`,
+    // deleting the parent `modules` record would automatically delete child records.
+    // Without it, we must delete from dependent tables first to avoid foreign key violations.
 
-    console.log(`Deleting all associated data for module '${slug}'...`);
-    for (const table of tablesToDeleteFrom) {
-        const { error } = await supabase.from(table).delete().eq('module_id', slug);
-        if (error) {
-            console.error(`Error deleting from ${table} for module ${slug}:`, error);
-            throw new Error(`Failed to clean up associated data in ${table}.`);
-        }
+    // 1. Delete associated chat messages
+    const { error: chatError } = await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('module_id', slug);
+
+    if (chatError) {
+        console.error(`Error deleting chat messages for module ${slug}:`, chatError);
+        throw new Error(`Failed to delete chat history: ${chatError.message}`);
     }
 
-    // Finally, delete the module itself
+    // 2. Delete associated training sessions
+    const { error: sessionError } = await supabase
+        .from('training_sessions')
+        .delete()
+        .eq('module_id', slug);
+
+    if (sessionError) {
+        console.error(`Error deleting training sessions for module ${slug}:`, sessionError);
+        throw new Error(`Failed to delete session data: ${sessionError.message}`);
+    }
+
+    // 3. Delete associated suggestions
+    const { error: suggestionError } = await supabase
+        .from('suggestions')
+        .delete()
+        .eq('module_id', slug);
+
+    if (suggestionError) {
+        console.error(`Error deleting suggestions for module ${slug}:`, suggestionError);
+        throw new Error(`Failed to delete suggestions: ${suggestionError.message}`);
+    }
+
+    // 4. Finally, delete the module itself
     const { error: moduleError } = await supabase
         .from('modules')
         .delete()
         .eq('slug', slug);
 
     if (moduleError) {
-        console.error("Error deleting module from database:", moduleError);
-        throw new Error(`Failed to delete module from database: ${moduleError.message}`);
+        console.error(`Error deleting module ${slug}:`, moduleError);
+        throw new Error(`Failed to delete the module: ${moduleError.message}`);
     }
-
-    console.log(`Deletion complete for module '${slug}' and all associated database records.`);
 };
