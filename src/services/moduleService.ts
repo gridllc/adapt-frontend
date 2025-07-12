@@ -1,4 +1,3 @@
-
 import type { TrainingModule } from '@/types';
 import { supabase } from '@/services/apiClient';
 
@@ -83,13 +82,19 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
 
 /**
  * Saves (upserts) a module to the database.
+ * It internally gets the authenticated user's ID to associate with the module.
  * If a module with the same slug exists, it will be updated. Otherwise, a new one will be created.
  * @param moduleData The TrainingModule object to save.
- * @param userId The ID of the currently authenticated user.
  * @returns The saved TrainingModule on success.
- * @throws An error if the save operation fails.
+ * @throws An error if the save operation fails or if the user is not authenticated.
  */
-export const saveUploadedModule = async (moduleData: TrainingModule, userId: string): Promise<TrainingModule> => {
+export const saveUploadedModule = async (moduleData: TrainingModule): Promise<TrainingModule> => {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+        throw new Error('User not authenticated. Cannot save module.');
+    }
+
     // Map from JS camelCase to database snake_case before sending
     const dbData = {
         slug: moduleData.slug,
@@ -97,7 +102,7 @@ export const saveUploadedModule = async (moduleData: TrainingModule, userId: str
         steps: moduleData.steps,
         transcript: moduleData.transcript,
         video_url: moduleData.videoUrl,
-        user_id: userId,
+        user_id: user.id,
     };
 
     const { data, error } = await supabase

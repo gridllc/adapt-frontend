@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
@@ -132,7 +131,7 @@ const CreatePage: React.FC = () => {
 
         setIsSaving(true);
         try {
-            const savedModule = await saveUploadedModule(generatedModule, user.id);
+            const savedModule = await saveUploadedModule(generatedModule);
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
             navigate(`/modules/${savedModule.slug}`);
         } catch (err) {
