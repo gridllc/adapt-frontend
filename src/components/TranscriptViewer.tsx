@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import type { TranscriptLine } from '@/types.ts';
-import { DownloadIcon } from '@/components/Icons.tsx';
+import type { TranscriptLine } from '@/types';
+import { DownloadIcon } from '@/components/Icons';
 
 interface TranscriptViewerProps {
   transcript: TranscriptLine[];

@@ -5,18 +5,18 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Corrected import paths based on the project file structure
-import RootLayout from '@/RootLayout';
-import HomePage from '@/pages/HomePage';
-import TrainingPage from '@/pages/TrainingPage';
-import CreatePage from '@/pages/CreatePage';
-import EditPage from '@/pages/EditPage';
-import LoginPage from '@/pages/LoginPage';
-import DashboardPage from '@/pages/DashboardPage';
-import NotFoundPage from '@/pages/NotFoundPage';
-import ProtectedRoute from '@/components/ProtectedRoute';
-import { ToastProvider } from '@/hooks/useToast';
-import { ThemeProvider } from '@/hooks/useTheme';
-import { AuthProvider } from '@/hooks/useAuth';
+import RootLayout from '@/RootLayout.tsx';
+import HomePage from '@/pages/HomePage.tsx';
+import TrainingPage from '@/pages/TrainingPage.tsx';
+import CreatePage from '@/pages/CreatePage.tsx';
+import EditPage from '@/pages/EditPage.tsx';
+import LoginPage from '@/pages/LoginPage.tsx';
+import DashboardPage from '@/pages/DashboardPage.tsx';
+import NotFoundPage from '@/pages/NotFoundPage.tsx';
+import ProtectedRoute from '@/components/ProtectedRoute.tsx';
+import { ToastProvider } from '@/hooks/useToast.tsx';
+import { ThemeProvider } from '@/hooks/useTheme.tsx';
+import { AuthProvider } from '@/hooks/useAuth.ts';
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -93,11 +93,11 @@ root.render(
 
 // Register the service worker for PWA functionality
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').then(registration => {
-            console.log('ServiceWorker registration successful with scope: ', registration.scope);
-        }, err => {
-            console.log('ServiceWorker registration failed: ', err);
-        });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(registration => {
+      console.log('ServiceWorker registration successful with scope: ', registration.scope);
+    }, err => {
+      console.log('ServiceWorker registration failed: ', err);
     });
+  });
 }

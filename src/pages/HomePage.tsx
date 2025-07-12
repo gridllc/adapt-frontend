@@ -2,12 +2,12 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService.ts';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon } from '@/components/Icons.tsx';
-import type { TrainingModule } from '@/types.ts';
-import { useAuth } from '@/hooks/useAuth.ts';
-import { useToast } from '@/hooks/useToast.tsx';
-import { useTheme } from '@/hooks/useTheme.tsx';
+import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon } from '@/components/Icons';
+import type { TrainingModule } from '@/types';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/useToast';
+import { useTheme } from '@/hooks/useTheme';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();

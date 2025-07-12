@@ -1,9 +1,9 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSession, saveSession } from '@/services/sessionService.ts';
-import type { SessionState } from '@/services/sessionService.ts';
-import type { UserAction, StepStatus } from '@/types.ts';
+import { getSession, saveSession } from '@/services/sessionService';
+import type { SessionState } from '@/services/sessionService';
+import type { UserAction, StepStatus } from '@/types';
 
 // This hook now manages state synchronization with the database.
 export function useTrainingSession(moduleId: string, sessionToken: string, totalSteps: number) {

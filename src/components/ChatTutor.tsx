@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { startChat, getFallbackResponse } from '@/services/geminiService.ts';
-import * as ttsService from '../services/ttsService.ts';
-import { submitSuggestion } from '@/services/suggestionsService.ts';
-import { getChatHistory, saveChatMessage } from '@/services/chatService.ts';
-import type { ChatMessage, ProcessStep } from '@/types.ts';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons.tsx';
-import { useToast } from '@/hooks/useToast.tsx';
+import { startChat, getFallbackResponse } from '@/services/geminiService';
+import * as ttsService from '../services/ttsService';
+import { submitSuggestion } from '@/services/suggestionsService';
+import { getChatHistory, saveChatMessage } from '@/services/chatService';
+import type { ChatMessage, ProcessStep } from '@/types';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons';
+import { useToast } from '@/hooks/useToast';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
 interface ChatTutorProps {
