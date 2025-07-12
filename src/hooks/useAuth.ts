@@ -1,6 +1,6 @@
 import React, { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
 import * as authService from '@/services/authService.ts';
+import type { Session, User } from '@/services/authService.ts';
 
 interface AuthContextType {
     isAuthenticated: boolean;
@@ -8,6 +8,7 @@ interface AuthContextType {
     session: Session | null;
     isLoading: boolean;
     signIn: typeof authService.signInWithPassword;
+    login: typeof authService.signInWithPassword; // Alias for backward compatibility
     signUp: typeof authService.signUp;
     signOut: typeof authService.signOut;
 }
@@ -51,6 +52,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAuthenticated: !!user,
         isLoading,
         signIn: authService.signInWithPassword,
+        login: authService.signInWithPassword, // Add alias to value
         signUp: authService.signUp,
         signOut: authService.signOut,
     };

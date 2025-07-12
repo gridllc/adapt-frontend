@@ -1,5 +1,10 @@
 import { supabase } from '@/services/apiClient.ts';
-import type { AuthResponse, SignUpWithPasswordCredentials } from '@supabase/supabase-js';
+
+// Infer types from the Supabase client to avoid issues with library exports.
+export type AuthResponse = Awaited<ReturnType<typeof supabase.auth.signUp>>;
+export type SignUpWithPasswordCredentials = Parameters<typeof supabase.auth.signUp>[0];
+export type Session = NonNullable<AuthResponse['data']['session']>;
+export type User = NonNullable<AuthResponse['data']['user']>;
 
 // --- Sign Up ---
 export const signUp = async (credentials: SignUpWithPasswordCredentials): Promise<AuthResponse> => {
@@ -23,7 +28,7 @@ export const getSession = async () => {
 
 // --- Listen for Auth State Changes ---
 export const onAuthStateChange = (
-    callback: (event: string, session: import('@supabase/supabase-js').Session | null) => void
+    callback: (event: string, session: Session | null) => void
 ) => {
     return supabase.auth.onAuthStateChange(callback);
 };
