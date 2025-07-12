@@ -1,68 +1,131 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+import React from 'react';
+import ReactDOM from 'react-dom/client';
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+import {
+  createBrowserRouter,
+  RouterProvider
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+from 'react-router-dom';
+
+import {
+  QueryClient,
+  QueryClientProvider
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+from '@tanstack/react-query';
+
+// Corrected import paths based on the project file structure
+import RootLayout from '@/RootLayout.tsx';
+import HomePage from '@/pages/HomePage.tsx';
+import TrainingPage from '@/pages/TrainingPage.tsx';
+import CreatePage from '@/pages/CreatePage.tsx';
+import EditPage from '@/pages/EditPage.tsx';
+import LoginPage from '@/pages/LoginPage.tsx';
+import DashboardPage from '@/pages/DashboardPage.tsx';
+import NotFoundPage from '@/pages/NotFoundPage.tsx';
+import ProtectedRoute from '@/components/ProtectedRoute.tsx';
+
+import {
+  ToastProvider
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+from '@/hooks/useToast.tsx';
+
+import {
+  ThemeProvider
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+from '@/hooks/useTheme.tsx';
+
+import {
+  AuthProvider
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+from '@/hooks/useAuth.ts';
+import './index.css';
+
+const rootElement=document.getElementById('root');
+
+if ( !rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const queryClient=new QueryClient();
+
+const router=createBrowserRouter([ {
+
+    path: '/',
+    element: <RootLayout />,
+    children: [ {
+      index: true,
+      element: <HomePage />,
+    }
+
+    ,
+    {
+    path: 'login',
+    element: <LoginPage />,
   }
-  a:hover {
-    color: #747bff;
+
+  ,
+  {
+  path: 'dashboard',
+  element: (<ProtectedRoute> <DashboardPage /> </ProtectedRoute>),
+}
+
+,
+{
+path: 'modules/:moduleId',
+element: <TrainingPage />,
+}
+
+,
+{
+path: 'modules/:moduleId/edit',
+element: (<ProtectedRoute> <EditPage /> </ProtectedRoute>),
+}
+
+,
+{
+path: 'create',
+element: (<ProtectedRoute> <CreatePage /> </ProtectedRoute>),
+}
+
+,
+{
+path: '*', // Catch-all for 404
+element: <NotFoundPage />,
+}
+
+],
+}
+
+,
+]);
+
+
+const root=ReactDOM.createRoot(rootElement);
+
+root.render(<React.StrictMode> <QueryClientProvider client= {
+    queryClient
   }
-  button {
-    background-color: #f9f9f9;
+
+  > <ThemeProvider> <AuthProvider> <ToastProvider> <RouterProvider router= {
+    router
   }
+
+  /> </ToastProvider> </AuthProvider> </ThemeProvider> </QueryClientProvider> </React.StrictMode>);
+
+// Register the service worker for PWA functionality
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', ()=> {
+      navigator.serviceWorker.register('/sw.js').then(registration=> {
+          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }
+
+        , err=> {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+    });
 }

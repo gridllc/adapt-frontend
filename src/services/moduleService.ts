@@ -14,6 +14,19 @@ const isTrainingModule = (data: any): data is TrainingModule => {
     );
 };
 
+// Helper to map from database snake_case to JS camelCase
+const mapToTrainingModule = (data: any): TrainingModule | null => {
+    if (!data) return null;
+    const module: TrainingModule = {
+        slug: data.slug,
+        title: data.title,
+        videoUrl: data.video_url || '',
+        steps: data.steps || [],
+        transcript: data.transcript || [],
+    };
+    return isTrainingModule(module) ? module : null;
+}
+
 /**
  * Retrieves a training module by its slug from the database.
  * @param slug The slug of the module to retrieve.
@@ -30,15 +43,16 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
 
     if (error) {
         // .single() throws an error if no rows are found or more than one is found.
-        console.error(`Error fetching module with slug "${slug}":`, error.message);
         if (error.code === 'PGRST116') { // PGRST116 is the code for "The result contains 0 rows"
             return undefined; // Not found is not a throw-worthy error, just return undefined
         }
+        console.error(`Error fetching module with slug "${slug}":`, error.message);
         throw new Error(error.message); // Other errors should be thrown
     }
 
-    if (data && isTrainingModule(data)) {
-        return data;
+    const mappedModule = mapToTrainingModule(data);
+    if (mappedModule) {
+        return mappedModule;
     }
 
     console.warn(`Data received for slug "${slug}" is not a valid TrainingModule.`, data);
@@ -58,13 +72,12 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
         throw new Error(error.message);
     }
 
-    // Basic validation that the returned data is an array
     if (!Array.isArray(data)) {
         console.error("Data fetched from 'modules' is not an array:", data);
         return [];
     }
 
-    return data.filter(isTrainingModule);
+    return data.map(mapToTrainingModule).filter((m): m is TrainingModule => m !== null);
 };
 
 /**
@@ -75,9 +88,18 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
  * @throws An error if the save operation fails.
  */
 export const saveUploadedModule = async (moduleData: TrainingModule): Promise<TrainingModule> => {
+    // Map from JS camelCase to database snake_case before sending
+    const dbData = {
+        slug: moduleData.slug,
+        title: moduleData.title,
+        steps: moduleData.steps,
+        transcript: moduleData.transcript,
+        video_url: moduleData.videoUrl,
+    };
+
     const { data, error } = await supabase
         .from('modules')
-        .upsert(moduleData, { onConflict: 'slug' })
+        .upsert(dbData, { onConflict: 'slug' })
         .select()
         .single();
 
@@ -86,11 +108,12 @@ export const saveUploadedModule = async (moduleData: TrainingModule): Promise<Tr
         throw new Error(`Failed to save module: ${error.message}`);
     }
 
-    if (!data || !isTrainingModule(data)) {
+    const savedModule = mapToTrainingModule(data);
+    if (!savedModule) {
         throw new Error("Data returned after save is not a valid TrainingModule.");
     }
 
-    return data;
+    return savedModule;
 };
 
 /**
