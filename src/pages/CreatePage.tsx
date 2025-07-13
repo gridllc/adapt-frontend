@@ -131,7 +131,8 @@ const CreatePage: React.FC = () => {
         try {
             const savedModule = await saveModule({ moduleData: generatedModule, videoFile });
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
-            navigate(`/modules/${savedModule.slug}`, { state: { module: savedModule } });
+            // Navigate without passing state to force the training page to fetch the latest data
+            navigate(`/modules/${savedModule.slug}`);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
             addToast('error', 'Save Failed', errorMessage);
