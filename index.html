@@ -1,117 +1,106 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+<!DOCTYPE html>
+<html lang="en">
 
-// Corrected import paths based on the project file structure
-import RootLayout from '@/RootLayout';
-import HomePage from '@/pages/HomePage';
-import TrainingPage from '@/pages/TrainingPage';
-import CreatePage from '@/pages/CreatePage';
-import EditPage from '@/pages/EditPage';
-import LoginPage from '@/pages/LoginPage';
-import DashboardPage from '@/pages/DashboardPage';
-import NotFoundPage from '@/pages/NotFoundPage';
-import ProtectedRoute from '@/components/ProtectedRoute';
-import { ToastProvider } from '@/hooks/useToast';
-import { ThemeProvider } from '@/hooks/useTheme';
-import { AuthProvider } from '@/hooks/useAuth';
-import './index.css';
-import LiveCoachPage from '@/pages/LiveCoachPage';
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adapt - AI Training Platform</title>
+  <meta name="description"
+    content="The Adapt platform uses an AI-powered tutor to deliver interactive, video-based training modules. It enables experts to create guided learning experiences for any process." />
+  <link rel="icon"
+    href="data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3e%3ctext y='.9em' font-size='90'%3e🤖%3c/text%3e%3c/svg%3e">
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#1e293b">
+  <script>
+    if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
 
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-throw new Error("Could not find root element to mount to");
+    ::-webkit-scrollbar-track {
+      background: #e2e8f0;
+    }
+
+    .dark ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 4px;
+    }
+
+    .dark ::-webkit-scrollbar-thumb {
+      background: #475569;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    /* Simple fade-in animation */
+    @keyframes fade-in-up {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-in-up {
+      animation: fade-in-up 0.3s ease-out forwards;
+    }
+  </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.6.3",
+    "@tanstack/react-query": "https://esm.sh/@tanstack/react-query@^5.83.0",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "vite": "https://esm.sh/vite@^7.0.4",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^4.6.0",
+    "vite-tsconfig-paths": "https://esm.sh/vite-tsconfig-paths@^5.1.4",
+    "@google/genai": "https://esm.sh/@google/genai@^1.9.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.50.5",
+    "@mediapipe/tasks-vision": "https://esm.sh/@mediapipe/tasks-vision@^0.10.14"
+  }
 }
+</script>
+</head>
 
-const queryClient = new QueryClient();
+<body class="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-sans transition-colors duration-300">
+  <div id="root"></div>
+  <!--
+    VITE DEPLOYMENT NOTE:
+    The <script> tag below points to '/src/index.tsx', which is correct for local development (using 'npm run dev').
+    You should not change this line manually.
 
-const router = createBrowserRouter([
-{
-path: '/',
-element:
-<RootLayout />,
-children: [
-{
-index: true,
-element:
-<HomePage />,
-},
-{
-path: 'login',
-element:
-<LoginPage />,
-},
-{
-path: 'dashboard',
-element: (
-<ProtectedRoute>
-  <DashboardPage />
-</ProtectedRoute>
-),
-},
-{
-path: 'modules/:moduleId',
-element:
-<TrainingPage />,
-},
-{
-path: 'modules/:moduleId/edit',
-element: (
-<ProtectedRoute>
-  <EditPage />
-</ProtectedRoute>
-),
-},
-{
-path: 'modules/:moduleId/live',
-element: (
-<ProtectedRoute>
-  <LiveCoachPage />
-</ProtectedRoute>
-)
-},
-{
-path: 'create',
-element: (
-<ProtectedRoute>
-  <CreatePage />
-</ProtectedRoute>
-),
-},
-{
-path: '*', // Catch-all for 404
-element:
-<NotFoundPage />,
-}
-],
-},
-]);
+    For a production deployment to work, you MUST do two things in your hosting provider's settings (e.g., Render, Vercel, Netlify):
+    1.  Set the Build Command to: npm run build
+    2.  Set the Publish Directory to: dist
 
+    When 'npm run build' runs, Vite creates the 'dist' folder and automatically generates a new index.html file inside it.
+    That new file will have the correct script tags pointing to optimized JavaScript bundles (e.g., /assets/index-a1b2c3.js).
+    The error you are seeing means your server is using this development file instead of the correct production file from the 'dist' folder.
+  -->
+  <script type="module" src="/src/index.tsx"></script>
+</body>
 
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-<React.StrictMode>
-  <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <RouterProvider router={router} />
-        </ToastProvider>
-      </AuthProvider>
-    </ThemeProvider>
-  </QueryClientProvider>
-</React.StrictMode>
-);
-
-// Register the service worker for PWA functionality only in development
-// to avoid caching issues in production, as requested.
-if (import.meta.env.DEV && 'serviceWorker' in navigator) {
-window.addEventListener('load', () => {
-navigator.serviceWorker.register('/sw.js').then(registration => {
-console.log('ServiceWorker registration successful with scope: ', registration.scope);
-}, err => {
-console.log('ServiceWorker registration failed: ', err);
-});
-});
-}
+</html>

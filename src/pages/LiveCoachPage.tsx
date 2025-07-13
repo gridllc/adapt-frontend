@@ -1,27 +1,34 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { startChat } from '@/services/geminiService';
+import { initializeObjectDetector, detectObjectsInVideo } from '@/services/visionService';
 import * as ttsService from '@/services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import { BookOpenIcon, MicIcon, SparklesIcon } from '@/components/Icons';
+import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
+import type { DetectedObject } from '@/types';
+
+type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking';
 
 const LiveCoachPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
     const { addToast } = useToast();
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    const [status, setStatus] = useState<CoachStatus>('initializing');
     const [aiResponse, setAiResponse] = useState('');
-    const [isThinking, setIsThinking] = useState(false);
-    const chatRef = React.useRef<Chat | null>(null);
+    const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
 
-    const { data: moduleData, isLoading, isError } = useQuery({
+    const chatRef = useRef<Chat | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const lastDetectionTime = useRef(0);
+
+    const { data: moduleData, isLoading: isLoadingModule, isError, error: moduleError } = useQuery({
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId!),
         enabled: !!moduleId,
@@ -29,118 +36,191 @@ const LiveCoachPage: React.FC = () => {
         retry: false,
     });
 
-    const handleSpeechResult = useCallback(async (transcript: string) => {
-        if (!chatRef.current || isThinking) return;
+    const runDetection = useCallback(() => {
+        if (status !== 'initializing' && videoRef.current && videoRef.current.readyState >= 3) {
+            const detections = detectObjectsInVideo(videoRef.current);
+            if (detections.length > 0) {
+                setDetectedObjects(detections);
+                lastDetectionTime.current = Date.now();
+            }
+        }
+    }, [status]);
 
-        addToast('info', 'Question Sent', `"${transcript}"`);
-        setIsThinking(true);
+    // Main loop for video detection
+    useEffect(() => {
+        const detectionLoop = setInterval(runDetection, 100); // Run detection frequently
+        const clearLoop = setInterval(() => {
+            // Clear detections if none have been seen for a while
+            if (Date.now() - lastDetectionTime.current > 2000) {
+                setDetectedObjects([]);
+            }
+        }, 500);
+
+        return () => {
+            clearInterval(detectionLoop);
+            clearInterval(clearLoop);
+        };
+    }, [runDetection]);
+
+
+    const processAiQuery = useCallback(async (query: string) => {
+        if (!chatRef.current) {
+            addToast('error', 'AI Not Ready', 'The AI chat session is not initialized.');
+            return;
+        }
+
+        setStatus('thinking');
         setAiResponse('');
+        addToast('info', 'Question Sent', `"${query}"`);
+
+        let enrichedQuery = query;
+        const currentDetections = detectedObjects; // Capture current detections
+        if (currentDetections.length > 0) {
+            const objectLabels = currentDetections.map(obj => obj.label).join(', ');
+            enrichedQuery = `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`;
+        }
 
         try {
-            const stream = await chatRef.current.sendMessageStream({ message: transcript });
+            const stream = await chatRef.current.sendMessageStream({ message: enrichedQuery });
             let fullText = '';
             for await (const chunk of stream) {
-                const chunkText = chunk.text;
-                fullText += chunkText;
-                setAiResponse(fullText);
+                fullText += chunk.text;
+                setAiResponse(prev => prev + chunk.text);
             }
+
             if (fullText) {
-                ttsService.speak(fullText);
+                setStatus('speaking');
+                ttsService.speak(fullText, () => setStatus('listening'));
+            } else {
+                setStatus('listening');
             }
         } catch (error) {
             console.error("Error sending message to AI:", error);
             const errorMessage = "Sorry, I couldn't process that. Please try again.";
             addToast('error', 'AI Error', errorMessage);
             setAiResponse(errorMessage);
-            ttsService.speak(errorMessage);
-        } finally {
-            setIsThinking(false);
+            setStatus('speaking');
+            ttsService.speak(errorMessage, () => setStatus('listening'));
         }
-    }, [isThinking, addToast]);
+    }, [addToast, detectedObjects]);
 
-    const { isListening, startListening, stopListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
+    const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
+        if (!isFinal || status === 'thinking' || status === 'speaking') return;
 
-    // Initialize the AI chat with the module context
+        const hotword = "hey adapt";
+        const lowerTranscript = transcript.toLowerCase().trim();
+
+        if (lowerTranscript.startsWith(hotword)) {
+            const query = transcript.substring(hotword.length).trim();
+            if (query) {
+                ttsService.cancel();
+                processAiQuery(query);
+            }
+        }
+    }, [processAiQuery, status]);
+
+    const { startListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
+
+    // Effect to initialize everything
     useEffect(() => {
-        if (moduleData) {
-            const context = `Module: ${moduleData.title}\n` + moduleData.steps.map((s, i) => `Step ${i + 1}: ${s.title} - ${s.description}`).join('\n');
-            chatRef.current = startChat(context);
-        }
-        return () => {
-            ttsService.cancel();
+        const initialize = async () => {
+            if (moduleData && hasSupport) {
+                try {
+                    await initializeObjectDetector();
+                    const context = moduleData.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
+                    chatRef.current = startChat(context);
+                    startListening();
+                    setStatus('listening');
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'An unknown error occurred.';
+                    addToast('error', 'Initialization Failed', msg);
+                    setStatus('idle'); // Set to idle on failure
+                }
+            } else if (moduleData && !hasSupport) {
+                setStatus('idle');
+                addToast('error', 'Unsupported Browser', 'Speech recognition is not available on this browser.');
+            }
         };
-    }, [moduleData]);
+        initialize();
+    }, [moduleData, hasSupport, startListening, addToast]);
 
-    const currentInstruction = moduleData?.steps[currentStepIndex]?.title || 'Loading instructions...';
+    useEffect(() => {
+        if (!isLoadingModule && (isError || !moduleData)) {
+            console.error(`Failed to load live coach module: ${moduleId}`, moduleError);
+            navigate('/not-found');
+        }
+    }, [isLoadingModule, isError, moduleData, moduleId, navigate, moduleError]);
 
     const handleNextStep = () => {
-        if (moduleData && currentStepIndex < moduleData.steps.length - 1) {
-            setCurrentStepIndex(prev => prev + 1);
-        }
+        if (!moduleData) return;
+        setCurrentStepIndex(prev => {
+            const nextIndex = prev + 1;
+            if (nextIndex >= moduleData.steps.length) {
+                addToast('success', 'Module Complete!', 'You have finished all the steps.');
+                navigate(`/modules/${moduleId}`);
+                return prev;
+            }
+            return nextIndex;
+        });
     };
 
-    const handlePrevStep = () => {
-        if (currentStepIndex > 0) {
-            setCurrentStepIndex(prev => prev - 1);
+    const getStatusIndicator = () => {
+        if (detectedObjects.length > 0) {
+            return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
         }
-    };
-
-    if (isLoading) {
-        return <div className="text-center p-8 text-slate-500 dark:text-slate-400">Loading Live Coach...</div>;
+        switch (status) {
+            case 'initializing':
+                return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Vision AI is initializing...</>;
+            case 'listening':
+                return <><MicIcon className="h-6 w-6 text-green-400" />Listening for "Hey Adapt"...</>;
+            case 'thinking':
+                return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Thinking...</>;
+            case 'speaking':
+                return <><SpeakerOnIcon className="h-6 w-6 text-amber-400" />{aiResponse}</>;
+            case 'idle':
+                return 'Live Coach is idle.';
+            default:
+                return 'Initializing...';
+        }
     }
 
-    if (isError || !moduleData) {
-        return <div className="text-center p-8 text-red-500 dark:text-red-400">Failed to load module data.</div>;
+    if (isLoadingModule || !moduleData) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-slate-900">
+                <p className="text-xl text-slate-300">Loading Live Coach...</p>
+            </div>
+        );
     }
+
+    const currentInstruction = moduleData.steps[currentStepIndex]?.title ?? "Module Complete!";
 
     return (
-        <div className="w-screen h-screen bg-slate-800 flex flex-col items-center justify-center p-4 gap-4">
-            <header className="absolute top-4 left-4 z-20">
-                <button onClick={() => navigate('/')} className="flex items-center gap-2 py-2 px-4 rounded-full bg-black/50 text-white hover:bg-black/80 transition-colors backdrop-blur-sm">
+        <div className="flex flex-col h-screen bg-slate-800 text-white font-sans">
+            <header className="flex-shrink-0 p-4 bg-slate-900/50 backdrop-blur-sm border-b border-slate-700 flex justify-between items-center">
+                <button onClick={() => navigate(`/modules/${moduleId}`)} className="text-slate-300 hover:text-indigo-400 transition-colors flex items-center gap-2">
                     <BookOpenIcon className="h-5 w-5" />
-                    <span className="font-semibold">End Session</span>
+                    <span>Back to Training</span>
                 </button>
+                <h1 className="text-2xl font-bold">{moduleData.title}</h1>
+                <span className="font-bold text-lg text-indigo-400">Live Coach</span>
             </header>
 
-            <div className="w-full max-w-4xl aspect-video">
-                <LiveCameraFeed instruction={`Step ${currentStepIndex + 1}/${moduleData.steps.length}: ${currentInstruction}`} />
-            </div>
-
-            <div className="flex items-center gap-4 z-10">
-                <button onClick={handlePrevStep} disabled={currentStepIndex === 0} className="bg-slate-600 text-white font-bold py-3 px-6 rounded-lg disabled:opacity-50 hover:bg-slate-500 transition-colors">
-                    Prev Step
-                </button>
-                <div className="relative">
-                    <button
-                        onMouseDown={startListening}
-                        onMouseUp={stopListening}
-                        onTouchStart={startListening}
-                        onTouchEnd={stopListening}
-                        disabled={!hasSupport || isThinking}
-                        className={`relative flex items-center justify-center w-24 h-24 rounded-full transition-all duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed ${isListening ? 'bg-red-600 scale-110' : 'bg-indigo-600 hover:bg-indigo-500'}`}
-                        aria-label="Hold to talk"
-                    >
-                        <MicIcon className="h-10 w-10 text-white" />
-                    </button>
-                    {isListening && <div className="absolute inset-0 border-4 border-red-400 rounded-full animate-pulse"></div>}
+            <main className="flex-1 p-4 md:p-6 grid grid-rows-[1fr,auto] gap-4 overflow-hidden">
+                <div className="min-h-0">
+                    <LiveCameraFeed
+                        ref={videoRef}
+                        instruction={currentInstruction}
+                        onClick={handleNextStep}
+                        detectedObjects={detectedObjects}
+                    />
                 </div>
-                <button onClick={handleNextStep} disabled={!moduleData || currentStepIndex === moduleData.steps.length - 1} className="bg-slate-600 text-white font-bold py-3 px-6 rounded-lg disabled:opacity-50 hover:bg-slate-500 transition-colors">
-                    Next Step
-                </button>
-            </div>
 
-            <div className="w-full max-w-4xl min-h-[6rem] p-4 bg-black/50 rounded-lg text-white text-center flex items-center justify-center backdrop-blur-sm">
-                {isThinking ? (
-                    <div className="flex items-center gap-3">
-                        <SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />
-                        <p className="text-lg italic text-slate-300">AI is thinking...</p>
+                <footer className="flex-shrink-0 h-24 bg-slate-900 rounded-lg p-4 flex items-center justify-center text-center shadow-lg border border-slate-700">
+                    <div className="flex items-center gap-3 text-lg text-slate-300">
+                        {getStatusIndicator()}
                     </div>
-                ) : aiResponse ? (
-                    <p className="text-lg italic">{aiResponse}</p>
-                ) : (
-                    <p className="text-slate-400">Hold the microphone button to ask a question.</p>
-                )}
-            </div>
+                </footer>
+            </main>
         </div>
     );
 };

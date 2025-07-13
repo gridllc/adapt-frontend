@@ -116,5 +116,6 @@ export interface CheckpointEvaluation {
 
 export interface DetectedObject {
   label: string;
+  score?: number; // Confidence score from the model
   box: [number, number, number, number]; // [xMin, yMin, xMax, yMax] as percentages
 }
