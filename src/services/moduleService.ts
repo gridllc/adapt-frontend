@@ -28,36 +28,52 @@ const mapToTrainingModule = (data: any): TrainingModule | null => {
 }
 
 /**
- * Retrieves a training module by its slug from the database.
+ * Retrieves a training module by its slug, first from the database,
+ * then falling back to a static JSON file in `/public/modules/`.
  * @param slug The slug of the module to retrieve.
  * @returns The TrainingModule if found, otherwise undefined.
  */
 export const getModule = async (slug: string): Promise<TrainingModule | undefined> => {
     if (!slug) return undefined;
 
-    const { data, error } = await supabase
-        .from('modules')
-        .select('*')
-        .eq('slug', slug)
-        .single(); // Use .single() to get one object instead of an array
+    try {
+        const { data, error } = await supabase
+            .from('modules')
+            .select('*')
+            .eq('slug', slug)
+            .single(); // Use .single() to get one object instead of an array
 
-    if (error) {
-        // .single() throws an error if no rows are found or more than one is found.
-        if (error.code === 'PGRST116') { // PGRST116 is the code for "The result contains 0 rows"
-            return undefined; // Not found is not a throw-worthy error, just return undefined
+        if (error) {
+            // .single() throws an error if no rows are found or more than one is found.
+            // We will catch the "not found" error and try the static file fallback.
+            if (error.code !== 'PGRST116') {
+                throw error; // Other errors should be thrown
+            }
         }
+
+        if (data) {
+            const mappedModule = mapToTrainingModule(data);
+            if (mappedModule) return mappedModule;
+        }
+
+        // If not found in DB or mapping fails, try fetching from static files.
+        // This enables loading of sub-modules like remedial lessons.
+        const response = await fetch(`/modules/${slug}.json`);
+        if (response.ok) {
+            const staticModule = await response.json();
+            if (isTrainingModule(staticModule)) {
+                return staticModule;
+            }
+        }
+
+        return undefined; // Not found in DB or static files
+
+    } catch (error: any) {
         console.error(`Error fetching module with slug "${slug}":`, error.message);
-        throw new Error(error.message); // Other errors should be thrown
+        throw new Error(error.message);
     }
-
-    const mappedModule = mapToTrainingModule(data);
-    if (mappedModule) {
-        return mappedModule;
-    }
-
-    console.warn(`Data received for slug "${slug}" is not a valid TrainingModule.`, data);
-    return undefined;
 };
+
 
 /**
  * Gets a list of all available modules from the database.

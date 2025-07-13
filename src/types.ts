@@ -132,6 +132,7 @@ export interface DetectedObject {
 export interface StepNeeds {
   required: string[];
   forbidden: string[];
+  branchOn?: { item: string; module: string }[];
 }
 
 export type ModuleNeeds = Record<string, Record<number, StepNeeds>>;

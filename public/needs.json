@@ -6,7 +6,11 @@
   },
   "how-to-make-a-sandwich": {
     "0": { "required": ["bread"], "forbidden": ["hot dog bun", "tortilla"] },
-    "1": { "required": ["knife", "butter"], "forbidden": ["spoon", "ketchup"] },
+    "1": {
+      "required": ["knife", "butter"],
+      "forbidden": ["spoon", "ketchup"],
+      "branchOn": [{ "item": "spoon", "module": "how-to-use-a-knife-safely" }]
+    },
     "2": { "required": ["cheese"], "forbidden": ["mustard", "relish"] }
   }
 }

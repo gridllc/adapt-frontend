@@ -10,16 +10,16 @@ import { initializeObjectDetector, detectObjectsInVideo } from '@/services/visio
 import * as ttsService from '@/services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon, LightbulbIcon } from '@/components/Icons';
+import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon, LightbulbIcon, GitBranchIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
-import type { DetectedObject, ModuleNeeds, StepNeeds, LiveCoachEvent, CoachEventType } from '@/types';
+import type { DetectedObject, ModuleNeeds, StepNeeds, LiveCoachEvent, CoachEventType, TrainingModule } from '@/types';
 
-type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting' | 'correcting' | 'tutoring';
+type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting' | 'correcting' | 'tutoring' | 'branching';
 
 const generateToken = () => Math.random().toString(36).substring(2, 10);
 
 const LiveCoachPage: React.FC = () => {
-    const { moduleId } = useParams<{ moduleId: string }>();
+    const { moduleId = '' } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
     const location = useLocation();
     const queryClient = useQueryClient();
@@ -33,6 +33,9 @@ const LiveCoachPage: React.FC = () => {
     const [aiResponse, setAiResponse] = useState('');
     const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
     const [moduleNeeds, setModuleNeeds] = useState<ModuleNeeds | null>(null);
+
+    const [activeModule, setActiveModule] = useState<TrainingModule | null>(null);
+    const [mainModuleState, setMainModuleState] = useState<{ module: TrainingModule; stepIndex: number } | null>(null);
 
     const chatRef = useRef<Chat | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -54,7 +57,7 @@ const LiveCoachPage: React.FC = () => {
 
     const { data: sessionData, isLoading: isLoadingSession } = useQuery({
         queryKey: sessionQueryKey,
-        queryFn: () => getSession(moduleId!, sessionToken),
+        queryFn: () => getSession(moduleId, sessionToken),
         enabled: !!moduleId && !!sessionToken,
     });
 
@@ -74,13 +77,17 @@ const LiveCoachPage: React.FC = () => {
     });
 
     // --- Module Data and Needs ---
-    const { data: moduleData, isLoading: isLoadingModule, isError, error: moduleError } = useQuery({
+    const { data: moduleData, isLoading: isLoadingModule, isError } = useQuery({
         queryKey: ['module', moduleId],
-        queryFn: () => getModule(moduleId!),
+        queryFn: () => getModule(moduleId),
         enabled: !!moduleId,
         staleTime: 1000 * 60 * 5,
         retry: false,
     });
+
+    useEffect(() => {
+        if (moduleData) setActiveModule(moduleData);
+    }, [moduleData]);
 
     useEffect(() => {
         const fetchNeeds = async () => {
@@ -95,17 +102,64 @@ const LiveCoachPage: React.FC = () => {
         fetchNeeds();
     }, []);
 
-    // --- AI Interaction Logic ---
+    // --- Branching Logic ---
+    const handleBranchStart = useCallback(async (subModuleSlug: string) => {
+        if (!activeModule) return;
 
+        isInterjectingRef.current = true;
+        ttsService.cancel();
+        setStatus('branching');
+
+        try {
+            const subModule = await getModule(subModuleSlug);
+            if (!subModule) throw new Error(`Sub-module "${subModuleSlug}" not found.`);
+
+            // Save current main module state
+            setMainModuleState({ module: activeModule, stepIndex: currentStepIndex });
+
+            // Switch to sub-module
+            setActiveModule(subModule);
+            setCurrentStepIndex(0);
+
+            addToast('info', 'Taking a Detour', `Let's quickly review: ${subModule.title}`);
+            const introText = `I noticed you might need some help with that. Let's take a quick look at how to do this correctly. First: ${subModule.steps[0].title}`;
+            ttsService.speak(introText, () => {
+                setStatus('listening');
+                isInterjectingRef.current = false;
+            });
+
+        } catch (error) {
+            console.error("Failed to start branch:", error);
+            addToast('error', 'Branching Failed', 'Could not load the sub-lesson.');
+            setStatus('listening');
+            isInterjectingRef.current = false;
+        }
+    }, [activeModule, currentStepIndex, addToast]);
+
+    const handleBranchEnd = useCallback(() => {
+        if (!mainModuleState) return;
+
+        setActiveModule(mainModuleState.module);
+        setCurrentStepIndex(mainModuleState.stepIndex);
+        setMainModuleState(null);
+
+        const returnText = `Great, now let's get back to the main task. The next step is: ${mainModuleState.module.steps[mainModuleState.stepIndex].title}`;
+        addToast('success', 'Back on Track!', 'Returning to the main training.');
+        ttsService.speak(returnText);
+
+    }, [mainModuleState, addToast]);
+
+    // --- AI Interaction Logic ---
     const logAndSaveEvent = useCallback((eventType: CoachEventType) => {
+        if (mainModuleState) return; // Don't log events during a branch
         const newEvent: LiveCoachEvent = { eventType, stepIndex: currentStepIndex, timestamp: Date.now() };
         const updatedEvents = [...sessionEvents, newEvent];
         setSessionEvents(updatedEvents);
         persistSession({ liveCoachEvents: updatedEvents });
-    }, [currentStepIndex, sessionEvents, persistSession]);
+    }, [currentStepIndex, sessionEvents, persistSession, mainModuleState]);
 
     const processAiInterjection = useCallback(async (basePrompt: string, type: 'hint' | 'correction') => {
-        if (!chatRef.current || !moduleData) return;
+        if (!chatRef.current || !activeModule) return;
         if (isInterjectingRef.current) return;
 
         isInterjectingRef.current = true;
@@ -119,7 +173,7 @@ const LiveCoachPage: React.FC = () => {
 
         if (isRepeatStruggle) {
             newStatus = 'tutoring';
-            finalPrompt = `The user is stuck on step "${moduleData.steps[currentStepIndex].title}". I have already given them a hint. Instead of another hint, provide a more detailed 'mini-tutorial' that re-explains the step clearly and anticipates their problem. Be encouraging.`;
+            finalPrompt = `The user is stuck on step "${activeModule.steps[currentStepIndex].title}". I have already given them a hint. Instead of another hint, provide a more detailed 'mini-tutorial' that re-explains the step clearly and anticipates their problem. Be encouraging.`;
         }
 
         setStatus(newStatus);
@@ -148,7 +202,7 @@ const LiveCoachPage: React.FC = () => {
             isInterjectingRef.current = false;
         }
 
-    }, [chatRef.current, moduleData, currentStepIndex, sessionEvents, logAndSaveEvent]);
+    }, [chatRef.current, activeModule, currentStepIndex, sessionEvents, logAndSaveEvent]);
 
     const processAiQuery = useCallback(async (query: string) => {
         if (!chatRef.current) return;
@@ -186,9 +240,9 @@ const LiveCoachPage: React.FC = () => {
 
     // --- Proactive Checks ---
     useEffect(() => {
-        if (status !== 'listening' || !moduleNeeds || !moduleId || !moduleData) return;
+        if (status !== 'listening' || !moduleNeeds || !moduleId || !activeModule || mainModuleState) return;
 
-        const needs: StepNeeds | undefined = moduleNeeds[moduleId]?.[currentStepIndex];
+        const needs: StepNeeds | undefined = moduleNeeds[activeModule.slug]?.[currentStepIndex];
         if (!needs) {
             if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
             return;
@@ -200,8 +254,14 @@ const LiveCoachPage: React.FC = () => {
 
         if (detectedForbiddenItem) {
             if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
-            const mistakeText = `The user is on step "${moduleData.steps[currentStepIndex].title}". They are supposed to use: "${needs.required.join(', ')}". My vision system has detected a forbidden item: a "${detectedForbiddenItem.label}". Provide an immediate, gentle, but clear correction to get them back on track.`;
-            processAiInterjection(mistakeText, 'correction');
+            const branchRule = needs.branchOn?.find(b => detectedForbiddenItem.label.toLowerCase().includes(b.item.toLowerCase()));
+
+            if (branchRule) {
+                handleBranchStart(branchRule.module);
+            } else {
+                const mistakeText = `The user is on step "${activeModule.steps[currentStepIndex].title}". They are supposed to use: "${needs.required.join(', ')}". My vision system has detected a forbidden item: a "${detectedForbiddenItem.label}". Provide an immediate, gentle, but clear correction to get them back on track.`;
+                processAiInterjection(mistakeText, 'correction');
+            }
             return;
         }
 
@@ -220,11 +280,11 @@ const LiveCoachPage: React.FC = () => {
             hintTimerRef.current = null;
         } else if (!hintTimerRef.current && !isInterjectingRef.current) {
             hintTimerRef.current = setTimeout(() => {
-                const hintText = `The user is on step "${moduleData.steps[currentStepIndex].title}", which requires a "${requiredObjects.join(', ')}". My vision system does not detect this item. Please provide a gentle, proactive hint to help them find the right tool or item. Keep it brief.`;
+                const hintText = `The user is on step "${activeModule.steps[currentStepIndex].title}", which requires a "${requiredObjects.join(', ')}". My vision system does not detect this item. Please provide a gentle, proactive hint to help them find the right tool or item. Keep it brief.`;
                 processAiInterjection(hintText, 'hint');
             }, 5000); // 5-second delay
         }
-    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, moduleData, processAiInterjection]);
+    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, activeModule, processAiInterjection, handleBranchStart, mainModuleState]);
 
     // --- Hooks and Lifecycle ---
     const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
@@ -244,7 +304,7 @@ const LiveCoachPage: React.FC = () => {
 
     useEffect(() => {
         const initialize = async () => {
-            if (moduleData && hasSupport) {
+            if (activeModule && hasSupport) {
                 try {
                     await initializeObjectDetector();
                     setInterval(() => {
@@ -254,38 +314,47 @@ const LiveCoachPage: React.FC = () => {
                         }
                     }, 500);
 
-                    const context = moduleData.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
+                    const context = activeModule.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
                     chatRef.current = startChat(context);
                     startListening();
                     setStatus('listening');
                 } catch (err) {
                     setStatus('idle');
                 }
-            } else if (moduleData && !hasSupport) {
+            } else if (activeModule && !hasSupport) {
                 setStatus('idle');
             }
         };
         initialize();
-    }, [moduleData, hasSupport, startListening]);
+    }, [activeModule, hasSupport, startListening]);
 
     useEffect(() => {
-        if (!isLoadingModule && (isError || !moduleData)) {
+        if (!isLoadingModule && isError) {
             navigate('/not-found');
         }
-    }, [isLoadingModule, isError, moduleData, navigate]);
+    }, [isLoadingModule, isError, navigate]);
 
     const handleNextStep = () => {
-        if (!moduleData) return;
+        if (!activeModule) return;
         if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
         hintTimerRef.current = null;
 
         const newIndex = currentStepIndex + 1;
-        if (newIndex >= moduleData.steps.length) {
+
+        if (mainModuleState && newIndex >= activeModule.steps.length) {
+            // Completed a sub-module, return to main flow
+            handleBranchEnd();
+            return;
+        }
+
+        if (newIndex >= activeModule.steps.length) {
             addToast('success', 'Module Complete!', 'You have finished all the steps.');
             navigate(`/modules/${moduleId}`);
         } else {
             setCurrentStepIndex(newIndex);
-            persistSession({ currentStepIndex: newIndex });
+            if (!mainModuleState) { // Only persist progress for the main module
+                persistSession({ currentStepIndex: newIndex });
+            }
         }
     };
 
@@ -294,6 +363,7 @@ const LiveCoachPage: React.FC = () => {
         if (status === 'correcting') return <><AlertTriangleIcon className="h-6 w-6 text-red-400 animate-pulse" />Correcting mistake...</>;
         if (status === 'hinting') return <><LightbulbIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Offering a hint...</>;
         if (status === 'tutoring') return <><LightbulbIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Let me explain that differently...</>;
+        if (status === 'branching') return <><GitBranchIcon className="h-6 w-6 text-cyan-400 animate-pulse" />Taking a short detour...</>;
 
         if (detectedObjects.length > 0 && ['listening', 'idle'].includes(status)) {
             return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
@@ -306,11 +376,11 @@ const LiveCoachPage: React.FC = () => {
         }
     }
 
-    if (isLoadingModule || isLoadingSession || !moduleData) {
+    if (isLoadingModule || isLoadingSession || !activeModule) {
         return <div className="flex items-center justify-center h-screen bg-slate-900"><p className="text-xl text-slate-300">Loading Live Coach...</p></div>;
     }
 
-    const currentInstruction = moduleData.steps[currentStepIndex]?.title ?? "Module Complete!";
+    const currentInstruction = activeModule.steps[currentStepIndex]?.title ?? "Module Complete!";
 
     return (
         <div className="flex flex-col h-screen bg-slate-800 text-white font-sans">
@@ -319,7 +389,10 @@ const LiveCoachPage: React.FC = () => {
                     <BookOpenIcon className="h-5 w-5" />
                     <span>Back to Training</span>
                 </button>
-                <h1 className="text-2xl font-bold">{moduleData.title}</h1>
+                <div className="text-center">
+                    <h1 className="text-2xl font-bold">{activeModule.title}</h1>
+                    {mainModuleState && <p className="text-xs text-cyan-400 font-semibold animate-pulse">REMEDIAL LESSON</p>}
+                </div>
                 <span className="font-bold text-lg text-indigo-400">Live Coach</span>
             </header>
 
