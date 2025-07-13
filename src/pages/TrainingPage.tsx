@@ -67,23 +67,18 @@ const TrainingPage: React.FC = () => {
     setSessionToken(token);
   }, [location.search, location.pathname, navigate]);
 
-  const preloadedModule: TrainingModule | undefined = location.state?.module?.slug === moduleId ? location.state.module : undefined;
-
   const {
     data: moduleData,
     isLoading: isLoadingModule,
     isError,
     error,
-  } = useQuery({
+  } = useQuery<TrainingModule | undefined, Error>({
     queryKey: ['module', moduleId],
     queryFn: () => getModule(moduleId!),
     enabled: !!moduleId && !!sessionToken,
     staleTime: 1000 * 60 * 5, // 5 minutes
-    initialData: preloadedModule,
     retry: false,
   });
-
-  const displayData = moduleData || preloadedModule;
 
   const {
     currentStepIndex,
@@ -93,7 +88,7 @@ const TrainingPage: React.FC = () => {
     isCompleted,
     resetSession,
     isLoadingSession,
-  } = useTrainingSession(moduleId ?? 'unknown', sessionToken, displayData?.steps.length ?? 0);
+  } = useTrainingSession(moduleId ?? 'unknown', sessionToken, moduleData?.steps.length ?? 0);
 
   // Reset checkpoint state when the step changes
   useEffect(() => {
@@ -104,17 +99,17 @@ const TrainingPage: React.FC = () => {
 
   useEffect(() => {
     // Only navigate to not-found if the query has errored AND we never had any data to display.
-    if (isError && !displayData) {
+    if (isError && !moduleData) {
       console.error(`Module with slug "${moduleId}" not found or failed to load.`, error);
       navigate('/not-found');
     }
-  }, [isError, displayData, moduleId, navigate, error]);
+  }, [isError, moduleData, moduleId, navigate, error]);
 
   // Generate a focused AI context based on the current step
   useEffect(() => {
-    if (!displayData || currentStepIndex < 0 || isCompleted) return;
+    if (!moduleData || currentStepIndex < 0 || isCompleted) return;
 
-    const { title, steps } = displayData;
+    const { title, steps } = moduleData;
 
     // Context window: previous, current, and next step
     const prevStep = steps[currentStepIndex - 1];
@@ -138,11 +133,11 @@ const TrainingPage: React.FC = () => {
 
     setAiContext(context.trim());
 
-  }, [currentStepIndex, displayData, isCompleted]);
+  }, [currentStepIndex, moduleData, isCompleted]);
 
   // Effect to generate performance report upon completion
   useEffect(() => {
-    if (isCompleted && displayData && !performanceReport && !isGeneratingReport) {
+    if (isCompleted && moduleData && !performanceReport && !isGeneratingReport) {
       const generateReport = async () => {
         if (!moduleId || !sessionToken) return;
         setIsGeneratingReport(true);
@@ -150,7 +145,7 @@ const TrainingPage: React.FC = () => {
         const unclearStepIndexes = new Set(
           userActions.filter(a => a.status === 'unclear').map(a => a.stepIndex)
         );
-        const unclearSteps = Array.from(unclearStepIndexes).map((i: number) => displayData.steps[i]).filter(Boolean);
+        const unclearSteps = Array.from(unclearStepIndexes).map((i: number) => moduleData.steps[i]).filter(Boolean);
 
         const chatHistory = await getChatHistory(moduleId, sessionToken);
         const userQuestions = chatHistory
@@ -158,10 +153,10 @@ const TrainingPage: React.FC = () => {
           .map(msg => msg.text.trim());
 
         try {
-          const aiFeedback = await generatePerformanceSummary(displayData.title, unclearSteps, userQuestions);
+          const aiFeedback = await generatePerformanceSummary(moduleData.title, unclearSteps, userQuestions);
 
           setPerformanceReport({
-            moduleTitle: displayData.title,
+            moduleTitle: moduleData.title,
             completionDate: new Date().toLocaleDateString(),
             aiFeedback,
             unclearSteps,
@@ -172,7 +167,7 @@ const TrainingPage: React.FC = () => {
           console.error("Failed to generate performance report:", error);
           // Set a fallback report if AI fails
           setPerformanceReport({
-            moduleTitle: displayData.title,
+            moduleTitle: moduleData.title,
             completionDate: new Date().toLocaleDateString(),
             aiFeedback: "Congratulations on completing the training! You did a great job.",
             unclearSteps,
@@ -184,7 +179,7 @@ const TrainingPage: React.FC = () => {
       };
       generateReport();
     }
-  }, [isCompleted, displayData, userActions, moduleId, sessionToken, performanceReport, isGeneratingReport]);
+  }, [isCompleted, moduleData, userActions, moduleId, sessionToken, performanceReport, isGeneratingReport]);
 
 
   const handleSeekTo = useCallback((time: number) => {
@@ -206,22 +201,22 @@ const TrainingPage: React.FC = () => {
   }, [addToast]);
 
   useEffect(() => {
-    if (!displayData || userActions.length === 0 || isCompleted) return;
+    if (!moduleData || userActions.length === 0 || isCompleted) return;
     const lastAction = userActions[userActions.length - 1];
 
     if (lastAction.status === 'done' && lastAction.stepIndex === currentStepIndex - 1) {
-      const nextStep = displayData.steps[currentStepIndex];
+      const nextStep = moduleData.steps[currentStepIndex];
       if (nextStep) {
         handleSeekTo(nextStep.start);
       }
     }
-  }, [currentStepIndex, userActions, handleSeekTo, displayData, isCompleted]);
+  }, [currentStepIndex, userActions, handleSeekTo, moduleData, isCompleted]);
 
   const handleTimeUpdate = (time: number) => {
     if (isCompleted) return;
     setCurrentTime(time);
-    if (!displayData) return;
-    const activeStepFromVideo = findActiveStepIndex(time, displayData.steps);
+    if (!moduleData) return;
+    const activeStepFromVideo = findActiveStepIndex(time, moduleData.steps);
     if (activeStepFromVideo !== -1 && activeStepFromVideo !== currentStepIndex) {
       setCurrentStepIndex(activeStepFromVideo);
     }
@@ -233,8 +228,8 @@ const TrainingPage: React.FC = () => {
   }
 
   const handleCheckpointSubmit = async () => {
-    if (!displayData || !checkpointAnswer.trim()) return;
-    const currentStep = displayData.steps[currentStepIndex];
+    if (!moduleData || !checkpointAnswer.trim()) return;
+    const currentStep = moduleData.steps[currentStepIndex];
     if (!currentStep?.checkpoint) return;
 
     setIsEvaluating(true);
@@ -259,7 +254,7 @@ const TrainingPage: React.FC = () => {
   };
 
 
-  if ((isLoadingModule && !displayData) || isLoadingSession || !sessionToken) {
+  if (isLoadingModule || isLoadingSession || !sessionToken) {
     return (
       <div className="flex items-center justify-center h-screen bg-white dark:bg-slate-900">
         <p className="text-xl text-slate-700 dark:text-slate-300">Loading Training Module...</p>
@@ -267,7 +262,7 @@ const TrainingPage: React.FC = () => {
     );
   }
 
-  if (!displayData) {
+  if (!moduleData) {
     // This state is reached if loading is done and there is no data.
     // The useEffect hook above will have likely navigated, but this is a safeguard.
     return <div className="flex items-center justify-center h-screen">Module not found.</div>
@@ -292,7 +287,7 @@ const TrainingPage: React.FC = () => {
             </button>
           )}
         </div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white text-center absolute left-1/2 -translate-x-1/2">{displayData.title}</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white text-center absolute left-1/2 -translate-x-1/2">{moduleData.title}</h1>
         <span className="font-bold text-lg text-indigo-500 dark:text-indigo-400">Adapt</span>
       </header>
 
@@ -300,7 +295,7 @@ const TrainingPage: React.FC = () => {
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden">
           <VideoPlayer
             ref={videoRef}
-            videoUrl={displayData.videoUrl}
+            videoUrl={moduleData.videoUrl}
             onTimeUpdate={handleTimeUpdate}
           />
         </div>
@@ -339,7 +334,7 @@ const TrainingPage: React.FC = () => {
 
               {activeTab === 'steps' && (
                 <ProcessSteps
-                  steps={displayData.steps}
+                  steps={moduleData.steps}
                   currentStepIndex={currentStepIndex}
                   onStepClick={handleSeekTo}
                   markStep={markStep}
@@ -352,9 +347,9 @@ const TrainingPage: React.FC = () => {
               )}
 
               {activeTab === 'transcript' && (
-                displayData.transcript && displayData.transcript.length > 0 ? (
+                moduleData.transcript && moduleData.transcript.length > 0 ? (
                   <TranscriptViewer
-                    transcript={displayData.transcript}
+                    transcript={moduleData.transcript}
                     currentTime={currentTime}
                     onLineClick={handleSeekTo}
                   />
@@ -382,7 +377,7 @@ const TrainingPage: React.FC = () => {
         </button>
       )}
 
-      {isChatOpen && moduleId && sessionToken && displayData && (
+      {isChatOpen && moduleId && sessionToken && moduleData && (
         <div className="fixed bottom-6 right-6 h-[85vh] w-[90vw] max-w-md bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-slate-700 z-50 animate-fade-in-up">
           <ChatTutor
             moduleId={moduleId}
@@ -390,7 +385,7 @@ const TrainingPage: React.FC = () => {
             transcriptContext={aiContext}
             onTimestampClick={handleSeekTo}
             currentStepIndex={currentStepIndex}
-            steps={displayData.steps}
+            steps={moduleData.steps}
             onClose={() => setIsChatOpen(false)}
           />
         </div>

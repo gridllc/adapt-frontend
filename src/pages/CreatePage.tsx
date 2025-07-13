@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
 import { saveModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
@@ -11,6 +12,7 @@ import { useToast } from '@/hooks/useToast';
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { isAuthenticated, user } = useAuth();
     const { addToast } = useToast();
     const [processText, setProcessText] = useState('');
@@ -35,7 +37,7 @@ const CreatePage: React.FC = () => {
             setVideoBlobUrl(objectUrl);
             // When a new video file is added, update the generated module to use its blob URL for preview
             if (generatedModule) {
-                setGeneratedModule(prev => prev ? { ...prev, videoUrl: objectUrl } : null);
+              setGeneratedModule(prev => prev ? { ...prev, videoUrl: objectUrl } : null);
             }
             return () => URL.revokeObjectURL(objectUrl);
         }
@@ -50,11 +52,7 @@ const CreatePage: React.FC = () => {
     };
 
     const handleRemoveVideo = useCallback(() => {
-        setVideoFile(null);
-        // Critically, also clear the videoUrl from the module state to prevent saving the stale blob.
-        if (generatedModule) {
-            setGeneratedModule(prev => prev ? { ...prev, videoUrl: '' } : null);
-        }
+      setVideoFile(null);     
     }, [generatedModule]);
 
     const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
@@ -73,7 +71,7 @@ const CreatePage: React.FC = () => {
         event.preventDefault();
         event.stopPropagation();
     };
-
+    
     const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -114,7 +112,7 @@ const CreatePage: React.FC = () => {
         setIsAnalyzing(true);
         try {
             const { timestamps, transcript } = await analyzeVideoContent(videoFile, generatedModule.steps);
-
+            
             const updatedSteps = generatedModule.steps.map((step, index) => ({
                 ...step,
                 start: Math.round(timestamps[index]?.start ?? step.start),
@@ -142,10 +140,10 @@ const CreatePage: React.FC = () => {
 
         setIsSaving(true);
         try {
-            // The service will correctly prioritize the videoFile over the temporary blob URL in moduleData
-            const savedModule = await saveModule({ moduleData: generatedModule, videoFile });
+            const cleanedModule = { ...generatedModule, videoUrl: '' }; // remove blob URL
+            const savedModule = await saveModule({ moduleData: cleanedModule, videoFile });
+            await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
-            // Navigate without passing state to force the training page to fetch the latest data
             navigate(`/modules/${savedModule.slug}`);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
@@ -154,7 +152,7 @@ const CreatePage: React.FC = () => {
             setIsSaving(false);
         }
     };
-
+    
     const resetForm = () => {
         setProcessText('');
         setVideoFile(null);
@@ -192,7 +190,7 @@ const CreatePage: React.FC = () => {
                         <div>
                             <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">2. (Optional) Add a Video</h2>
                             <p className="text-slate-600 dark:text-slate-300 mb-4">Upload a video for this training. The AI can analyze it to set timestamps automatically later.</p>
-                            {videoFile ? (
+                             {videoFile ? (
                                 <div className="bg-slate-200 dark:bg-slate-900/50 p-3 rounded-lg flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <FileTextIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
@@ -215,7 +213,7 @@ const CreatePage: React.FC = () => {
                                         Drop video file or <span className="text-indigo-500 dark:text-indigo-400 underline">browse</span>
                                     </span>
                                     <input type="file" name="file_upload" className="hidden" accept="video/*" onChange={handleFileChange} />
-                                </label>
+                                 </label>
                             )}
                         </div>
                     </div>
@@ -230,7 +228,7 @@ const CreatePage: React.FC = () => {
                     </div>
                 </div>
             )}
-            {isLoading && !generatedModule && (
+             {isLoading && !generatedModule && (
                 <div className="text-center p-8">
                     <LightbulbIcon className="h-12 w-12 mx-auto text-indigo-500 dark:text-indigo-400 animate-pulse" />
                     <p className="mt-4 text-lg text-slate-600 dark:text-slate-300">AI is building your module...</p>
@@ -241,13 +239,13 @@ const CreatePage: React.FC = () => {
             {generatedModule && (
                 <div className="animate-fade-in-up">
                     <ModuleEditor
-                        module={{ ...generatedModule, videoUrl: videoBlobUrl }}
+                        module={generatedModule}
                         onModuleChange={setGeneratedModule}
                         onAnalyze={handleAnalyzeVideo}
                         isAnalyzing={isAnalyzing}
                         showAnalysisButton={!!videoFile}
                     />
-                    <div className="mt-8 flex justify-center gap-4">
+                     <div className="mt-8 flex justify-center gap-4">
                         <button onClick={resetForm} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                             Start Over
                         </button>
