@@ -9,11 +9,11 @@ import { initializeObjectDetector, detectObjectsInVideo } from '@/services/visio
 import * as ttsService from '@/services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon } from '@/components/Icons';
+import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
-import type { DetectedObject, ModuleNeeds } from '@/types';
+import type { DetectedObject, ModuleNeeds, StepNeeds } from '@/types';
 
-type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting';
+type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting' | 'correcting';
 
 const LiveCoachPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
@@ -29,7 +29,7 @@ const LiveCoachPage: React.FC = () => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const lastDetectionTime = useRef(0);
     const hintTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const isHintingRef = useRef(false);
+    const isInterjectingRef = useRef(false);
 
     const { data: moduleData, isLoading: isLoadingModule, isError, error: moduleError } = useQuery({
         queryKey: ['module', moduleId],
@@ -39,7 +39,6 @@ const LiveCoachPage: React.FC = () => {
         retry: false,
     });
 
-    // Fetch the needs for all modules
     useEffect(() => {
         const fetchNeeds = async () => {
             try {
@@ -53,66 +52,75 @@ const LiveCoachPage: React.FC = () => {
         fetchNeeds();
     }, []);
 
-    const runDetection = useCallback(() => {
-        if (status !== 'initializing' && videoRef.current && videoRef.current.readyState >= 3) {
-            const detections = detectObjectsInVideo(videoRef.current);
-            if (detections.length > 0) {
-                setDetectedObjects(detections);
-                lastDetectionTime.current = Date.now();
-            } else {
-                // If no objects are detected, clear the array.
-                setDetectedObjects([]);
-            }
-        }
-    }, [status]);
-
-    // Proactive Hint Logic
+    // Proactive Hinting & Mistake Detection Logic
     useEffect(() => {
+        // This effect should only run when the system is in a listening state and ready to be proactive.
         if (status !== 'listening' || !moduleNeeds || !moduleId || !moduleData) return;
 
-        const requiredObjects = moduleNeeds[moduleId]?.[currentStepIndex];
-        if (!requiredObjects || requiredObjects.length === 0) {
+        const needs: StepNeeds | undefined = moduleNeeds[moduleId]?.[currentStepIndex];
+        if (!needs) {
             if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
             return;
         }
 
-        const hasAllObjects = requiredObjects.every(need =>
-            detectedObjects.some(detected => detected.label.includes(need))
+        // --- Mistake Detection (Highest Priority) ---
+        const forbiddenObjects = needs.forbidden || [];
+        const detectedForbiddenItem = detectedObjects.find(detected =>
+            forbiddenObjects.some(forbidden => detected.label.includes(forbidden))
         );
 
-        if (hasAllObjects) {
+        if (detectedForbiddenItem) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current); // Cancel any pending hints
+            const mistakeText = `The user is on step "${moduleData.steps[currentStepIndex].title}". They are supposed to use: "${needs.required.join(', ')}". My vision system has detected a forbidden item: a "${detectedForbiddenItem.label}". Provide an immediate, gentle, but clear correction to get them back on track.`;
+            processAiQuery(mistakeText, 'correction');
+            return; // Stop further checks
+        }
+
+        // --- Proactive Hint Logic (Lower Priority) ---
+        const requiredObjects = needs.required || [];
+        if (requiredObjects.length === 0) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current); // No hint needed
+            return;
+        }
+
+        const hasAllRequiredObjects = requiredObjects.every(req =>
+            detectedObjects.some(detected => detected.label.includes(req))
+        );
+
+        if (hasAllRequiredObjects) {
             if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
             hintTimerRef.current = null;
-        } else if (!hintTimerRef.current && !isHintingRef.current) {
-            // If mismatch, start a timer to offer a hint.
+        } else if (!hintTimerRef.current && !isInterjectingRef.current) {
+            // If there's a mismatch, start a timer to offer a hint.
             hintTimerRef.current = setTimeout(() => {
                 const hintText = `The user is on step "${moduleData.steps[currentStepIndex].title}", which requires a "${requiredObjects.join(', ')}". My vision system does not detect this item. Please provide a gentle, proactive hint to help them find the right tool or item. Keep it brief.`;
-                processAiQuery(hintText, true);
-            }, 5000); // 5-second delay before hinting
+                processAiQuery(hintText, 'hint');
+            }, 5000); // 5-second delay
         }
 
     }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, moduleData]);
 
-    const processAiQuery = useCallback(async (query: string, isProactiveHint = false) => {
+    const processAiQuery = useCallback(async (query: string, type: 'question' | 'hint' | 'correction' = 'question') => {
         if (!chatRef.current) {
             addToast('error', 'AI Not Ready', 'The AI chat session is not initialized.');
             return;
         }
 
-        if (isProactiveHint) {
-            if (isHintingRef.current) return; // Don't allow multiple hints at once
-            isHintingRef.current = true;
-            setStatus('hinting');
-        } else {
-            setStatus('thinking');
-        }
+        if (isInterjectingRef.current && type !== 'question') return; // Don't allow multiple interjections
+
+        isInterjectingRef.current = (type !== 'question');
+
+        if (type === 'correction') setStatus('correcting');
+        else if (type === 'hint') setStatus('hinting');
+        else setStatus('thinking');
 
         setAiResponse('');
-        addToast('info', isProactiveHint ? 'AI Hint' : 'Question Sent', isProactiveHint ? 'The AI is offering a hint.' : `"${query}"`);
+        const toastTitle = type === 'correction' ? 'AI Correction' : (type === 'hint' ? 'AI Hint' : 'Question Sent');
+        addToast('info', toastTitle, query);
 
         let enrichedQuery = query;
-        if (!isProactiveHint) {
-            const currentDetections = detectedObjects; // Capture current detections
+        if (type === 'question') {
+            const currentDetections = detectedObjects;
             if (currentDetections.length > 0) {
                 const objectLabels = currentDetections.map(obj => obj.label).join(', ');
                 enrichedQuery = `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`;
@@ -131,11 +139,11 @@ const LiveCoachPage: React.FC = () => {
                 setStatus('speaking');
                 ttsService.speak(fullText, () => {
                     setStatus('listening');
-                    if (isProactiveHint) isHintingRef.current = false;
+                    isInterjectingRef.current = false;
                 });
             } else {
                 setStatus('listening');
-                if (isProactiveHint) isHintingRef.current = false;
+                isInterjectingRef.current = false;
             }
         } catch (error) {
             console.error("Error sending message to AI:", error);
@@ -145,13 +153,13 @@ const LiveCoachPage: React.FC = () => {
             setStatus('speaking');
             ttsService.speak(errorMessage, () => {
                 setStatus('listening');
-                if (isProactiveHint) isHintingRef.current = false;
+                isInterjectingRef.current = false;
             });
         }
     }, [addToast, detectedObjects]);
 
     const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
-        if (!isFinal || status === 'thinking' || status === 'speaking' || status === 'hinting') return;
+        if (!isFinal || status === 'thinking' || status === 'speaking' || status === 'hinting' || status === 'correcting') return;
 
         const hotword = "hey adapt";
         const lowerTranscript = transcript.toLowerCase().trim();
@@ -160,24 +168,30 @@ const LiveCoachPage: React.FC = () => {
             const query = transcript.substring(hotword.length).trim();
             if (query) {
                 ttsService.cancel();
-                // If the user asks a question, cancel any pending hints.
                 if (hintTimerRef.current) {
                     clearTimeout(hintTimerRef.current);
                     hintTimerRef.current = null;
                 }
-                processAiQuery(query);
+                processAiQuery(query, 'question');
             }
         }
     }, [processAiQuery, status]);
 
     const { startListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
 
-    // Effect to initialize everything
     useEffect(() => {
         const initialize = async () => {
             if (moduleData && hasSupport) {
                 try {
                     await initializeObjectDetector();
+                    // Continuously run detection in the background
+                    setInterval(() => {
+                        if (videoRef.current && videoRef.current.readyState >= 3) {
+                            const detections = detectObjectsInVideo(videoRef.current);
+                            setDetectedObjects(detections);
+                        }
+                    }, 500); // Run detection twice a second
+
                     const context = moduleData.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
                     chatRef.current = startChat(context);
                     startListening();
@@ -204,7 +218,6 @@ const LiveCoachPage: React.FC = () => {
 
     const handleNextStep = () => {
         if (!moduleData) return;
-        // Cancel any pending hint when user advances the step
         if (hintTimerRef.current) {
             clearTimeout(hintTimerRef.current);
             hintTimerRef.current = null;
@@ -221,6 +234,9 @@ const LiveCoachPage: React.FC = () => {
     };
 
     const getStatusIndicator = () => {
+        if (status === 'correcting') {
+            return <><AlertTriangleIcon className="h-6 w-6 text-red-400 animate-pulse" />Correcting mistake...</>;
+        }
         if (detectedObjects.length > 0 && status !== 'speaking' && status !== 'hinting' && status !== 'thinking') {
             return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
         }

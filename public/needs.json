@@ -1,12 +1,12 @@
 {
   "how-to-boil-3-cups-of-water": {
-    "0": ["pot"],
-    "1": [],
-    "2": []
+    "0": { "required": ["pot"], "forbidden": ["pan", "bowl"] },
+    "1": { "required": [], "forbidden": [] },
+    "2": { "required": [], "forbidden": [] }
   },
   "how-to-make-a-sandwich": {
-    "0": ["bread"],
-    "1": ["knife", "butter"],
-    "2": ["cheese"]
+    "0": { "required": ["bread"], "forbidden": ["hot dog bun", "tortilla"] },
+    "1": { "required": ["knife", "butter"], "forbidden": ["spoon", "ketchup"] },
+    "2": { "required": ["cheese"], "forbidden": ["mustard", "relish"] }
   }
 }

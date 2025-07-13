@@ -120,4 +120,9 @@ export interface DetectedObject {
   box: [number, number, number, number]; // [xMin, yMin, xMax, yMax] as percentages
 }
 
-export type ModuleNeeds = Record<string, Record<number, string[]>>;
+export interface StepNeeds {
+  required: string[];
+  forbidden: string[];
+}
+
+export type ModuleNeeds = Record<string, Record<number, StepNeeds>>;
