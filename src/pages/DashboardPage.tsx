@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getAvailableModules, saveUploadedModule } from '@/services/moduleService';
+import { getAvailableModules, saveModule } from '@/services/moduleService';
 import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
 import { generateRefinementSuggestion } from '@/services/geminiService';
 import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons';
@@ -93,7 +93,8 @@ const DashboardPage: React.FC = () => {
 
         // Save the updated module and navigate to the editor for final review
         try {
-            const savedModule = await saveUploadedModule(updatedModule);
+            // Use the new, correct saveModule function
+            const savedModule = await saveModule({ moduleData: updatedModule });
             addToast('success', 'Changes Applied', 'Redirecting to the editor for your final review.');
             navigate(`/modules/${savedModule.slug}/edit`);
         } catch (err) {
