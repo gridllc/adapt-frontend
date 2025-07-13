@@ -7,6 +7,7 @@ import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useTheme } from '@/hooks/useTheme';
+import { ModuleCardSkeleton } from '@/components/ModuleCardSkeleton';
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
@@ -225,7 +226,10 @@ const HomePage: React.FC = () => {
                 </div>
 
                 {isLoadingModules ? (
-                    <div className="text-center text-slate-500 dark:text-slate-400">Loading modules from the database...</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <ModuleCardSkeleton />
+                        <ModuleCardSkeleton />
+                    </div>
                 ) : modulesError ? (
                     <div className="text-center text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-900/50 p-4 rounded-lg">
                         Error fetching modules: {modulesError.message}
