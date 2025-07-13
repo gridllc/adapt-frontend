@@ -1,3 +1,4 @@
+
 import type { TrainingModule } from '@/types';
 import { supabase } from '@/services/apiClient';
 
@@ -44,6 +45,7 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
             if (mappedModule) return mappedModule;
         }
 
+        // Fallback for static sub-modules used in live coaching
         const response = await fetch(`/modules/${slug}.json`);
         if (response.ok) {
             const staticModule = await response.json();
@@ -92,6 +94,8 @@ export const saveModule = async ({
 
     let video_url = moduleData.videoUrl;
 
+    // This is the critical logic: if a real file is passed, upload it and use its URL,
+    // overriding any temporary blob: URL that might be in moduleData.
     if (videoFile) {
         const fileExt = videoFile.name.split('.').pop();
         const filePath = `${moduleData.slug}/${Date.now()}.${fileExt}`;
@@ -121,6 +125,7 @@ export const saveModule = async ({
         user_id: user.id,
     };
 
+    // Use upsert to handle both creation of new modules and updating of existing ones.
     const { data, error } = await supabase
         .from('modules')
         .upsert(dbData, { onConflict: 'slug' })
@@ -159,6 +164,8 @@ export const deleteModule = async (slug: string): Promise<void> => {
         .eq('module_id', slug);
     if (suggestionError) throw new Error(`Failed to delete suggestions: ${suggestionError.message}`);
 
+    // Finally, delete the module itself. This will cascade and also delete associated videos in storage
+    // if you set up the storage policies correctly (though that's an advanced step).
     const { error: moduleError } = await supabase
         .from('modules')
         .delete()

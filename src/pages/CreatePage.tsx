@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
@@ -32,6 +33,10 @@ const CreatePage: React.FC = () => {
         if (videoFile) {
             const objectUrl = URL.createObjectURL(videoFile);
             setVideoBlobUrl(objectUrl);
+            // When a new video file is added, update the generated module to use its blob URL for preview
+            if (generatedModule) {
+                setGeneratedModule(prev => prev ? { ...prev, videoUrl: objectUrl } : null);
+            }
             return () => URL.revokeObjectURL(objectUrl);
         }
         setVideoBlobUrl('');
@@ -43,6 +48,14 @@ const CreatePage: React.FC = () => {
             setVideoFile(file);
         }
     };
+
+    const handleRemoveVideo = useCallback(() => {
+        setVideoFile(null);
+        // Critically, also clear the videoUrl from the module state to prevent saving the stale blob.
+        if (generatedModule) {
+            setGeneratedModule(prev => prev ? { ...prev, videoUrl: '' } : null);
+        }
+    }, [generatedModule]);
 
     const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
@@ -129,6 +142,7 @@ const CreatePage: React.FC = () => {
 
         setIsSaving(true);
         try {
+            // The service will correctly prioritize the videoFile over the temporary blob URL in moduleData
             const savedModule = await saveModule({ moduleData: generatedModule, videoFile });
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
             // Navigate without passing state to force the training page to fetch the latest data
@@ -136,6 +150,7 @@ const CreatePage: React.FC = () => {
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
             addToast('error', 'Save Failed', errorMessage);
+        } finally {
             setIsSaving(false);
         }
     };
@@ -183,7 +198,7 @@ const CreatePage: React.FC = () => {
                                         <FileTextIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
                                         <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{videoFile.name}</span>
                                     </div>
-                                    <button onClick={() => setVideoFile(null)} className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                                    <button onClick={handleRemoveVideo} className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                                         <XIcon className="h-5 w-5" />
                                     </button>
                                 </div>
