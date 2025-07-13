@@ -4,12 +4,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
-import { startChat } from '@/services/geminiService';
+import { startChat, detectObjects } from '@/services/geminiService';
 import * as ttsService from '@/services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon } from '@/components/Icons';
+import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
+import type { DetectedObject } from '@/types';
 
 type CoachStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -20,7 +21,11 @@ const LiveCoachPage: React.FC = () => {
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [status, setStatus] = useState<CoachStatus>('idle');
     const [aiResponse, setAiResponse] = useState('');
+    const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
+
     const chatRef = useRef<Chat | null>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const { data: moduleData, isLoading: isLoadingModule, isError, error: moduleError } = useQuery({
         queryKey: ['module', moduleId],
@@ -29,6 +34,31 @@ const LiveCoachPage: React.FC = () => {
         staleTime: 1000 * 60 * 5,
         retry: false,
     });
+
+    // Effect for real-time vision analysis
+    useEffect(() => {
+        const captureInterval = setInterval(async () => {
+            if (videoRef.current && videoRef.current.readyState >= 3 && canvasRef.current) { // readyState >= 3 means we have enough data
+                const video = videoRef.current;
+                const canvas = canvasRef.current;
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const newDetections = await detectObjects(canvas);
+                    if (newDetections.length > 0) {
+                        setDetectedObjects(newDetections);
+                        // Make detections fade out after a bit
+                        setTimeout(() => setDetectedObjects([]), 2500);
+                    }
+                }
+            }
+        }, 1000); // Capture a frame every second
+
+        return () => clearInterval(captureInterval);
+    }, []); // Runs once on mount
 
     const processAiQuery = useCallback(async (query: string) => {
         if (!chatRef.current) {
@@ -40,8 +70,15 @@ const LiveCoachPage: React.FC = () => {
         setAiResponse('');
         addToast('info', 'Question Sent', `"${query}"`);
 
+        // Enrich the prompt with visual context if available
+        let enrichedQuery = query;
+        if (detectedObjects.length > 0) {
+            const objectLabels = detectedObjects.map(obj => obj.label).join(', ');
+            enrichedQuery = `The user asked: "${query}". My camera analysis shows a ${objectLabels} are present. Based on the current step and this visual information, answer their question.`;
+        }
+
         try {
-            const stream = await chatRef.current.sendMessageStream({ message: query });
+            const stream = await chatRef.current.sendMessageStream({ message: enrichedQuery });
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
@@ -62,7 +99,7 @@ const LiveCoachPage: React.FC = () => {
             setStatus('speaking');
             ttsService.speak(errorMessage, () => setStatus('listening'));
         }
-    }, [addToast]);
+    }, [addToast, detectedObjects]);
 
     const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
         if (!isFinal) return; // Only process final results
@@ -109,14 +146,16 @@ const LiveCoachPage: React.FC = () => {
             const nextIndex = prev + 1;
             if (nextIndex >= moduleData.steps.length) {
                 addToast('success', 'Module Complete!', 'You have finished all the steps.');
-                // Here you could navigate away or show a completion screen
-                return prev; // Or loop back: return 0;
+                return prev;
             }
             return nextIndex;
         });
     };
 
     const getStatusIndicator = () => {
+        if (detectedObjects.length > 0) {
+            return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
+        }
         switch (status) {
             case 'listening':
                 return <><MicIcon className="h-6 w-6 text-green-400" />Listening for "Hey Adapt"...</>;
@@ -152,7 +191,12 @@ const LiveCoachPage: React.FC = () => {
 
             <main className="flex-1 p-4 md:p-6 grid grid-rows-[1fr,auto] gap-4 overflow-hidden">
                 <div className="min-h-0">
-                    <LiveCameraFeed instruction={currentInstruction} onClick={handleNextStep} />
+                    <LiveCameraFeed
+                        ref={videoRef}
+                        instruction={currentInstruction}
+                        onClick={handleNextStep}
+                        detectedObjects={detectedObjects}
+                    />
                 </div>
 
                 <footer className="flex-shrink-0 h-24 bg-slate-900 rounded-lg p-4 flex items-center justify-center text-center shadow-lg border border-slate-700">
@@ -161,6 +205,8 @@ const LiveCoachPage: React.FC = () => {
                     </div>
                 </footer>
             </main>
+            {/* Hidden canvas used for capturing video frames for analysis */}
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
         </div>
     );
 };

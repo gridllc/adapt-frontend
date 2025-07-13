@@ -113,3 +113,8 @@ export interface CheckpointEvaluation {
   isCorrect: boolean;
   feedback: string;
 }
+
+export interface DetectedObject {
+  label: string;
+  box: [number, number, number, number]; // [xMin, yMin, xMax, yMax] as percentages
+}
