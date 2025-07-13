@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
-import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion } from "@/types";
+import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
 // --- AI Client Initialization ---
 
@@ -200,6 +200,65 @@ export const createModuleFromText = async (processText: string) => {
         throw new Error("Failed to generate training module. The AI couldn't understand the process. Please try rewriting it.");
     }
 };
+
+export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: string): Promise<CheckpointEvaluation> => {
+    const client = getAiClient();
+    const systemInstruction = `You are a helpful and strict training evaluator. Your task is to determine if a user's answer to a checkpoint question is correct based ONLY on the provided step description. You must respond in JSON format.`;
+
+    const prompt = `
+        **Process Step Description (Source of Truth):**
+        "${step.description}"
+
+        **Checkpoint Question:**
+        "${step.checkpoint}"
+
+        **User's Answer:**
+        "${userAnswer}"
+
+        **Your Task:**
+        Evaluate if the user's answer is correct based on the description.
+        - If the answer is definitively correct, set isCorrect to true and provide brief, positive feedback.
+        - If the answer is incorrect, or if the description doesn't contain enough information to judge, set isCorrect to false and provide a gentle, helpful correction that guides the user to the right answer using the description.
+    `;
+
+    const evaluationSchema = {
+        type: Type.OBJECT,
+        properties: {
+            isCorrect: {
+                type: Type.BOOLEAN,
+                description: "True if the user's answer is correct, otherwise false.",
+            },
+            feedback: {
+                type: Type.STRING,
+                description: "A brief, helpful feedback message for the user.",
+            },
+        },
+        required: ["isCorrect", "feedback"],
+    };
+
+    try {
+        const result = await client.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: evaluationSchema,
+            },
+        });
+
+        const jsonText = result.text?.trim();
+        if (!jsonText) {
+            throw new Error("Checkpoint evaluation AI returned an empty response.");
+        }
+        return JSON.parse(jsonText);
+
+    } catch (error) {
+        console.error("Error evaluating checkpoint:", error);
+        throw new Error(`Failed to get feedback from AI. ${error instanceof Error ? error.message : ''}`);
+    }
+};
+
 
 export const analyzeVideoContent = async (
     videoFile: File,

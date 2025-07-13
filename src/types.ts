@@ -108,3 +108,8 @@ export interface AuthUser {
     [key: string]: any;
   };
 }
+
+export interface CheckpointEvaluation {
+  isCorrect: boolean;
+  feedback: string;
+}

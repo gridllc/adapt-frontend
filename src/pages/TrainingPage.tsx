@@ -6,13 +6,13 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, TrainingModule } from '@/types';
+import type { ProcessStep, PerformanceReportData, TrainingModule, CheckpointEvaluation } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { getChatHistory } from '@/services/chatService';
-import { generatePerformanceSummary } from '@/services/geminiService';
+import { generatePerformanceSummary, evaluateCheckpointAnswer } from '@/services/geminiService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
 
@@ -47,6 +47,11 @@ const TrainingPage: React.FC = () => {
   const [sessionToken, setSessionToken] = useState('');
   const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  // State for interactive checkpoints
+  const [checkpointAnswer, setCheckpointAnswer] = useState('');
+  const [checkpointFeedback, setCheckpointFeedback] = useState<CheckpointEvaluation | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
   // Effect to manage session token in URL
   useEffect(() => {
@@ -89,6 +94,13 @@ const TrainingPage: React.FC = () => {
     resetSession,
     isLoadingSession,
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, displayData?.steps.length ?? 0);
+
+  // Reset checkpoint state when the step changes
+  useEffect(() => {
+    setCheckpointAnswer('');
+    setCheckpointFeedback(null);
+  }, [currentStepIndex]);
+
 
   useEffect(() => {
     // Only navigate to not-found if the query has errored AND we never had any data to display.
@@ -220,6 +232,33 @@ const TrainingPage: React.FC = () => {
     resetSession();
   }
 
+  const handleCheckpointSubmit = async () => {
+    if (!displayData || !checkpointAnswer.trim()) return;
+    const currentStep = displayData.steps[currentStepIndex];
+    if (!currentStep?.checkpoint) return;
+
+    setIsEvaluating(true);
+    setCheckpointFeedback(null);
+
+    try {
+      const evaluation = await evaluateCheckpointAnswer(currentStep, checkpointAnswer);
+      setCheckpointFeedback(evaluation);
+
+      if (evaluation.isCorrect) {
+        setTimeout(() => {
+          markStep('done');
+        }, 1500); // Wait 1.5s before advancing to next step
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      addToast('error', 'Evaluation Failed', errorMessage);
+      setCheckpointFeedback({ isCorrect: false, feedback: 'Sorry, I was unable to evaluate your answer. Please try again.' });
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
+
+
   if ((isLoadingModule && !displayData) || isLoadingSession || !sessionToken) {
     return (
       <div className="flex items-center justify-center h-screen bg-white dark:bg-slate-900">
@@ -304,6 +343,11 @@ const TrainingPage: React.FC = () => {
                   currentStepIndex={currentStepIndex}
                   onStepClick={handleSeekTo}
                   markStep={markStep}
+                  checkpointAnswer={checkpointAnswer}
+                  onCheckpointAnswerChange={setCheckpointAnswer}
+                  onCheckpointSubmit={handleCheckpointSubmit}
+                  checkpointFeedback={checkpointFeedback}
+                  isEvaluatingCheckpoint={isEvaluating}
                 />
               )}
 
