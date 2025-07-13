@@ -472,3 +472,29 @@ export const generatePerformanceSummary = async (
         return "Congratulations on completing the training module! You've done a great job."
     }
 };
+
+export const generateImage = async (prompt: string): Promise<string> => {
+    const client = getAiClient();
+    try {
+        const response = await client.models.generateImages({
+            model: 'imagen-3.0-generate-002',
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: '1:1',
+            },
+        });
+
+        if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
+            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64ImageBytes}`;
+        } else {
+            throw new Error("Image generation succeeded but returned no image data.");
+        }
+
+    } catch (error) {
+        console.error("Error generating image:", error);
+        throw new Error(`Failed to generate visual aid. ${error instanceof Error ? error.message : ''}`);
+    }
+};

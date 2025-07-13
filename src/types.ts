@@ -34,6 +34,8 @@ export interface ChatMessage {
   text: string;
   citations?: { uri: string; title: string; }[];
   isFallback?: boolean;
+  imageUrl?: string; // For generated images
+  isLoading?: boolean; // For showing loading indicators on a specific message
 }
 
 export type StepStatus = 'done' | 'unclear' | 'skipped';

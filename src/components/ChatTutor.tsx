@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { startChat, getFallbackResponse } from '@/services/geminiService';
+import { startChat, getFallbackResponse, generateImage } from '@/services/geminiService';
 import * as ttsService from '../services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
 import { getChatHistory, saveChatMessage } from '@/services/chatService';
 import type { ChatMessage, ProcessStep } from '@/types';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon } from '@/components/Icons';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon } from '@/components/Icons';
 import { useToast } from '@/hooks/useToast';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
@@ -67,7 +67,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
     }, [initialMessages]);
 
     useEffect(() => {
-        const geminiHistory: Content[] = messages.map(msg => ({
+        // Filter out image-only messages from history sent to Gemini
+        const textBasedHistory = messages.filter(msg => msg.text.trim() !== '');
+        const geminiHistory: Content[] = textBasedHistory.map(msg => ({
             role: msg.role,
             parts: [{ text: msg.text }]
         }));
@@ -100,20 +102,49 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
 
     const handleSendMessage = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim() || isLoading || !chatRef.current) return;
+        const trimmedInput = input.trim();
+        if (!trimmedInput || isLoading || !chatRef.current) return;
 
         ttsService.cancel();
-        const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: input };
+        setInput('');
+
+        // Handle image generation command
+        if (trimmedInput.toLowerCase().startsWith('/draw ')) {
+            const imagePrompt = trimmedInput.substring(6);
+            const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: trimmedInput };
+            const modelPlaceholderId = (Date.now() + 1).toString();
+            const modelPlaceholder: ChatMessage = { id: modelPlaceholderId, role: 'model', text: 'Generating image...', isLoading: true, imageUrl: '' };
+
+            setMessages(prev => [...prev, userMessage, modelPlaceholder]);
+            persistMessage(userMessage);
+
+            try {
+                const imageUrl = await generateImage(imagePrompt);
+                const finalModelMessage: ChatMessage = { ...modelPlaceholder, text: '', isLoading: false, imageUrl };
+                setMessages(prev => prev.map(msg => msg.id === modelPlaceholderId ? finalModelMessage : msg));
+                persistMessage(finalModelMessage);
+            } catch (err) {
+                const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+                setError(errorMessage);
+                addToast('error', 'Image Generation Failed', errorMessage);
+                // Remove the placeholder on failure
+                setMessages(prev => prev.filter(msg => msg.id !== modelPlaceholderId));
+            }
+            return;
+        }
+
+        // Standard text message handling
+        const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: trimmedInput };
         setMessages(prev => [...prev, userMessage]);
         persistMessage(userMessage);
 
-        const enrichedInput = enrichPromptIfNeeded(input);
-        setInput('');
+        const enrichedInput = enrichPromptIfNeeded(trimmedInput);
         setIsLoading(true);
         setError(null);
 
         const modelMessageId = (Date.now() + 1).toString();
-        setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '', citations: [] }]);
+        // Add a temporary loading message for text response
+        setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '', isLoading: true }]);
 
         let finalModelText = '';
         let finalCitations: ChatMessage['citations'] = [];
@@ -133,7 +164,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                 setMessages(prev =>
                     prev.map(msg => {
                         if (msg.id !== modelMessageId) return msg;
-                        const updatedMsg: ChatMessage = { ...msg, text: finalModelText };
+                        const updatedMsg: ChatMessage = { ...msg, text: finalModelText, isLoading: false }; // Set loading to false as soon as first chunk arrives
                         if (groundingChunks && groundingChunks.length > 0) {
                             const newCitations = groundingChunks
                                 .map((c: GroundingChunk) => c.web)
@@ -162,7 +193,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                 setMessages(prev =>
                     prev.map(msg =>
                         msg.id === modelMessageId
-                            ? { ...msg, text: fallbackText, isFallback: true }
+                            ? { ...msg, text: fallbackText, isFallback: true, isLoading: false }
                             : msg
                     )
                 );
@@ -172,7 +203,6 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
             } catch (fallbackErr) {
                 const errorMessage = fallbackErr instanceof Error ? fallbackErr.message : 'An unknown error occurred.';
                 setError(errorMessage);
-                // remove placeholder and user message on total failure
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
             }
         } finally {
@@ -183,15 +213,15 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                     role: 'model',
                     text: finalModelText,
                     citations: finalCitations,
-                    isFallback
+                    isFallback,
+                    isLoading: false,
                 };
                 persistMessage(finalModelMessage);
             } else {
-                // Clean up placeholder if no response was generated
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
             }
         }
-    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages, persistMessage]);
+    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages, persistMessage, addToast, moduleId, sessionToken]);
 
     const handleSuggestionSubmit = useCallback(async (suggestionText: string) => {
         try {
@@ -262,11 +292,18 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         if (messages.length === 0) return;
 
         const chatContent = messages.map(msg => {
-            const prefix = msg.role === 'user' ? 'User:' : 'AI Tutor:';
-            const text = msg.text
+            let prefix = msg.role === 'user' ? 'User:' : 'AI Tutor:';
+            let content = msg.text.trim();
+
+            if (msg.imageUrl) {
+                content += `\n[Generated Image at: ${msg.imageUrl}]`;
+            }
+
+            content = content
                 .replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, '\n--- Suggestion ---\n$1\n--- End Suggestion ---')
                 .replace(/\[\d{2}:\d{2}:\d{2}\]|\[\d{2}:\d{2}\]/g, '');
-            return `${prefix}\n${text.trim()}\n`;
+
+            return `${prefix}\n${content}\n`;
         }).join('\n----------------------------------------\n\n');
 
         const blob = new Blob([chatContent], { type: 'text/plain;charset=utf-8' });
@@ -319,7 +356,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                             <BotIcon className="h-5 w-5 text-white" />
                         </div>
                         <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none">
-                            <p className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I've been trained on your company's specific process for this task. Ask me anything, and I'll guide you using the official steps.</p>
+                            <p className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I can answer questions about the process, or draw a diagram if you ask. Try typing <code className="bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded-md font-mono text-sm">/draw a simple diagram</code>.</p>
                         </div>
                     </div>
                 )}
@@ -336,7 +373,17 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                             </div>
                         )}
                         <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none'}`}>
-                            <div className="text-base whitespace-pre-wrap">{renderMessageContent(msg.text)}</div>
+                            {msg.isLoading ? (
+                                <div className="flex items-center gap-2">
+                                    {msg.imageUrl === '' ? <ImageIcon className="h-5 w-5 text-slate-500 animate-pulse" /> : <SparklesIcon className="h-5 w-5 text-slate-500 animate-pulse" />}
+                                    <span className="text-slate-600 dark:text-slate-300 italic">{msg.text || 'Thinking...'}</span>
+                                </div>
+                            ) : msg.imageUrl ? (
+                                <img src={msg.imageUrl} alt={msg.text || 'Generated image'} className="rounded-lg max-w-full h-auto" />
+                            ) : (
+                                <div className="text-base whitespace-pre-wrap">{renderMessageContent(msg.text)}</div>
+                            )}
+
                             {msg.citations && msg.citations.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
                                     <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Sources:</h4>
@@ -358,7 +405,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                         )}
                     </div>
                 ))}
-                {isLoading && (
+
+                {isLoading && !messages.some(m => m.isLoading) && (
                     <div className="flex items-start gap-3 animate-fade-in-up">
                         <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center">
                             <BotIcon className="h-5 w-5 text-white animate-pulse" />
@@ -381,7 +429,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder={error ? "AI Tutor is unavailable" : "Ask a question..."}
+                        placeholder={error ? "AI Tutor is unavailable" : "Ask or type /draw..."}
                         className="flex-1 bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white disabled:opacity-50"
                         disabled={isLoading || !!error || isLoadingHistory}
                     />
