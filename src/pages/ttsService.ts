@@ -10,10 +10,12 @@ let utterance: SpeechSynthesisUtterance | null = null;
  * Speaks the given text out loud.
  * If speech is already in progress, it will be cancelled before starting new speech.
  * @param text The text to be spoken.
+ * @param onEnd An optional callback to execute when speech finishes.
  */
-export const speak = (text: string) => {
+export const speak = (text: string, onEnd?: () => void) => {
   if (!window.speechSynthesis) {
     console.warn("Browser does not support Speech Synthesis.");
+    onEnd?.();
     return;
   }
 
@@ -30,6 +32,13 @@ export const speak = (text: string) => {
 
   utterance.onend = () => {
     utterance = null;
+    onEnd?.();
+  };
+
+  utterance.onerror = (event) => {
+    console.error("SpeechSynthesis Error", event);
+    utterance = null;
+    onEnd?.();
   };
 
   window.speechSynthesis.speak(utterance);

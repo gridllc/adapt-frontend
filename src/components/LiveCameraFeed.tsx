@@ -5,9 +5,10 @@ import { VideoIcon } from './Icons';
 
 interface LiveCameraFeedProps {
     instruction: string;
+    onClick: () => void;
 }
 
-export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({ instruction }) => {
+export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({ instruction, onClick }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [error, setError] = useState<string | null>(null);
     const { addToast } = useToast();
@@ -54,7 +55,10 @@ export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({ instruction }) =
     }, [addToast]);
 
     return (
-        <div className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden shadow-2xl border-4 border-slate-700">
+        <div
+            className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden shadow-2xl border-4 border-slate-700 cursor-pointer"
+            onClick={onClick}
+        >
             <video
                 ref={videoRef}
                 autoPlay
