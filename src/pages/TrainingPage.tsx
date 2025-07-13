@@ -6,7 +6,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData } from '@/types';
+import type { ProcessStep, PerformanceReportData, TrainingModule } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -62,6 +62,8 @@ const TrainingPage: React.FC = () => {
     setSessionToken(token);
   }, [location.search, location.pathname, navigate]);
 
+  const preloadedModule: TrainingModule | undefined = location.state?.module?.slug === moduleId ? location.state.module : undefined;
+
   const {
     data: moduleData,
     isLoading: isLoadingModule,
@@ -72,6 +74,7 @@ const TrainingPage: React.FC = () => {
     queryFn: () => getModule(moduleId!),
     enabled: !!moduleId && !!sessionToken,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    initialData: preloadedModule,
   });
 
   const {
@@ -85,11 +88,11 @@ const TrainingPage: React.FC = () => {
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, moduleData?.steps.length ?? 0);
 
   useEffect(() => {
-    if (!isLoadingModule && (isError || !moduleData)) {
+    if (isError && !moduleData) {
       console.error(`Module with slug "${moduleId}" not found or failed to load.`, error);
       navigate('/not-found');
     }
-  }, [isLoadingModule, isError, moduleData, moduleId, navigate, error]);
+  }, [isError, moduleData, moduleId, navigate, error]);
 
   // Generate a focused AI context based on the current step
   useEffect(() => {
@@ -213,12 +216,18 @@ const TrainingPage: React.FC = () => {
     resetSession();
   }
 
-  if (isLoadingModule || isLoadingSession || !sessionToken || !moduleData) {
+  if ((isLoadingModule && !preloadedModule) || isLoadingSession || !sessionToken) {
     return (
       <div className="flex items-center justify-center h-screen bg-white dark:bg-slate-900">
         <p className="text-xl text-slate-700 dark:text-slate-300">Loading Training Module...</p>
       </div>
     );
+  }
+
+  if (!moduleData) {
+    // This state is reached if the query fails and there was no preloaded data.
+    // The useEffect hook above will navigate to /not-found, but this is a safeguard.
+    return <div className="flex items-center justify-center h-screen">Loading...</div>
   }
 
   return (

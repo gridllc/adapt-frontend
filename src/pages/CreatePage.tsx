@@ -133,7 +133,7 @@ const CreatePage: React.FC = () => {
         try {
             const savedModule = await saveUploadedModule(generatedModule);
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
-            navigate(`/modules/${savedModule.slug}`);
+            navigate(`/modules/${savedModule.slug}`, { state: { module: savedModule } });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
             addToast('error', 'Save Failed', errorMessage);

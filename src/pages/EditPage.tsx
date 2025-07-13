@@ -125,7 +125,7 @@ const EditPage: React.FC = () => {
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             await queryClient.invalidateQueries({ queryKey: ['modules'] });
             addToast('success', 'Changes Saved', 'The module has been updated successfully.');
-            navigate(`/modules/${savedModule.slug}`);
+            navigate(`/modules/${savedModule.slug}`, { state: { module: savedModule } });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
             addToast('error', 'Save Failed', errorMessage);
