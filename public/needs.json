@@ -1,0 +1,12 @@
+{
+  "how-to-boil-3-cups-of-water": {
+    "0": ["pot"],
+    "1": [],
+    "2": []
+  },
+  "how-to-make-a-sandwich": {
+    "0": ["bread"],
+    "1": ["knife", "butter"],
+    "2": ["cheese"]
+  }
+}

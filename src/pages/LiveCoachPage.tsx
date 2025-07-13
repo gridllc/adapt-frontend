@@ -11,9 +11,9 @@ import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
-import type { DetectedObject } from '@/types';
+import type { DetectedObject, ModuleNeeds } from '@/types';
 
-type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking';
+type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting';
 
 const LiveCoachPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
@@ -23,10 +23,13 @@ const LiveCoachPage: React.FC = () => {
     const [status, setStatus] = useState<CoachStatus>('initializing');
     const [aiResponse, setAiResponse] = useState('');
     const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
+    const [moduleNeeds, setModuleNeeds] = useState<ModuleNeeds | null>(null);
 
     const chatRef = useRef<Chat | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const lastDetectionTime = useRef(0);
+    const hintTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const isHintingRef = useRef(false);
 
     const { data: moduleData, isLoading: isLoadingModule, isError, error: moduleError } = useQuery({
         queryKey: ['module', moduleId],
@@ -36,48 +39,84 @@ const LiveCoachPage: React.FC = () => {
         retry: false,
     });
 
+    // Fetch the needs for all modules
+    useEffect(() => {
+        const fetchNeeds = async () => {
+            try {
+                const response = await fetch('/needs.json');
+                const data: ModuleNeeds = await response.json();
+                setModuleNeeds(data);
+            } catch (error) {
+                console.error("Could not fetch module needs:", error);
+            }
+        };
+        fetchNeeds();
+    }, []);
+
     const runDetection = useCallback(() => {
         if (status !== 'initializing' && videoRef.current && videoRef.current.readyState >= 3) {
             const detections = detectObjectsInVideo(videoRef.current);
             if (detections.length > 0) {
                 setDetectedObjects(detections);
                 lastDetectionTime.current = Date.now();
+            } else {
+                // If no objects are detected, clear the array.
+                setDetectedObjects([]);
             }
         }
     }, [status]);
 
-    // Main loop for video detection
+    // Proactive Hint Logic
     useEffect(() => {
-        const detectionLoop = setInterval(runDetection, 100); // Run detection frequently
-        const clearLoop = setInterval(() => {
-            // Clear detections if none have been seen for a while
-            if (Date.now() - lastDetectionTime.current > 2000) {
-                setDetectedObjects([]);
-            }
-        }, 500);
+        if (status !== 'listening' || !moduleNeeds || !moduleId || !moduleData) return;
 
-        return () => {
-            clearInterval(detectionLoop);
-            clearInterval(clearLoop);
-        };
-    }, [runDetection]);
+        const requiredObjects = moduleNeeds[moduleId]?.[currentStepIndex];
+        if (!requiredObjects || requiredObjects.length === 0) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+            return;
+        }
 
+        const hasAllObjects = requiredObjects.every(need =>
+            detectedObjects.some(detected => detected.label.includes(need))
+        );
 
-    const processAiQuery = useCallback(async (query: string) => {
+        if (hasAllObjects) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+            hintTimerRef.current = null;
+        } else if (!hintTimerRef.current && !isHintingRef.current) {
+            // If mismatch, start a timer to offer a hint.
+            hintTimerRef.current = setTimeout(() => {
+                const hintText = `The user is on step "${moduleData.steps[currentStepIndex].title}", which requires a "${requiredObjects.join(', ')}". My vision system does not detect this item. Please provide a gentle, proactive hint to help them find the right tool or item. Keep it brief.`;
+                processAiQuery(hintText, true);
+            }, 5000); // 5-second delay before hinting
+        }
+
+    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, moduleData]);
+
+    const processAiQuery = useCallback(async (query: string, isProactiveHint = false) => {
         if (!chatRef.current) {
             addToast('error', 'AI Not Ready', 'The AI chat session is not initialized.');
             return;
         }
 
-        setStatus('thinking');
+        if (isProactiveHint) {
+            if (isHintingRef.current) return; // Don't allow multiple hints at once
+            isHintingRef.current = true;
+            setStatus('hinting');
+        } else {
+            setStatus('thinking');
+        }
+
         setAiResponse('');
-        addToast('info', 'Question Sent', `"${query}"`);
+        addToast('info', isProactiveHint ? 'AI Hint' : 'Question Sent', isProactiveHint ? 'The AI is offering a hint.' : `"${query}"`);
 
         let enrichedQuery = query;
-        const currentDetections = detectedObjects; // Capture current detections
-        if (currentDetections.length > 0) {
-            const objectLabels = currentDetections.map(obj => obj.label).join(', ');
-            enrichedQuery = `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`;
+        if (!isProactiveHint) {
+            const currentDetections = detectedObjects; // Capture current detections
+            if (currentDetections.length > 0) {
+                const objectLabels = currentDetections.map(obj => obj.label).join(', ');
+                enrichedQuery = `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`;
+            }
         }
 
         try {
@@ -90,9 +129,13 @@ const LiveCoachPage: React.FC = () => {
 
             if (fullText) {
                 setStatus('speaking');
-                ttsService.speak(fullText, () => setStatus('listening'));
+                ttsService.speak(fullText, () => {
+                    setStatus('listening');
+                    if (isProactiveHint) isHintingRef.current = false;
+                });
             } else {
                 setStatus('listening');
+                if (isProactiveHint) isHintingRef.current = false;
             }
         } catch (error) {
             console.error("Error sending message to AI:", error);
@@ -100,12 +143,15 @@ const LiveCoachPage: React.FC = () => {
             addToast('error', 'AI Error', errorMessage);
             setAiResponse(errorMessage);
             setStatus('speaking');
-            ttsService.speak(errorMessage, () => setStatus('listening'));
+            ttsService.speak(errorMessage, () => {
+                setStatus('listening');
+                if (isProactiveHint) isHintingRef.current = false;
+            });
         }
     }, [addToast, detectedObjects]);
 
     const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
-        if (!isFinal || status === 'thinking' || status === 'speaking') return;
+        if (!isFinal || status === 'thinking' || status === 'speaking' || status === 'hinting') return;
 
         const hotword = "hey adapt";
         const lowerTranscript = transcript.toLowerCase().trim();
@@ -114,6 +160,11 @@ const LiveCoachPage: React.FC = () => {
             const query = transcript.substring(hotword.length).trim();
             if (query) {
                 ttsService.cancel();
+                // If the user asks a question, cancel any pending hints.
+                if (hintTimerRef.current) {
+                    clearTimeout(hintTimerRef.current);
+                    hintTimerRef.current = null;
+                }
                 processAiQuery(query);
             }
         }
@@ -134,7 +185,7 @@ const LiveCoachPage: React.FC = () => {
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : 'An unknown error occurred.';
                     addToast('error', 'Initialization Failed', msg);
-                    setStatus('idle'); // Set to idle on failure
+                    setStatus('idle');
                 }
             } else if (moduleData && !hasSupport) {
                 setStatus('idle');
@@ -153,6 +204,11 @@ const LiveCoachPage: React.FC = () => {
 
     const handleNextStep = () => {
         if (!moduleData) return;
+        // Cancel any pending hint when user advances the step
+        if (hintTimerRef.current) {
+            clearTimeout(hintTimerRef.current);
+            hintTimerRef.current = null;
+        }
         setCurrentStepIndex(prev => {
             const nextIndex = prev + 1;
             if (nextIndex >= moduleData.steps.length) {
@@ -165,7 +221,7 @@ const LiveCoachPage: React.FC = () => {
     };
 
     const getStatusIndicator = () => {
-        if (detectedObjects.length > 0) {
+        if (detectedObjects.length > 0 && status !== 'speaking' && status !== 'hinting' && status !== 'thinking') {
             return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
         }
         switch (status) {
@@ -175,6 +231,8 @@ const LiveCoachPage: React.FC = () => {
                 return <><MicIcon className="h-6 w-6 text-green-400" />Listening for "Hey Adapt"...</>;
             case 'thinking':
                 return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Thinking...</>;
+            case 'hinting':
+                return <><SparklesIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Offering a hint...</>;
             case 'speaking':
                 return <><SpeakerOnIcon className="h-6 w-6 text-amber-400" />{aiResponse}</>;
             case 'idle':

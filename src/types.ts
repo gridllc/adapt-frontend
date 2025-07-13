@@ -119,3 +119,5 @@ export interface DetectedObject {
   score?: number; // Confidence score from the model
   box: [number, number, number, number]; // [xMin, yMin, xMax, yMax] as percentages
 }
+
+export type ModuleNeeds = Record<string, Record<number, string[]>>;
