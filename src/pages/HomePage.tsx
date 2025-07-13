@@ -1,8 +1,7 @@
-
 import React, { useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService';
+import { getAvailableModules, saveModule, deleteModule } from '@/services/moduleService';
 import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,7 +18,6 @@ const HomePage: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Fetch available modules using React Query
     const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<TrainingModule[], Error>({
         queryKey: ['modules'],
         queryFn: getAvailableModules
@@ -52,7 +50,7 @@ const HomePage: React.FC = () => {
 
                 const moduleData = JSON.parse(text) as TrainingModule;
 
-                const savedModule = await saveUploadedModule(moduleData);
+                const savedModule = await saveModule({ moduleData });
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
                 addToast('success', 'Upload Complete', `Module "${savedModule.title}" was uploaded.`);
                 navigate(`/modules/${savedModule.slug}`);

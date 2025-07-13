@@ -7,13 +7,11 @@ const isTrainingModule = (data: any): data is TrainingModule => {
         data !== null &&
         typeof data.slug === 'string' &&
         typeof data.title === 'string' &&
-        // videoUrl can be empty string
         (typeof data.videoUrl === 'string' || data.videoUrl === null) &&
         Array.isArray(data.steps)
     );
 };
 
-// Helper to map from database snake_case to JS camelCase
 const mapToTrainingModule = (data: any): TrainingModule | null => {
     if (!data) return null;
     const module: TrainingModule = {
@@ -27,12 +25,6 @@ const mapToTrainingModule = (data: any): TrainingModule | null => {
     return isTrainingModule(module) ? module : null;
 }
 
-/**
- * Retrieves a training module by its slug, first from the database,
- * then falling back to a static JSON file in `/public/modules/`.
- * @param slug The slug of the module to retrieve.
- * @returns The TrainingModule if found, otherwise undefined.
- */
 export const getModule = async (slug: string): Promise<TrainingModule | undefined> => {
     if (!slug) return undefined;
 
@@ -41,14 +33,10 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
             .from('modules')
             .select('*')
             .eq('slug', slug)
-            .single(); // Use .single() to get one object instead of an array
+            .single();
 
-        if (error) {
-            // .single() throws an error if no rows are found or more than one is found.
-            // We will catch the "not found" error and try the static file fallback.
-            if (error.code !== 'PGRST116') {
-                throw error; // Other errors should be thrown
-            }
+        if (error && error.code !== 'PGRST116') {
+            throw error;
         }
 
         if (data) {
@@ -56,8 +44,6 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
             if (mappedModule) return mappedModule;
         }
 
-        // If not found in DB or mapping fails, try fetching from static files.
-        // This enables loading of sub-modules like remedial lessons.
         const response = await fetch(`/modules/${slug}.json`);
         if (response.ok) {
             const staticModule = await response.json();
@@ -66,7 +52,7 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
             }
         }
 
-        return undefined; // Not found in DB or static files
+        return undefined;
 
     } catch (error: any) {
         console.error(`Error fetching module with slug "${slug}":`, error.message);
@@ -74,13 +60,9 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
     }
 };
 
-
-/**
- * Gets a list of all available modules from the database.
- */
 export const getAvailableModules = async (): Promise<TrainingModule[]> => {
     const { data, error } = await supabase
-        .from('modules') // Assumes your table is named 'modules'
+        .from('modules')
         .select('*');
 
     if (error) {
@@ -96,28 +78,46 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
     return data.map(mapToTrainingModule).filter((m): m is TrainingModule => m !== null);
 };
 
-/**
- * Saves (upserts) a module to the database.
- * It internally gets the authenticated user's ID to associate with the module.
- * If a module with the same slug exists, it will be updated. Otherwise, a new one will be created.
- * @param moduleData The TrainingModule object to save.
- * @returns The saved TrainingModule on success.
- * @throws An error if the save operation fails or if the user is not authenticated.
- */
-export const saveUploadedModule = async (moduleData: TrainingModule): Promise<TrainingModule> => {
+export const saveModule = async ({
+    moduleData,
+    videoFile,
+}: {
+    moduleData: TrainingModule,
+    videoFile?: File | null,
+}): Promise<TrainingModule> => {
     const { data: { user } } = await supabase.auth.getUser();
-
     if (!user) {
         throw new Error('User not authenticated. Cannot save module.');
     }
 
-    // Map from JS camelCase to database snake_case before sending
+    let video_url = moduleData.videoUrl;
+
+    if (videoFile) {
+        const fileExt = videoFile.name.split('.').pop();
+        const filePath = `${moduleData.slug}/${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('training_videos')
+            .upload(filePath, videoFile, {
+                cacheControl: '3600',
+                upsert: true,
+            });
+
+        if (uploadError) {
+            console.error("Video upload failed:", uploadError);
+            throw new Error(`Video upload failed: ${uploadError.message}`);
+        }
+
+        const { data } = supabase.storage.from('training_videos').getPublicUrl(filePath);
+        video_url = data.publicUrl;
+    }
+
     const dbData = {
         slug: moduleData.slug,
         title: moduleData.title,
         steps: moduleData.steps,
         transcript: moduleData.transcript,
-        video_url: moduleData.videoUrl,
+        video_url: video_url,
         user_id: user.id,
     };
 
@@ -140,57 +140,28 @@ export const saveUploadedModule = async (moduleData: TrainingModule): Promise<Tr
     return savedModule;
 };
 
-/**
- * Deletes a module from the database and all its associated data.
- * @param slug The slug of the module to delete.
- * @throws An error if the deletion fails.
- */
 export const deleteModule = async (slug: string): Promise<void> => {
-    // In a production environment with Foreign Key constraints and `ON DELETE CASCADE`,
-    // deleting the parent `modules` record would automatically delete child records.
-    // Without it, we must delete from dependent tables first to avoid foreign key violations.
-
-    // 1. Delete associated chat messages
     const { error: chatError } = await supabase
         .from('chat_messages')
         .delete()
         .eq('module_id', slug);
+    if (chatError) throw new Error(`Failed to delete chat history: ${chatError.message}`);
 
-    if (chatError) {
-        console.error(`Error deleting chat messages for module ${slug}:`, chatError);
-        throw new Error(`Failed to delete chat history: ${chatError.message}`);
-    }
-
-    // 2. Delete associated training sessions
     const { error: sessionError } = await supabase
         .from('training_sessions')
         .delete()
         .eq('module_id', slug);
+    if (sessionError) throw new Error(`Failed to delete session data: ${sessionError.message}`);
 
-    if (sessionError) {
-        console.error(`Error deleting training sessions for module ${slug}:`, sessionError);
-        throw new Error(`Failed to delete session data: ${sessionError.message}`);
-    }
-
-    // 3. Delete associated suggestions
     const { error: suggestionError } = await supabase
         .from('suggestions')
         .delete()
         .eq('module_id', slug);
+    if (suggestionError) throw new Error(`Failed to delete suggestions: ${suggestionError.message}`);
 
-    if (suggestionError) {
-        console.error(`Error deleting suggestions for module ${slug}:`, suggestionError);
-        throw new Error(`Failed to delete suggestions: ${suggestionError.message}`);
-    }
-
-    // 4. Finally, delete the module itself
     const { error: moduleError } = await supabase
         .from('modules')
         .delete()
         .eq('slug', slug);
-
-    if (moduleError) {
-        console.error(`Error deleting module ${slug}:`, moduleError);
-        throw new Error(`Failed to delete the module: ${moduleError.message}`);
-    }
+    if (moduleError) throw new Error(`Failed to delete the module: ${moduleError.message}`);
 };

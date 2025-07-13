@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
-import { saveUploadedModule } from '@/services/moduleService';
+import { saveModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TrainingModule } from '@/types';
 import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
@@ -23,7 +23,6 @@ const CreatePage: React.FC = () => {
 
 
     useEffect(() => {
-        // Redundancy check, main protection is at the router level
         if (!isAuthenticated) {
             navigate('/login');
         }
@@ -84,9 +83,8 @@ const CreatePage: React.FC = () => {
 
         try {
             const moduleData = await createModuleFromText(processText);
-            if (videoBlobUrl) {
-                moduleData.videoUrl = videoBlobUrl;
-            }
+            // Assign the blob URL for immediate preview in the editor
+            moduleData.videoUrl = videoFile ? URL.createObjectURL(videoFile) : '';
             setGeneratedModule(moduleData);
             addToast('success', 'Module Generated', 'The AI has created a draft. Please review and edit.');
         } catch (err) {
@@ -131,7 +129,7 @@ const CreatePage: React.FC = () => {
 
         setIsSaving(true);
         try {
-            const savedModule = await saveUploadedModule(generatedModule);
+            const savedModule = await saveModule({ moduleData: generatedModule, videoFile });
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
             navigate(`/modules/${savedModule.slug}`, { state: { module: savedModule } });
         } catch (err) {
@@ -227,7 +225,7 @@ const CreatePage: React.FC = () => {
             {generatedModule && (
                 <div className="animate-fade-in-up">
                     <ModuleEditor
-                        module={generatedModule}
+                        module={{ ...generatedModule, videoUrl: videoBlobUrl }}
                         onModuleChange={setGeneratedModule}
                         onAnalyze={handleAnalyzeVideo}
                         isAnalyzing={isAnalyzing}
