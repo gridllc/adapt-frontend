@@ -6,6 +6,9 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), tsconfigPaths()],
+  server: {
+    historyApiFallback: true,
+  },
   // The 'define' block is used to expose environment variables to the client-side code.
   // Per the coding guidelines, the Gemini API key MUST be accessed via `process.env.API_KEY`.
   // Vite replaces this with the value at build time.
