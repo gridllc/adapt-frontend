@@ -1,32 +1,79 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
-import { startChat, detectObjects } from '@/services/geminiService';
+import { getSession, saveSession } from '@/services/sessionService';
+import { startChat } from '@/services/geminiService';
+import { initializeObjectDetector, detectObjectsInVideo } from '@/services/visionService';
 import * as ttsService from '@/services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon } from '@/components/Icons';
+import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon, LightbulbIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
-import type { DetectedObject } from '@/types';
+import type { DetectedObject, ModuleNeeds, StepNeeds, LiveCoachEvent, CoachEventType } from '@/types';
 
-type CoachStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
+type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting' | 'correcting' | 'tutoring';
+
+const generateToken = () => Math.random().toString(36).substring(2, 10);
 
 const LiveCoachPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
+    const queryClient = useQueryClient();
     const { addToast } = useToast();
+
+    const [sessionToken, setSessionToken] = useState('');
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
-    const [status, setStatus] = useState<CoachStatus>('idle');
+    const [sessionEvents, setSessionEvents] = useState<LiveCoachEvent[]>([]);
+
+    const [status, setStatus] = useState<CoachStatus>('initializing');
     const [aiResponse, setAiResponse] = useState('');
     const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
+    const [moduleNeeds, setModuleNeeds] = useState<ModuleNeeds | null>(null);
 
     const chatRef = useRef<Chat | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const hintTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const isInterjectingRef = useRef(false);
 
+    // --- Session Management ---
+    useEffect(() => {
+        const searchParams = new URLSearchParams(location.search);
+        let token = searchParams.get('token');
+        if (!token) {
+            token = generateToken();
+            navigate(`${location.pathname}?token=${token}`, { replace: true });
+        }
+        setSessionToken(token);
+    }, [location.search, location.pathname, navigate]);
+
+    const sessionQueryKey = ['liveCoachSession', moduleId, sessionToken];
+
+    const { data: sessionData, isLoading: isLoadingSession } = useQuery({
+        queryKey: sessionQueryKey,
+        queryFn: () => getSession(moduleId!, sessionToken),
+        enabled: !!moduleId && !!sessionToken,
+    });
+
+    useEffect(() => {
+        if (sessionData) {
+            setCurrentStepIndex(sessionData.currentStepIndex);
+            setSessionEvents(sessionData.liveCoachEvents || []);
+        }
+    }, [sessionData]);
+
+    const { mutate: persistSession } = useMutation({
+        mutationFn: (newState: Partial<Awaited<ReturnType<typeof getSession>>>) =>
+            saveSession({ moduleId: moduleId!, sessionToken: sessionToken!, ...newState }),
+        onSuccess: (_data, variables) => {
+            queryClient.setQueryData(sessionQueryKey, (old: any) => ({ ...(old || {}), ...variables }));
+        },
+    });
+
+    // --- Module Data and Needs ---
     const { data: moduleData, isLoading: isLoadingModule, isError, error: moduleError } = useQuery({
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId!),
@@ -35,47 +82,85 @@ const LiveCoachPage: React.FC = () => {
         retry: false,
     });
 
-    // Effect for real-time vision analysis
     useEffect(() => {
-        const captureInterval = setInterval(async () => {
-            if (videoRef.current && videoRef.current.readyState >= 3 && canvasRef.current) { // readyState >= 3 means we have enough data
-                const video = videoRef.current;
-                const canvas = canvasRef.current;
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    const newDetections = await detectObjects(canvas);
-                    if (newDetections.length > 0) {
-                        setDetectedObjects(newDetections);
-                        // Make detections fade out after a bit
-                        setTimeout(() => setDetectedObjects([]), 2500);
-                    }
-                }
+        const fetchNeeds = async () => {
+            try {
+                const response = await fetch('/needs.json');
+                const data: ModuleNeeds = await response.json();
+                setModuleNeeds(data);
+            } catch (error) {
+                console.error("Could not fetch module needs:", error);
             }
-        }, 1000); // Capture a frame every second
+        };
+        fetchNeeds();
+    }, []);
 
-        return () => clearInterval(captureInterval);
-    }, []); // Runs once on mount
+    // --- AI Interaction Logic ---
+
+    const logAndSaveEvent = useCallback((eventType: CoachEventType) => {
+        const newEvent: LiveCoachEvent = { eventType, stepIndex: currentStepIndex, timestamp: Date.now() };
+        const updatedEvents = [...sessionEvents, newEvent];
+        setSessionEvents(updatedEvents);
+        persistSession({ liveCoachEvents: updatedEvents });
+    }, [currentStepIndex, sessionEvents, persistSession]);
+
+    const processAiInterjection = useCallback(async (basePrompt: string, type: 'hint' | 'correction') => {
+        if (!chatRef.current || !moduleData) return;
+        if (isInterjectingRef.current) return;
+
+        isInterjectingRef.current = true;
+        ttsService.cancel();
+
+        const previousEvents = sessionEvents.filter(e => e.stepIndex === currentStepIndex && e.eventType === 'hint');
+        const isRepeatStruggle = type === 'hint' && previousEvents.length > 0;
+
+        let finalPrompt = basePrompt;
+        let newStatus: CoachStatus = type === 'hint' ? 'hinting' : 'correcting';
+
+        if (isRepeatStruggle) {
+            newStatus = 'tutoring';
+            finalPrompt = `The user is stuck on step "${moduleData.steps[currentStepIndex].title}". I have already given them a hint. Instead of another hint, provide a more detailed 'mini-tutorial' that re-explains the step clearly and anticipates their problem. Be encouraging.`;
+        }
+
+        setStatus(newStatus);
+        logAndSaveEvent(newStatus);
+
+        try {
+            const stream = await chatRef.current.sendMessageStream({ message: finalPrompt });
+            let fullText = '';
+            for await (const chunk of stream) {
+                fullText += chunk.text;
+                setAiResponse(prev => prev + chunk.text);
+            }
+            if (fullText) {
+                setStatus('speaking');
+                ttsService.speak(fullText, () => {
+                    setStatus('listening');
+                    isInterjectingRef.current = false;
+                });
+            } else {
+                setStatus('listening');
+                isInterjectingRef.current = false;
+            }
+        } catch (e) {
+            console.error(e);
+            setStatus('listening');
+            isInterjectingRef.current = false;
+        }
+
+    }, [chatRef.current, moduleData, currentStepIndex, sessionEvents, logAndSaveEvent]);
 
     const processAiQuery = useCallback(async (query: string) => {
-        if (!chatRef.current) {
-            addToast('error', 'AI Not Ready', 'The AI chat session is not initialized.');
-            return;
+        if (!chatRef.current) return;
+        if (isInterjectingRef.current) {
+            ttsService.cancel(); // User overrides AI interjection
+            isInterjectingRef.current = false;
         }
-
         setStatus('thinking');
         setAiResponse('');
-        addToast('info', 'Question Sent', `"${query}"`);
 
-        // Enrich the prompt with visual context if available
-        let enrichedQuery = query;
-        if (detectedObjects.length > 0) {
-            const objectLabels = detectedObjects.map(obj => obj.label).join(', ');
-            enrichedQuery = `The user asked: "${query}". My camera analysis shows a ${objectLabels} are present. Based on the current step and this visual information, answer their question.`;
-        }
+        const objectLabels = detectedObjects.length > 0 ? detectedObjects.map(obj => obj.label).join(', ') : 'nothing in particular';
+        const enrichedQuery = `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`;
 
         try {
             const stream = await chatRef.current.sendMessageStream({ message: enrichedQuery });
@@ -84,96 +169,145 @@ const LiveCoachPage: React.FC = () => {
                 fullText += chunk.text;
                 setAiResponse(prev => prev + chunk.text);
             }
-
             if (fullText) {
                 setStatus('speaking');
-                ttsService.speak(fullText, () => setStatus('listening')); // Return to listening after speaking
+                ttsService.speak(fullText, () => setStatus('listening'));
             } else {
                 setStatus('listening');
             }
         } catch (error) {
             console.error("Error sending message to AI:", error);
-            const errorMessage = "Sorry, I couldn't process that. Please try again.";
-            addToast('error', 'AI Error', errorMessage);
+            const errorMessage = "Sorry, I couldn't process that.";
             setAiResponse(errorMessage);
             setStatus('speaking');
             ttsService.speak(errorMessage, () => setStatus('listening'));
         }
-    }, [addToast, detectedObjects]);
+    }, [chatRef.current, detectedObjects]);
 
+    // --- Proactive Checks ---
+    useEffect(() => {
+        if (status !== 'listening' || !moduleNeeds || !moduleId || !moduleData) return;
+
+        const needs: StepNeeds | undefined = moduleNeeds[moduleId]?.[currentStepIndex];
+        if (!needs) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+            return;
+        }
+
+        const detectedForbiddenItem = detectedObjects.find(detected =>
+            (needs.forbidden || []).some(forbidden => detected.label.toLowerCase().includes(forbidden.toLowerCase()))
+        );
+
+        if (detectedForbiddenItem) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+            const mistakeText = `The user is on step "${moduleData.steps[currentStepIndex].title}". They are supposed to use: "${needs.required.join(', ')}". My vision system has detected a forbidden item: a "${detectedForbiddenItem.label}". Provide an immediate, gentle, but clear correction to get them back on track.`;
+            processAiInterjection(mistakeText, 'correction');
+            return;
+        }
+
+        const requiredObjects = needs.required || [];
+        if (requiredObjects.length === 0) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+            return;
+        }
+
+        const hasAllRequiredObjects = requiredObjects.every(req =>
+            detectedObjects.some(detected => detected.label.toLowerCase().includes(req.toLowerCase()))
+        );
+
+        if (hasAllRequiredObjects) {
+            if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+            hintTimerRef.current = null;
+        } else if (!hintTimerRef.current && !isInterjectingRef.current) {
+            hintTimerRef.current = setTimeout(() => {
+                const hintText = `The user is on step "${moduleData.steps[currentStepIndex].title}", which requires a "${requiredObjects.join(', ')}". My vision system does not detect this item. Please provide a gentle, proactive hint to help them find the right tool or item. Keep it brief.`;
+                processAiInterjection(hintText, 'hint');
+            }, 5000); // 5-second delay
+        }
+    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, moduleData, processAiInterjection]);
+
+    // --- Hooks and Lifecycle ---
     const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
-        if (!isFinal) return; // Only process final results
+        if (!isFinal || status === 'thinking' || status === 'speaking' || isInterjectingRef.current) return;
 
-        const hotword = "hey adapt";
-        const lowerTranscript = transcript.toLowerCase().trim();
-
-        if (lowerTranscript.startsWith(hotword)) {
-            const query = transcript.substring(hotword.length).trim();
+        if (transcript.toLowerCase().trim().startsWith("hey adapt")) {
+            const query = transcript.substring(10).trim();
             if (query) {
-                ttsService.cancel(); // Interrupt any ongoing speech
+                if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+                hintTimerRef.current = null;
                 processAiQuery(query);
             }
         }
-    }, [processAiQuery]);
+    }, [processAiQuery, status]);
 
     const { startListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
 
-    // Effect to initialize chat and speech recognition
     useEffect(() => {
-        if (moduleData && hasSupport) {
-            const context = moduleData.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
-            chatRef.current = startChat(context);
-            startListening();
-            setStatus('listening');
-        } else if (moduleData && !hasSupport) {
-            setStatus('idle');
-            addToast('error', 'Unsupported Browser', 'Speech recognition is not available on this browser.');
-        }
-    }, [moduleData, hasSupport, startListening, addToast]);
+        const initialize = async () => {
+            if (moduleData && hasSupport) {
+                try {
+                    await initializeObjectDetector();
+                    setInterval(() => {
+                        if (videoRef.current?.readyState === 4) { // Only detect when video is ready
+                            const detections = detectObjectsInVideo(videoRef.current);
+                            setDetectedObjects(detections);
+                        }
+                    }, 500);
 
-    // Effect to handle navigation for loading/error states
+                    const context = moduleData.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
+                    chatRef.current = startChat(context);
+                    startListening();
+                    setStatus('listening');
+                } catch (err) {
+                    setStatus('idle');
+                }
+            } else if (moduleData && !hasSupport) {
+                setStatus('idle');
+            }
+        };
+        initialize();
+    }, [moduleData, hasSupport, startListening]);
+
     useEffect(() => {
         if (!isLoadingModule && (isError || !moduleData)) {
-            console.error(`Failed to load live coach module: ${moduleId}`, moduleError);
             navigate('/not-found');
         }
-    }, [isLoadingModule, isError, moduleData, moduleId, navigate, moduleError]);
-
+    }, [isLoadingModule, isError, moduleData, navigate]);
 
     const handleNextStep = () => {
         if (!moduleData) return;
-        setCurrentStepIndex(prev => {
-            const nextIndex = prev + 1;
-            if (nextIndex >= moduleData.steps.length) {
-                addToast('success', 'Module Complete!', 'You have finished all the steps.');
-                return prev;
-            }
-            return nextIndex;
-        });
+        if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+        hintTimerRef.current = null;
+
+        const newIndex = currentStepIndex + 1;
+        if (newIndex >= moduleData.steps.length) {
+            addToast('success', 'Module Complete!', 'You have finished all the steps.');
+            navigate(`/modules/${moduleId}`);
+        } else {
+            setCurrentStepIndex(newIndex);
+            persistSession({ currentStepIndex: newIndex });
+        }
     };
 
     const getStatusIndicator = () => {
-        if (detectedObjects.length > 0) {
+        if (status === 'speaking') return <><SpeakerOnIcon className="h-6 w-6 text-amber-400" />{aiResponse}</>;
+        if (status === 'correcting') return <><AlertTriangleIcon className="h-6 w-6 text-red-400 animate-pulse" />Correcting mistake...</>;
+        if (status === 'hinting') return <><LightbulbIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Offering a hint...</>;
+        if (status === 'tutoring') return <><LightbulbIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Let me explain that differently...</>;
+
+        if (detectedObjects.length > 0 && ['listening', 'idle'].includes(status)) {
             return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
         }
         switch (status) {
-            case 'listening':
-                return <><MicIcon className="h-6 w-6 text-green-400" />Listening for "Hey Adapt"...</>;
-            case 'thinking':
-                return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Thinking...</>;
-            case 'speaking':
-                return <><SpeakerOnIcon className="h-6 w-6 text-amber-400" />{aiResponse}</>;
-            default:
-                return 'Initializing...';
+            case 'initializing': return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Vision AI is initializing...</>;
+            case 'listening': return <><MicIcon className="h-6 w-6 text-green-400" />Listening for "Hey Adapt"...</>;
+            case 'thinking': return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Thinking...</>;
+            default: return 'Initializing...';
         }
     }
 
-    if (isLoadingModule || !moduleData) {
-        return (
-            <div className="flex items-center justify-center h-screen bg-slate-900">
-                <p className="text-xl text-slate-300">Loading Live Coach...</p>
-            </div>
-        );
+    if (isLoadingModule || isLoadingSession || !moduleData) {
+        return <div className="flex items-center justify-center h-screen bg-slate-900"><p className="text-xl text-slate-300">Loading Live Coach...</p></div>;
     }
 
     const currentInstruction = moduleData.steps[currentStepIndex]?.title ?? "Module Complete!";
@@ -205,8 +339,6 @@ const LiveCoachPage: React.FC = () => {
                     </div>
                 </footer>
             </main>
-            {/* Hidden canvas used for capturing video frames for analysis */}
-            <canvas ref={canvasRef} style={{ display: 'none' }} />
         </div>
     );
 };

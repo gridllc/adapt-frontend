@@ -77,12 +77,21 @@ export interface PerformanceReportData {
   userQuestions: string[];
 }
 
+export type CoachEventType = 'hint' | 'correction' | 'tutoring';
+
+export interface LiveCoachEvent {
+  eventType: CoachEventType;
+  stepIndex: number;
+  timestamp: number;
+}
+
 export interface SessionState {
   moduleId: string;
   sessionToken: string;
   currentStepIndex: number;
   userActions: UserAction[];
   isCompleted: boolean;
+  liveCoachEvents?: LiveCoachEvent[]; // Optional for backward compatibility with older session data
 }
 
 export interface QuestionStats {
