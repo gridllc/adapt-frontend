@@ -91,7 +91,8 @@ root.render(
     </React.StrictMode>
 );
 
-// Register the service worker for PWA functionality
+// Register the service worker for PWA functionality.
+// This enables offline capabilities and caching.
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then(registration => {
