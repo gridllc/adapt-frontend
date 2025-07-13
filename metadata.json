@@ -1,6 +1,9 @@
 {
     "name": "Adapt",
     "description": "The Adapt platform uses an AI-powered tutor to deliver interactive, video-based training modules. It enables experts to create guided learning experiences for any process.",
-    "requestFramePermissions": [],
+    "requestFramePermissions": [
+        "camera",
+        "microphone"
+    ],
     "prompt": ""
 }

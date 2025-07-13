@@ -1,8 +1,9 @@
+
 import React, { useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveUploadedModule, deleteModule } from '@/services/moduleService';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon } from '@/components/Icons';
 import type { TrainingModule } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -237,8 +238,8 @@ const HomePage: React.FC = () => {
                 ) : filteredModules.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {filteredModules.map(module => (
-                            <Link key={module.slug} to={`/modules/${module.slug}`} className="block p-6 bg-white dark:bg-slate-800 rounded-xl hover:bg-slate-100/50 dark:hover:bg-slate-700/50 hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-md dark:shadow-lg relative group">
-                                <div className="flex items-center gap-4">
+                            <div key={module.slug} className="block p-6 bg-white dark:bg-slate-800 rounded-xl hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-md dark:shadow-lg relative group">
+                                <div className="flex items-center gap-4 mb-4">
                                     <div className="bg-indigo-100 dark:bg-indigo-600/30 p-3 rounded-lg">
                                         <BookOpenIcon className="h-6 w-6 text-indigo-600 dark:text-indigo-300" />
                                     </div>
@@ -246,6 +247,15 @@ const HomePage: React.FC = () => {
                                         <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{module.title}</h3>
                                         <p className="text-slate-500 dark:text-slate-400">{module.steps.length} steps</p>
                                     </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Link to={`/modules/${module.slug}`} className="flex-1 text-center bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                                        Start Training
+                                    </Link>
+                                    <Link to={`/modules/${module.slug}/live`} className="flex-1 text-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                        <VideoIcon className="h-5 w-5" />
+                                        Live Coach
+                                    </Link>
                                 </div>
                                 {isAuthenticated && (
                                     <button
@@ -256,7 +266,7 @@ const HomePage: React.FC = () => {
                                         <TrashIcon className="h-5 w-5" />
                                     </button>
                                 )}
-                            </Link>
+                            </div>
                         ))}
                     </div>
                 ) : (
