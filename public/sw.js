@@ -38,17 +38,17 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
+// A more robust fetch handler for an SPA
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const { url, method } = request;
 
   // Ignore non-GET requests for caching. Let the browser handle them.
-  if (method !== 'GET') {
+  if (request.method !== 'GET') {
     return;
   }
 
   // Strategy for API calls: Network first, then cache for successful responses.
-  if (url.includes(API_URL_PATTERN)) {
+  if (request.url.includes(API_URL_PATTERN)) {
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -63,38 +63,42 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => {
           // If the network fails, try to get the response from the cache.
-          console.log(`Service Worker: Network failed for ${url}. Serving from cache.`);
+          console.log(`Service Worker: Network failed for ${request.url}. Serving from cache.`);
           return caches.match(request);
         })
     );
     return;
   }
 
-  // Strategy for all other GET requests (App Shell & assets): Cache, falling back to network.
-  // This is a more robust cache-first strategy.
+  // Strategy for all other requests (App Shell, assets, and navigation)
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
+      // If we have a cache hit, return it.
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      // Not in cache, fetch from network and cache the result.
-      return fetch(request).then((networkResponse) => {
-        // Check if we received a valid response to cache.
-        // We only cache 'basic' type requests to avoid caching opaque responses from third-party CDNs.
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+      // If it's not in the cache, try fetching from the network.
+      return fetch(request)
+        .then((networkResponse) => {
+          // We only cache 'basic' type requests to avoid caching opaque responses from third-party CDNs.
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseToCache);
+            });
+          }
           return networkResponse;
-        }
-
-        // Clone the response because it's a stream that can only be consumed once.
-        const responseToCache = networkResponse.clone();
-
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, responseToCache);
+        })
+        .catch(() => {
+          // This catch block is crucial for offline SPA functionality.
+          // If the network fetch for a navigation request fails, serve the main index.html file.
+          if (request.mode === 'navigate') {
+            console.log('Service Worker: Fetch failed for navigation. Returning app shell.');
+            return caches.match('/index.html');
+          }
+          // For other failed requests (like images, etc.), we don't have a fallback, so let the error propagate.
         });
-
-        return networkResponse;
-      });
     })
   );
 });

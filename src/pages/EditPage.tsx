@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
+import { getModule, saveModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
@@ -121,11 +121,11 @@ const EditPage: React.FC = () => {
         setIsSaving(true);
 
         try {
-            const savedModule = await saveUploadedModule(module);
+            const savedModule = await saveModule({ moduleData: module });
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             await queryClient.invalidateQueries({ queryKey: ['modules'] });
             addToast('success', 'Changes Saved', 'The module has been updated successfully.');
-            navigate(`/modules/${savedModule.slug}`, { state: { module: savedModule } });
+            navigate(`/modules/${savedModule.slug}`);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
             addToast('error', 'Save Failed', errorMessage);
