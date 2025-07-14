@@ -18,8 +18,6 @@ import { ToastProvider } from '@/hooks/useToast';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { AuthProvider } from '@/hooks/useAuth';
 import './index.css';
-import LiveCoachPage from '@/pages/LiveCoachPage';
-import { PwaUpdater } from '@/components/PwaUpdater';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -62,14 +60,6 @@ const router = createBrowserRouter([
                 ),
             },
             {
-                path: 'modules/:moduleId/live',
-                element: (
-                    <ProtectedRoute>
-                        <LiveCoachPage />
-                    </ProtectedRoute>
-                )
-            },
-            {
                 path: 'create',
                 element: (
                     <ProtectedRoute>
@@ -94,10 +84,20 @@ root.render(
                 <AuthProvider>
                     <ToastProvider>
                         <RouterProvider router={router} />
-                        <PwaUpdater />
                     </ToastProvider>
                 </AuthProvider>
             </ThemeProvider>
         </QueryClientProvider>
     </React.StrictMode>
 );
+
+// Register the service worker for PWA functionality
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }, err => {
+            console.log('ServiceWorker registration failed: ', err);
+        });
+    });
+}
