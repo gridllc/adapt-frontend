@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Chat, Content, Type, File } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
@@ -297,7 +298,6 @@ export const analyzeVideoContent = async (
     console.log("Uploading video to AI for analysis...");
     const uploadedFile = await client.files.upload({
         file: videoFile,
-        displayName: videoFile.name,
     });
 
     try {
@@ -313,17 +313,29 @@ export const analyzeVideoContent = async (
         };
 
         const timestampsPrompt = `
-            You are a timestamp extraction engine. Given the following process steps, find the exact start and end time (in seconds) where each step begins/ends in the video. Do NOT transcribe text—only return timings.
-            The number of objects in your response MUST match the number of steps provided.
+            You are analyzing a training video to find when each process step occurs.
+            
+            Process steps to locate:
+            ${steps.map((s, i) => `${i + 1}. ${s.title}: ${s.description}`).join('\n')}
 
-            Steps:
-            ${steps.map((s, i) => `${i + 1}. ${s.title}`).join('\n')}
-
-            Output a valid JSON array of objects, where each object has "start" and "end" keys.
+            Watch the video and identify the exact start and end times (in seconds) for each step.
+            Base your timing on when the speaker begins and ends explaining each step.
+            
+            IMPORTANT: Return exactly ${steps.length} timing objects, one for each step in order.
+            
+            Output format: JSON array of objects with "start" and "end" properties (numbers in seconds).
         `;
 
         const transcriptPrompt = `
-            You are a highly accurate transcription assistant. Transcribe this video verbatim but remove all filler words such as 'um', 'ah', 'like', and 'you know'. Do not summarize or paraphrase. Output a JSON array of { start:number, end:number, text:string } where start and end are in seconds.
+            Transcribe this video with these exact rules:
+            
+            1. Write exactly what the speaker says. Transcribe every word, repetition, and self-correction.
+            2. Remove only these specific filler sounds: "um", "uh", "ah", "er", "mm".
+            3. Keep all other words, even if they seem like filler (e.g., "like", "you know", "so", "well", "okay").
+            4. Preserve the speaker's original grammar and word choice. Do not "fix" sentences.
+            5. Do not add, change, or interpret any words. Do not paraphrase or summarize.
+            
+            Output format: JSON array of { start: number, end: number, text: string } where start and end are in seconds.
         `;
 
         const timestampSchema = {
@@ -376,18 +388,24 @@ export const analyzeVideoContent = async (
         const timestamps = JSON.parse(timestampResponse.text);
         const transcript = JSON.parse(transcriptResponse.text);
 
-        if (!timestamps || !transcript) {
-            throw new Error("AI analysis returned incomplete data.");
+        if (!timestamps || !Array.isArray(timestamps)) {
+            throw new Error("Invalid timestamp data received from AI. The response was not an array.");
+        }
+        if (!transcript || !Array.isArray(transcript)) {
+            throw new Error("Invalid transcript data received from AI. The response was not an array.");
         }
 
         if (timestamps.length !== steps.length) {
-            console.warn(`Timestamp count (${timestamps.length}) does not match step count (${steps.length}). This may cause issues.`);
+            console.warn(`Timestamp mismatch: AI returned ${timestamps.length} timestamps but module has ${steps.length} steps. The results may be inaccurate.`);
         }
 
         return { timestamps, transcript };
 
     } catch (error) {
         console.error("Error during video content analysis:", error);
+        if (error instanceof SyntaxError) {
+            throw new Error("The AI returned invalid JSON. Please check the model or prompt.");
+        }
         throw error;
     } finally {
         console.log("Cleaning up uploaded video file...");
