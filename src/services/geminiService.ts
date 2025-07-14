@@ -1,5 +1,8 @@
 
 
+
+
+
 import { GoogleGenAI, Chat, Content, Type, File } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
@@ -264,37 +267,29 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
     }
 };
 
-const pollFileState = (fileUri: string, client: GoogleGenAI): Promise<void> => {
-    const MAX_POLLS = 10;
+const pollFileState = async (file: File, client: GoogleGenAI): Promise<void> => {
+    const MAX_POLLS = 15;
     const POLL_INTERVAL_MS = 2000;
 
-    return new Promise((resolve, reject) => {
-        let pollCount = 0;
-        const intervalId = setInterval(async () => {
-            if (pollCount >= MAX_POLLS) {
-                clearInterval(intervalId);
-                reject(new Error("Video processing timed out after 40 seconds."));
-                return;
-            }
+    let pollCount = 0;
+    while (pollCount < MAX_POLLS) {
+        if (file.state === 'ACTIVE') {
+            return;
+        }
+        if (file.state === 'FAILED') {
+            throw new Error(`Video processing failed. State: ${file.state}. Error: ${file.error?.message}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+        // Re-fetch the file to get the updated state
+        try {
+            file = await client.files.get({ name: file.name });
+        } catch (e) {
+            throw new Error(`Could not check video processing status: ${(e as Error).message}`);
+        }
+        pollCount++;
+    }
 
-            try {
-                const file = await client.files.get({ name: fileUri });
-                if (file.state === 'ACTIVE') {
-                    clearInterval(intervalId);
-                    resolve();
-                } else if (file.state === 'FAILED') {
-                    clearInterval(intervalId);
-                    reject(new Error("Video processing failed. The file may be invalid."));
-                }
-                // If state is 'PROCESSING', continue polling
-            } catch (error) {
-                clearInterval(intervalId);
-                reject(new Error("Could not check video processing status."));
-            }
-
-            pollCount++;
-        }, POLL_INTERVAL_MS);
-    });
+    throw new Error('Video processing timed out after 30 seconds.');
 };
 
 export const analyzeVideoContent = async (
@@ -303,51 +298,42 @@ export const analyzeVideoContent = async (
 ): Promise<VideoAnalysisResult> => {
     const client = getAiClient();
 
-    // 1. Upload the file to the Gemini API
-    const uploadResult = await client.files.upload({
-        file: {
-            data: await toBase64(videoFile),
+    console.log("Uploading video to AI for analysis...");
+    const uploadedFile = await client.files.upload({
+        file: videoFile,
+        fileMetadata: {
             mimeType: videoFile.type,
             displayName: videoFile.name,
         },
     });
 
-    const fileUri = uploadResult.name;
-
     try {
-        // 2. Poll until the file is 'ACTIVE'
-        await pollFileState(fileUri, client);
+        console.log("Polling for active video state...");
+        await pollFileState(uploadedFile, client);
+        console.log("Video is active. Starting parallel analysis.");
 
         const videoFilePart = {
             fileData: {
-                mimeType: uploadResult.mimeType,
-                fileUri: uploadResult.uri,
+                mimeType: uploadedFile.mimeType,
+                fileUri: uploadedFile.uri,
             },
         };
 
         const timestampsPrompt = `
-            Analyze this video and determine the start and end timestamps (in seconds) for each of the following process steps.
-            Respond with only a JSON array of objects, where each object has "start" and "end" keys.
+            You are a timestamp extraction engine. Given the following process steps, find the exact start and end time (in seconds) where each step begins/ends in the video. Do NOT transcribe text—only return timings.
             The number of objects in your response MUST match the number of steps provided.
 
-            --- PROCESS STEPS ---
-            ${steps.map((step, i) => `${i + 1}. ${step.title}`).join('\n')}
-            --- END PROCESS STEPS ---
+            Steps:
+            ${steps.map((s, i) => `${i + 1}. ${s.title}`).join('\n')}
+
+            Output a valid JSON array of objects, where each object has "start" and "end" keys.
         `;
 
         const transcriptPrompt = `
-            You are a transcription expert and instructional designer. Your task is to analyze the provided video's audio and create a clean, helpful transcript.
-
-            **Your process must be as follows:**
-            1.  **First, create a clean, readable transcript.** This is your primary task.
-                -   Do not include filler words like 'um', 'uh', 'you know', or repeated false starts.
-                -   Prioritize clarity and flow, capturing the speaker’s intent and meaning, not every single spoken word.
-            2.  **Second, add supplemental guidance.** Once the clean transcription is established, if you have helpful additions or suggestions that would clarify a step or help a learner, you may add them.
-                -   These additions must be clearly labeled by wrapping them in special tags, like this: [AI Suggestion]Your helpful tip here.[/AI Suggestion]
-                -   Place these suggestions logically within the transcript text where they are most relevant.
-
-            **Output Format:**
-            The final output must be a valid JSON array of objects, where each object has "start", "end", and "text" properties. The "text" property will contain the clean transcript, and may also contain your bracketed [AI Suggestion] tags.
+            You are a highly accurate transcription assistant. Your only job is to produce a time-coded transcript.
+            - Transcribe this video verbatim but remove all filler words such as 'um', 'ah', 'like', and 'you know'.
+            - Do not summarize or paraphrase.
+            - Output a valid JSON array of objects, where each object has "start", "end", and "text" properties, and "start" and "end" are in seconds.
         `;
 
         const timestampSchema = {
@@ -364,7 +350,6 @@ export const analyzeVideoContent = async (
 
         const transcriptSchema = {
             type: Type.ARRAY,
-            description: "An array of transcript lines, each with a start time, end time, and the transcribed text.",
             items: {
                 type: Type.OBJECT,
                 properties: {
@@ -376,25 +361,27 @@ export const analyzeVideoContent = async (
             }
         };
 
-        // 3. Make parallel API calls for timestamps and transcript
-        const [timestampResponse, transcriptResponse] = await Promise.all([
-            client.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: { parts: [{ text: timestampsPrompt }, videoFilePart] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: timestampSchema
-                }
-            }),
-            client.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: { parts: [{ text: transcriptPrompt }, videoFilePart] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: transcriptSchema
-                }
-            })
-        ]);
+        const timestampPromise = client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: timestampsPrompt }, videoFilePart] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: timestampSchema
+            }
+        });
+
+        const transcriptPromise = client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: transcriptPrompt }, videoFilePart] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: transcriptSchema
+            }
+        });
+
+        const [timestampResponse, transcriptResponse] = await Promise.all([timestampPromise, transcriptPromise]);
+
+        console.log("Analysis calls completed.");
 
         const timestamps = JSON.parse(timestampResponse.text);
         const transcript = JSON.parse(transcriptResponse.text);
@@ -403,31 +390,20 @@ export const analyzeVideoContent = async (
             throw new Error("AI analysis returned incomplete data.");
         }
 
+        if (timestamps.length !== steps.length) {
+            console.warn(`Timestamp count (${timestamps.length}) does not match step count (${steps.length}). This may cause issues.`);
+        }
+
         return { timestamps, transcript };
 
     } catch (error) {
         console.error("Error during video content analysis:", error);
         throw error;
     } finally {
-        // 4. Clean up the uploaded file
-        await client.files.delete({ name: fileUri });
+        console.log("Cleaning up uploaded video file...");
+        await client.files.delete({ name: uploadedFile.name });
     }
 };
-
-// Helper to convert a File object to a base64 string
-const toBase64 = (file: globalThis.File): Promise<string> =>
-    new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            // result is a data URL, we only want the base64 part
-            const result = reader.result as string;
-            resolve(result.split(',')[1]);
-        };
-        reader.onerror = (error) => reject(error);
-    });
-
-
 
 export const generateImage = async (prompt: string): Promise<string> => {
     const client = getAiClient();

@@ -37,12 +37,12 @@ const CreatePage: React.FC = () => {
             setVideoBlobUrl(objectUrl);
             // When a new video file is added, update the generated module to use its blob URL for preview
             if (generatedModule) {
-              setGeneratedModule(prev => prev ? { ...prev, videoUrl: objectUrl } : null);
+                setGeneratedModule(prev => prev ? { ...prev, videoUrl: objectUrl } : null);
             }
             return () => URL.revokeObjectURL(objectUrl);
         }
         setVideoBlobUrl('');
-    }, [videoFile]);
+    }, [videoFile, generatedModule]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -52,8 +52,8 @@ const CreatePage: React.FC = () => {
     };
 
     const handleRemoveVideo = useCallback(() => {
-      setVideoFile(null);     
-    }, [generatedModule]);
+        setVideoFile(null);
+    }, []);
 
     const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
@@ -71,7 +71,7 @@ const CreatePage: React.FC = () => {
         event.preventDefault();
         event.stopPropagation();
     };
-    
+
     const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -111,14 +111,20 @@ const CreatePage: React.FC = () => {
 
         setIsAnalyzing(true);
         try {
+            // As per the approved logic, this service now runs two parallel AI calls:
+            // one for timestamps and one for a clean transcript.
             const { timestamps, transcript } = await analyzeVideoContent(videoFile, generatedModule.steps);
-            
+
+            // Merge the new, more accurate data into the current module state.
             const updatedSteps = generatedModule.steps.map((step, index) => ({
                 ...step,
+                // The timestamps from the AI might be floats, so we round them for clean display.
+                // The nullish coalescing operator (??) ensures we don't overwrite existing values if the AI fails for a specific step.
                 start: Math.round(timestamps[index]?.start ?? step.start),
                 end: Math.round(timestamps[index]?.end ?? step.end),
             }));
 
+            // Update the state with both the new steps and the full transcript.
             setGeneratedModule({ ...generatedModule, steps: updatedSteps, transcript });
             addToast('success', 'Analysis Complete', 'Timestamps and transcript have been added.');
 
@@ -152,7 +158,7 @@ const CreatePage: React.FC = () => {
             setIsSaving(false);
         }
     };
-    
+
     const resetForm = () => {
         setProcessText('');
         setVideoFile(null);
@@ -190,7 +196,7 @@ const CreatePage: React.FC = () => {
                         <div>
                             <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">2. (Optional) Add a Video</h2>
                             <p className="text-slate-600 dark:text-slate-300 mb-4">Upload a video for this training. The AI can analyze it to set timestamps automatically later.</p>
-                             {videoFile ? (
+                            {videoFile ? (
                                 <div className="bg-slate-200 dark:bg-slate-900/50 p-3 rounded-lg flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <FileTextIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
@@ -213,7 +219,7 @@ const CreatePage: React.FC = () => {
                                         Drop video file or <span className="text-indigo-500 dark:text-indigo-400 underline">browse</span>
                                     </span>
                                     <input type="file" name="file_upload" className="hidden" accept="video/*" onChange={handleFileChange} />
-                                 </label>
+                                </label>
                             )}
                         </div>
                     </div>
@@ -228,7 +234,7 @@ const CreatePage: React.FC = () => {
                     </div>
                 </div>
             )}
-             {isLoading && !generatedModule && (
+            {isLoading && !generatedModule && (
                 <div className="text-center p-8">
                     <LightbulbIcon className="h-12 w-12 mx-auto text-indigo-500 dark:text-indigo-400 animate-pulse" />
                     <p className="mt-4 text-lg text-slate-600 dark:text-slate-300">AI is building your module...</p>
@@ -245,7 +251,7 @@ const CreatePage: React.FC = () => {
                         isAnalyzing={isAnalyzing}
                         showAnalysisButton={!!videoFile}
                     />
-                     <div className="mt-8 flex justify-center gap-4">
+                    <div className="mt-8 flex justify-center gap-4">
                         <button onClick={resetForm} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                             Start Over
                         </button>
