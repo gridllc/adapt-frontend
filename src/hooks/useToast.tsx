@@ -1,7 +1,7 @@
 
 import React, { createContext, useState, useContext, useCallback, ReactNode } from 'react';
-import { Toast as ToastComponent } from '@/components/Toast.tsx';
-import type { Toast, ToastType } from '@/types.ts';
+import { Toast as ToastComponent } from '@/components/Toast';
+import type { Toast, ToastType } from '@/types';
 
 type ToastContextType = {
     addToast: (type: ToastType, title: string, message: string) => void;

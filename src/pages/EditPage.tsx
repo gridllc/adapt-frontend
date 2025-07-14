@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getModule, saveModule, deleteModule } from '@/services/moduleService';
+import { getModule, saveUploadedModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
@@ -115,20 +115,20 @@ const EditPage: React.FC = () => {
         if (!module) return;
         if (!user) {
             addToast('error', 'Authentication Error', 'Cannot save module without a logged-in user.');
+            setIsSaving(false);
             return;
         }
         setIsSaving(true);
 
         try {
-            const savedModule = await saveModule({ moduleData: module });
+            const savedModule = await saveUploadedModule(module);
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             await queryClient.invalidateQueries({ queryKey: ['modules'] });
             addToast('success', 'Changes Saved', 'The module has been updated successfully.');
-            navigate(`/modules/${savedModule.slug}`);
+            navigate(`/modules/${savedModule.slug}`, { state: { module: savedModule } });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
             addToast('error', 'Save Failed', errorMessage);
-        } finally {
             setIsSaving(false);
         }
     };
@@ -151,7 +151,6 @@ const EditPage: React.FC = () => {
             } catch (err) {
                 const errorMessage = err instanceof Error ? err.message : 'Could not delete the module.';
                 addToast('error', 'Delete Failed', errorMessage);
-            } finally {
                 setIsDeleting(false);
             }
         }

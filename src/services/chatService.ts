@@ -1,6 +1,6 @@
 
-import { supabase } from '@/services/apiClient.ts';
-import type { ChatMessage } from '@/types.ts';
+import { supabase } from '@/services/apiClient';
+import type { ChatMessage } from '@/types';
 
 const TABLE_NAME = 'chat_messages';
 

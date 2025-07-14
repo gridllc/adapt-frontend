@@ -1,6 +1,6 @@
 
-import { supabase } from '@/services/apiClient.ts';
-import type { UserAction, LiveCoachEvent } from '@/types.ts';
+import { supabase } from '@/services/apiClient';
+import type { UserAction, LiveCoachEvent } from '@/types';
 
 export interface SessionState {
     moduleId: string;

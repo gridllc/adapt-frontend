@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpenIcon } from '@/components/Icons.tsx';
+import { BookOpenIcon } from '@/components/Icons';
 
 const NotFoundPage: React.FC = () => {
     return (

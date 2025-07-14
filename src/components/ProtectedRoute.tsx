@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useLocation, Navigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth.ts';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ProtectedRouteProps {
     children: React.ReactElement;

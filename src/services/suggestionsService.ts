@@ -1,6 +1,6 @@
 
-import { supabase } from '@/services/apiClient.ts';
-import type { Suggestion } from '@/types.ts';
+import { supabase } from '@/services/apiClient';
+import type { Suggestion } from '@/types';
 
 const TABLE_NAME = 'suggestions';
 

@@ -1,7 +1,7 @@
 
 
-import { supabase } from '@/services/apiClient.ts';
-import type { TrainingModule, AnalysisHotspot, UserAction, QuestionStats } from '@/types.ts';
+import { supabase } from '@/services/apiClient';
+import type { TrainingModule, AnalysisHotspot, UserAction, QuestionStats } from '@/types';
 
 /**
  * Scans the database for all chat histories associated with a given module,

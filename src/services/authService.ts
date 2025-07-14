@@ -1,5 +1,5 @@
 
-import { supabase } from '@/services/apiClient.ts';
+import { supabase } from '@/services/apiClient';
 
 // Infer types from the Supabase client to avoid issues with library exports.
 export type AuthResponse = Awaited<ReturnType<typeof supabase.auth.signUp>>;
