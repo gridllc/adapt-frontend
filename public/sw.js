@@ -70,16 +70,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Strategy for all other GET requests (App Shell & assets): Cache first.
+  // Strategy for all other GET requests (App Shell & assets): Cache, falling back to network.
+  // This is a more robust cache-first strategy.
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      // If we have a match in the cache, return it.
       if (cachedResponse) {
         return cachedResponse;
       }
-      // Otherwise, fetch from the network.
-      // We don't cache this response here, as non-shell assets might change.
-      return fetch(request);
+
+      // Not in cache, fetch from network and cache the result.
+      return fetch(request).then((networkResponse) => {
+        // Check if we received a valid response to cache.
+        // We only cache 'basic' type requests to avoid caching opaque responses from third-party CDNs.
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+          return networkResponse;
+        }
+
+        // Clone the response because it's a stream that can only be consumed once.
+        const responseToCache = networkResponse.clone();
+
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, responseToCache);
+        });
+
+        return networkResponse;
+      });
     })
   );
 });

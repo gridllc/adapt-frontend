@@ -109,6 +109,11 @@ export interface Toast {
   type: ToastType;
   title: string;
   message: string;
+  duration?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 export interface AuthUser {

@@ -101,7 +101,7 @@ export const saveModule = async ({
         const filePath = `${moduleData.slug}/${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
-            .from('training_videos')
+            .from('training-videos')
             .upload(filePath, videoFile, {
                 cacheControl: '3600',
                 upsert: true,
@@ -112,7 +112,7 @@ export const saveModule = async ({
             throw new Error(`Video upload failed: ${uploadError.message}`);
         }
 
-        const { data } = supabase.storage.from('training_videos').getPublicUrl(filePath);
+        const { data } = supabase.storage.from('training-videos').getPublicUrl(filePath);
         video_url = data.publicUrl;
     }
 

@@ -3,8 +3,16 @@ import React, { createContext, useState, useContext, useCallback, ReactNode } fr
 import { Toast as ToastComponent } from '@/components/Toast';
 import type { Toast, ToastType } from '@/types';
 
+type AddToastOptions = {
+    duration?: number;
+    action?: {
+        label: string;
+        onClick: () => void;
+    };
+};
+
 type ToastContextType = {
-    addToast: (type: ToastType, title: string, message: string) => void;
+    addToast: (type: ToastType, title: string, message: string, options?: AddToastOptions) => void;
 };
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -20,9 +28,17 @@ export const useToast = () => {
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [toasts, setToasts] = useState<Toast[]>([]);
 
-    const addToast = useCallback((type: ToastType, title: string, message: string) => {
+    const addToast = useCallback((type: ToastType, title: string, message: string, options?: AddToastOptions) => {
         const id = Date.now().toString() + Math.random().toString();
-        setToasts(prevToasts => [...prevToasts, { id, type, title, message }]);
+        const newToast: Toast = {
+            id,
+            type,
+            title,
+            message,
+            duration: options?.duration,
+            action: options?.action,
+        };
+        setToasts(prevToasts => [...prevToasts, newToast]);
     }, []);
 
     const removeToast = useCallback((id: string) => {
