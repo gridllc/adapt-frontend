@@ -1,5 +1,6 @@
 
-import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
+
+import { GoogleGenAI, Chat, Content, Type, File } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
 // --- AI Client Initialization ---
@@ -249,152 +250,220 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
 
         const jsonText = result.text?.trim();
         if (!jsonText) {
-            throw new Error("Checkpoint evaluation AI returned an empty response.");
+            throw new Error("AI evaluation returned an empty response.");
         }
-        return JSON.parse(jsonText);
+
+        return JSON.parse(jsonText) as CheckpointEvaluation;
 
     } catch (error) {
         console.error("Error evaluating checkpoint:", error);
-        throw new Error(`Failed to get feedback from AI. ${error instanceof Error ? error.message : ''}`);
+        if (error instanceof SyntaxError) {
+            throw new Error("The AI returned an invalid response. Please try again.");
+        }
+        throw new Error("An error occurred during checkpoint evaluation.");
     }
 };
 
+const pollFileState = (fileUri: string, client: GoogleGenAI): Promise<void> => {
+    const MAX_POLLS = 10;
+    const POLL_INTERVAL_MS = 2000;
+
+    return new Promise((resolve, reject) => {
+        let pollCount = 0;
+        const intervalId = setInterval(async () => {
+            if (pollCount >= MAX_POLLS) {
+                clearInterval(intervalId);
+                reject(new Error("Video processing timed out after 40 seconds."));
+                return;
+            }
+
+            try {
+                const file = await client.files.get({ name: fileUri });
+                if (file.state === 'ACTIVE') {
+                    clearInterval(intervalId);
+                    resolve();
+                } else if (file.state === 'FAILED') {
+                    clearInterval(intervalId);
+                    reject(new Error("Video processing failed. The file may be invalid."));
+                }
+                // If state is 'PROCESSING', continue polling
+            } catch (error) {
+                clearInterval(intervalId);
+                reject(new Error("Could not check video processing status."));
+            }
+
+            pollCount++;
+        }, POLL_INTERVAL_MS);
+    });
+};
 
 export const analyzeVideoContent = async (
-    videoFile: File,
+    videoFile: globalThis.File,
     steps: ProcessStep[]
 ): Promise<VideoAnalysisResult> => {
     const client = getAiClient();
-    let fileResource: any;
+
+    // 1. Upload the file to the Gemini API
+    const uploadResult = await client.files.upload({
+        file: {
+            data: await toBase64(videoFile),
+            mimeType: videoFile.type,
+            displayName: videoFile.name,
+        },
+    });
+
+    const fileUri = uploadResult.name;
 
     try {
-        // Step 1: Upload the file and wait for it to be processed
-        const uploadResponse = await client.files.upload({ file: videoFile });
-        fileResource = (uploadResponse as any).file ?? uploadResponse;
+        // 2. Poll until the file is 'ACTIVE'
+        await pollFileState(fileUri, client);
 
-        let activeFile = await client.files.get({ name: fileResource.name });
-        const maxAttempts = 15, delay = 2000;
-        let attempts = 0;
+        const videoFilePart = {
+            fileData: {
+                mimeType: uploadResult.mimeType,
+                fileUri: uploadResult.uri,
+            },
+        };
 
-        while (activeFile.state === 'PROCESSING' && attempts < maxAttempts) {
-            await new Promise(resolve => setTimeout(resolve, delay));
-            activeFile = await client.files.get({ name: fileResource.name });
-            attempts++;
-        }
+        const timestampsPrompt = `
+            Analyze this video and determine the start and end timestamps (in seconds) for each of the following process steps.
+            Respond with only a JSON array of objects, where each object has "start" and "end" keys.
+            The number of objects in your response MUST match the number of steps provided.
 
-        if (activeFile.state !== 'ACTIVE') {
-            throw new Error(`File processing failed or timed out. Final state: ${activeFile.state}`);
-        }
-        fileResource.name = activeFile.name; // For cleanup
+            --- PROCESS STEPS ---
+            ${steps.map((step, i) => `${i + 1}. ${step.title}`).join('\n')}
+            --- END PROCESS STEPS ---
+        `;
 
-        const videoPart = { fileData: { mimeType: activeFile.mimeType, fileUri: activeFile.uri } };
+        const transcriptPrompt = `
+            You are a transcription expert and instructional designer. Your task is to analyze the provided video's audio and create a clean, helpful transcript.
 
-        // --- Task 1: Get Timestamps for Steps ---
-        const stepDescriptions = steps.map((step, index) => `${index + 1}. ${step.title}`).join('\n');
-        const timestampPrompt = `Analyze this video and identify the precise start and end timestamps (in seconds) for each of these process steps. The response must be a JSON object containing a 'timestamps' array, with one entry per step provided.\n\nSteps:\n${stepDescriptions}`;
+            **Your process must be as follows:**
+            1.  **First, create a clean, readable transcript.** This is your primary task.
+                -   Do not include filler words like 'um', 'uh', 'you know', or repeated false starts.
+                -   Prioritize clarity and flow, capturing the speaker’s intent and meaning, not every single spoken word.
+            2.  **Second, add supplemental guidance.** Once the clean transcription is established, if you have helpful additions or suggestions that would clarify a step or help a learner, you may add them.
+                -   These additions must be clearly labeled by wrapping them in special tags, like this: [AI Suggestion]Your helpful tip here.[/AI Suggestion]
+                -   Place these suggestions logically within the transcript text where they are most relevant.
+
+            **Output Format:**
+            The final output must be a valid JSON array of objects, where each object has "start", "end", and "text" properties. The "text" property will contain the clean transcript, and may also contain your bracketed [AI Suggestion] tags.
+        `;
 
         const timestampSchema = {
-            type: Type.OBJECT,
-            properties: {
-                timestamps: {
-                    type: Type.ARRAY,
-                    description: "An array of timestamp objects, one for each process step.",
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            start: { type: Type.NUMBER, description: "Start time in seconds" },
-                            end: { type: Type.NUMBER, description: "End time in seconds" },
-                        },
-                        required: ["start", "end"],
-                    },
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    start: { type: Type.NUMBER },
+                    end: { type: Type.NUMBER },
                 },
-            },
-            required: ["timestamps"],
+                required: ["start", "end"]
+            }
         };
-
-        const getTimestamps = client.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: { parts: [{ text: timestampPrompt }, videoPart] },
-            config: { responseMimeType: "application/json", responseSchema: timestampSchema },
-        });
-
-        // --- Task 2: Get Full Video Transcript ---
-        const transcriptPrompt = "Provide a full, accurate, time-coded transcript of the video's entire audio. The response must be a JSON object containing a 'transcript' array.";
 
         const transcriptSchema = {
-            type: Type.OBJECT,
-            properties: {
-                transcript: {
-                    type: Type.ARRAY,
-                    description: "A complete, time-coded transcript of the video's audio.",
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            start: { type: Type.NUMBER },
-                            end: { type: Type.NUMBER },
-                            text: { type: Type.STRING },
-                        },
-                        required: ["start", "end", "text"],
-                    }
-                }
-            },
-            required: ["transcript"]
+            type: Type.ARRAY,
+            description: "An array of transcript lines, each with a start time, end time, and the transcribed text.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    start: { type: Type.NUMBER, description: "Start time of the line in seconds." },
+                    end: { type: Type.NUMBER, description: "End time of the line in seconds." },
+                    text: { type: Type.STRING, description: "The transcribed text for this segment." },
+                },
+                required: ["start", "end", "text"]
+            }
         };
 
-        const getTranscript = client.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: { parts: [{ text: transcriptPrompt }, videoPart] },
-            config: { responseMimeType: "application/json", responseSchema: transcriptSchema },
-        });
+        // 3. Make parallel API calls for timestamps and transcript
+        const [timestampResponse, transcriptResponse] = await Promise.all([
+            client.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts: [{ text: timestampsPrompt }, videoFilePart] },
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: timestampSchema
+                }
+            }),
+            client.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts: [{ text: transcriptPrompt }, videoFilePart] },
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: transcriptSchema
+                }
+            })
+        ]);
 
-        // --- Execute and Combine Results ---
-        const [timestampResponse, transcriptResponse] = await Promise.all([getTimestamps, getTranscript]);
+        const timestamps = JSON.parse(timestampResponse.text);
+        const transcript = JSON.parse(transcriptResponse.text);
 
-        const timestampJsonText = timestampResponse.text?.trim();
-        if (!timestampJsonText) throw new Error("AI failed to return timestamps.");
-        const { timestamps } = JSON.parse(timestampJsonText) as { timestamps: { start: number; end: number }[] };
-
-        const transcriptJsonText = transcriptResponse.text?.trim();
-        if (!transcriptJsonText) throw new Error("AI failed to return a transcript.");
-        const { transcript } = JSON.parse(transcriptJsonText) as { transcript: { start: number; end: number; text: string }[] };
-
-        // Validation
-        if (!Array.isArray(timestamps) || !Array.isArray(transcript)) {
-            throw new Error("AI response format is incorrect.");
-        }
-        if (timestamps.length !== steps.length) {
-            throw new Error(`AI returned an incorrect number of timestamps. Expected ${steps.length}, got ${timestamps.length}.`);
+        if (!timestamps || !transcript) {
+            throw new Error("AI analysis returned incomplete data.");
         }
 
         return { timestamps, transcript };
 
     } catch (error) {
-        console.error("Error analyzing video:", error);
-        const baseMessage = "Failed to analyze video.";
-        if (error instanceof SyntaxError) {
-            throw new Error(`${baseMessage} The AI returned invalid JSON.`);
-        }
-        // Pass along more specific error messages from previous throws
-        throw new Error(`${baseMessage} ${error instanceof Error ? error.message : ''}`);
+        console.error("Error during video content analysis:", error);
+        throw error;
     } finally {
-        // Ensure uploaded file is cleaned up even if analysis fails
-        if (fileResource?.name) {
-            try {
-                await client.files.delete({ name: fileResource.name });
-            } catch (deleteError) {
-                // Log cleanup error, but don't throw, as the primary error is more important.
-                console.error("Failed to clean up uploaded file:", deleteError);
-            }
-        }
+        // 4. Clean up the uploaded file
+        await client.files.delete({ name: fileUri });
     }
 };
+
+// Helper to convert a File object to a base64 string
+const toBase64 = (file: globalThis.File): Promise<string> =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+            // result is a data URL, we only want the base64 part
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+        };
+        reader.onerror = (error) => reject(error);
+    });
+
+
+
+export const generateImage = async (prompt: string): Promise<string> => {
+    const client = getAiClient();
+    try {
+        const response = await client.models.generateImages({
+            model: 'imagen-3.0-generate-002',
+            prompt: `A clean, simple, minimalist, black-and-white technical line drawing of: ${prompt}. The diagram should be on a plain white background.`,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/png',
+                aspectRatio: '1:1',
+            },
+        });
+
+        if (!response.generatedImages || response.generatedImages.length === 0) {
+            throw new Error("The AI did not return an image.");
+        }
+        const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+        return `data:image/png;base64,${base64ImageBytes}`;
+    } catch (error) {
+        console.error("Error generating image:", error);
+        throw new Error("Failed to generate the image. The model may be unavailable or the prompt was blocked.");
+    }
+}
+
 
 export const generateRefinementSuggestion = async (
     step: ProcessStep,
     questions: string[]
 ): Promise<RefinementSuggestion> => {
     const client = getAiClient();
-    const systemInstruction = `You are an expert instructional designer. Your task is to improve a confusing step in a training manual. You will be given the current step's text and a list of questions that trainees frequently ask about it. Your goal is to rewrite the step's description to be clearer and to proactively answer those questions. You may also suggest a new "Alternative Method" if it helps address the common points of confusion.`;
+    const systemInstruction = `You are an expert instructional designer tasked with improving a training module.
+    You will be given a step from the module and a list of questions that real trainees have asked about it.
+    Your job is to rewrite the step's description to be clearer and to proactively answer the questions.
+    If appropriate, also suggest a new 'alternative method' (like a pro-tip or shortcut).
+    You MUST respond in valid JSON format.`;
 
     const prompt = `
         **Current Step Title:**
@@ -403,13 +472,15 @@ export const generateRefinementSuggestion = async (
         **Current Step Description:**
         "${step.description}"
 
-        **Common Trainee Questions:**
+        **Current Alternative Methods:**
+        ${JSON.stringify(step.alternativeMethods)}
+
+        **Trainee Questions (Points of Confusion):**
         - ${questions.join('\n- ')}
 
         **Your Task:**
-        Based on the questions, provide a JSON object with two properties:
-        1.  \`newDescription\`: A rewritten, clearer version of the step description that addresses the trainee questions.
-        2.  \`newAlternativeMethod\`: An object with 'title' and 'description' for a new method that could help, or \`null\` if no new method is needed.
+        1.  **Rewrite the description:** Create a 'newDescription' that is much clearer and directly addresses the trainee questions.
+        2.  **Suggest a new alternative method (optional):** If you can think of a good shortcut or pro-tip related to the questions, create a 'newAlternativeMethod' object with a title and description. If not, this should be null.
     `;
 
     const refinementSchema = {
@@ -417,17 +488,18 @@ export const generateRefinementSuggestion = async (
         properties: {
             newDescription: {
                 type: Type.STRING,
-                description: "The revised, clearer description for the process step.",
+                description: "The improved, clearer description for the process step.",
             },
             newAlternativeMethod: {
                 type: Type.OBJECT,
                 nullable: true,
-                description: "A new alternative method, or null.",
                 properties: {
                     title: { type: Type.STRING },
-                    description: { type: Type.STRING },
+                    description: { type: Type.STRING }
                 },
-            },
+                required: ["title", "description"],
+                description: "A new pro-tip or shortcut to add, or null if not applicable."
+            }
         },
         required: ["newDescription", "newAlternativeMethod"],
     };
@@ -442,16 +514,12 @@ export const generateRefinementSuggestion = async (
                 responseSchema: refinementSchema,
             },
         });
-
         const jsonText = result.text?.trim();
-        if (!jsonText) {
-            throw new Error("Refinement AI returned an empty response.");
-        }
+        if (!jsonText) throw new Error("AI returned empty refinement suggestion.");
         return JSON.parse(jsonText);
-
     } catch (error) {
         console.error("Error generating refinement suggestion:", error);
-        throw new Error(`Failed to generate refinement suggestion. ${error instanceof Error ? error.message : ''}`);
+        throw new Error("Failed to get AI refinement suggestion.");
     }
 };
 
@@ -461,66 +529,31 @@ export const generatePerformanceSummary = async (
     userQuestions: string[]
 ): Promise<string> => {
     const client = getAiClient();
-    const systemInstruction = `You are a friendly and encouraging training coach. Your task is to provide a brief, positive summary of a trainee's performance. The summary should be one paragraph long. Start by congratulating them. Then, if they had any areas of confusion, gently point them out and suggest they review those steps.`;
+    const systemInstruction = "You are a friendly and encouraging AI coach. Your job is to provide positive, summarized feedback to a trainee who has just completed a module. Speak directly to the trainee. Keep the feedback concise (2-3 sentences).";
 
-    let prompt = `The trainee has just completed the module: "${moduleTitle}".\n\n`;
+    let prompt = `The trainee just completed the "${moduleTitle}" module.`;
 
     if (unclearSteps.length === 0 && userQuestions.length === 0) {
-        prompt += "They completed it perfectly without any issues or questions. Write a short, congratulatory message."
+        prompt += " They completed it without any issues or questions. Provide a brief, positive, congratulatory message."
     } else {
+        prompt += " Here is a summary of the areas where they seemed to have some trouble. Based on this, provide a constructive and encouraging feedback message."
         if (unclearSteps.length > 0) {
-            prompt += `They marked the following steps as "unclear":\n`
-            prompt += unclearSteps.map(s => `- ${s.title}`).join('\n') + '\n\n';
+            prompt += `\n- They marked the following steps as unclear: ${unclearSteps.map(s => `"${s.title}"`).join(', ')}.`;
         }
         if (userQuestions.length > 0) {
-            prompt += `They asked the AI Tutor the following questions:\n`
-            prompt += userQuestions.map(q => `- "${q}"`).join('\n') + '\n\n';
+            prompt += `\n- They asked the following questions: ${userQuestions.map(q => `"${q}"`).join(', ')}.`;
         }
-        prompt += "Based on this, write the summary paragraph."
     }
 
     try {
         const result = await client.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
-            config: {
-                systemInstruction,
-            },
+            config: { systemInstruction },
         });
-        const text = result.text;
-        if (!text) {
-            return "Congratulations on completing the training! Well done.";
-        }
-        return text;
+        return result.text || "Great job completing the training!";
     } catch (error) {
         console.error("Error generating performance summary:", error);
-        // Return a graceful fallback message
-        return "Congratulations on completing the training module! You've done a great job."
-    }
-};
-
-export const generateImage = async (prompt: string): Promise<string> => {
-    const client = getAiClient();
-    try {
-        const response = await client.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: prompt,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio: '1:1',
-            },
-        });
-
-        if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
-            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64ImageBytes}`;
-        } else {
-            throw new Error("Image generation succeeded but returned no image data.");
-        }
-
-    } catch (error) {
-        console.error("Error generating image:", error);
-        throw new Error(`Failed to generate visual aid. ${error instanceof Error ? error.message : ''}`);
+        return "Congratulations on completing the training module!"; // Fallback
     }
 };
