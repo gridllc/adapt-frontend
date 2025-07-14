@@ -1,8 +1,4 @@
 
-
-
-
-
 import { GoogleGenAI, Chat, Content, Type, File } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
@@ -301,10 +297,7 @@ export const analyzeVideoContent = async (
     console.log("Uploading video to AI for analysis...");
     const uploadedFile = await client.files.upload({
         file: videoFile,
-        fileMetadata: {
-            mimeType: videoFile.type,
-            displayName: videoFile.name,
-        },
+        displayName: videoFile.name,
     });
 
     try {
@@ -330,10 +323,7 @@ export const analyzeVideoContent = async (
         `;
 
         const transcriptPrompt = `
-            You are a highly accurate transcription assistant. Your only job is to produce a time-coded transcript.
-            - Transcribe this video verbatim but remove all filler words such as 'um', 'ah', 'like', and 'you know'.
-            - Do not summarize or paraphrase.
-            - Output a valid JSON array of objects, where each object has "start", "end", and "text" properties, and "start" and "end" are in seconds.
+            You are a highly accurate transcription assistant. Transcribe this video verbatim but remove all filler words such as 'um', 'ah', 'like', and 'you know'. Do not summarize or paraphrase. Output a JSON array of { start:number, end:number, text:string } where start and end are in seconds.
         `;
 
         const timestampSchema = {
