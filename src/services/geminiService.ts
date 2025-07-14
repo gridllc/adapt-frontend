@@ -265,60 +265,15 @@ export const analyzeVideoContent = async (
     steps: ProcessStep[]
 ): Promise<VideoAnalysisResult> => {
     const client = getAiClient();
-    let fileResource: any; // Using `any` to handle potential SDK response inconsistencies
-
-    const systemInstruction = `You are a precise video analysis AI. Your task is to perform two actions on the provided video:
-1.  Identify the start and end times (in seconds) for each of a given list of process steps.
-2.  Transcribe the entire audio from the video, creating a list of timestamped text lines.
-Respond ONLY with a single JSON object that strictly adheres to the provided schema, containing both 'timestamps' and 'transcript' arrays.`;
-
-    const stepDescriptions = steps.map((step, index) => `${index + 1}. ${step.title}: ${step.description}`).join('\n');
-    const prompt = `Please analyze this video. First, provide the start and end timestamps for these steps:\n\n${stepDescriptions}\n\nSecond, provide a full transcript of the video's audio.`;
-
-    const analysisSchema = {
-        type: Type.OBJECT,
-        properties: {
-            timestamps: {
-                type: Type.ARRAY,
-                description: "An array of timestamp objects, one for each process step.",
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        start: { type: Type.NUMBER, description: "The start time of the step in seconds, rounded to the nearest integer." },
-                        end: { type: Type.NUMBER, description: "The end time of the step in seconds, rounded to the nearest integer." },
-                    },
-                    required: ["start", "end"],
-                },
-            },
-            transcript: {
-                type: Type.ARRAY,
-                description: "A complete, time-coded transcript of the video's audio.",
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        start: { type: Type.NUMBER, description: "The start time of the transcript line in seconds." },
-                        end: { type: Type.NUMBER, description: "The end time of the transcript line in seconds." },
-                        text: { type: Type.STRING, description: "The transcribed text for this time segment." },
-                    },
-                    required: ["start", "end", "text"],
-                }
-            }
-        },
-        required: ["timestamps", "transcript"]
-    };
+    let fileResource: any;
 
     try {
-        // Step 1: Upload the file
-        const uploadResponse = await client.files.upload({
-            file: videoFile,
-        });
-
+        // Step 1: Upload the file and wait for it to be processed
+        const uploadResponse = await client.files.upload({ file: videoFile });
         fileResource = (uploadResponse as any).file ?? uploadResponse;
 
-        // Step 2: Poll for ACTIVE state, as file needs to be processed before use.
         let activeFile = await client.files.get({ name: fileResource.name });
-        const maxAttempts = 15; // Wait for up to 30 seconds
-        const delay = 2000; // 2-second delay between checks
+        const maxAttempts = 15, delay = 2000;
         let attempts = 0;
 
         while (activeFile.state === 'PROCESSING' && attempts < maxAttempts) {
@@ -328,44 +283,90 @@ Respond ONLY with a single JSON object that strictly adheres to the provided sch
         }
 
         if (activeFile.state !== 'ACTIVE') {
-            // Attempt to delete the failed/stuck file before throwing
-            try {
-                await client.files.delete({ name: fileResource.name });
-            } catch (deleteError) {
-                console.error("Could not clean up non-active file:", deleteError);
-            }
             throw new Error(`File processing failed or timed out. Final state: ${activeFile.state}`);
         }
+        fileResource.name = activeFile.name; // For cleanup
 
-        // Keep the name for the finally block cleanup
-        fileResource.name = activeFile.name;
-
-        // Step 3: Use the active file in the generateContent call
         const videoPart = { fileData: { mimeType: activeFile.mimeType, fileUri: activeFile.uri } };
-        const textPart = { text: prompt };
 
-        const result = await client.models.generateContent({
+        // --- Task 1: Get Timestamps for Steps ---
+        const stepDescriptions = steps.map((step, index) => `${index + 1}. ${step.title}`).join('\n');
+        const timestampPrompt = `Analyze this video and identify the precise start and end timestamps (in seconds) for each of these process steps. The response must be a JSON object containing a 'timestamps' array, with one entry per step provided.\n\nSteps:\n${stepDescriptions}`;
+
+        const timestampSchema = {
+            type: Type.OBJECT,
+            properties: {
+                timestamps: {
+                    type: Type.ARRAY,
+                    description: "An array of timestamp objects, one for each process step.",
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            start: { type: Type.NUMBER, description: "Start time in seconds" },
+                            end: { type: Type.NUMBER, description: "End time in seconds" },
+                        },
+                        required: ["start", "end"],
+                    },
+                },
+            },
+            required: ["timestamps"],
+        };
+
+        const getTimestamps = client.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: { parts: [textPart, videoPart] },
-            config: { systemInstruction, responseMimeType: "application/json", responseSchema: analysisSchema },
+            contents: { parts: [{ text: timestampPrompt }, videoPart] },
+            config: { responseMimeType: "application/json", responseSchema: timestampSchema },
         });
 
-        const jsonText = result.text?.trim();
-        if (!jsonText) {
-            throw new Error("The AI returned an empty response from video analysis.");
+        // --- Task 2: Get Full Video Transcript ---
+        const transcriptPrompt = "Provide a full, accurate, time-coded transcript of the video's entire audio. The response must be a JSON object containing a 'transcript' array.";
+
+        const transcriptSchema = {
+            type: Type.OBJECT,
+            properties: {
+                transcript: {
+                    type: Type.ARRAY,
+                    description: "A complete, time-coded transcript of the video's audio.",
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            start: { type: Type.NUMBER },
+                            end: { type: Type.NUMBER },
+                            text: { type: Type.STRING },
+                        },
+                        required: ["start", "end", "text"],
+                    }
+                }
+            },
+            required: ["transcript"]
+        };
+
+        const getTranscript = client.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: { parts: [{ text: transcriptPrompt }, videoPart] },
+            config: { responseMimeType: "application/json", responseSchema: transcriptSchema },
+        });
+
+        // --- Execute and Combine Results ---
+        const [timestampResponse, transcriptResponse] = await Promise.all([getTimestamps, getTranscript]);
+
+        const timestampJsonText = timestampResponse.text?.trim();
+        if (!timestampJsonText) throw new Error("AI failed to return timestamps.");
+        const { timestamps } = JSON.parse(timestampJsonText) as { timestamps: { start: number; end: number }[] };
+
+        const transcriptJsonText = transcriptResponse.text?.trim();
+        if (!transcriptJsonText) throw new Error("AI failed to return a transcript.");
+        const { transcript } = JSON.parse(transcriptJsonText) as { transcript: { start: number; end: number; text: string }[] };
+
+        // Validation
+        if (!Array.isArray(timestamps) || !Array.isArray(transcript)) {
+            throw new Error("AI response format is incorrect.");
+        }
+        if (timestamps.length !== steps.length) {
+            throw new Error(`AI returned an incorrect number of timestamps. Expected ${steps.length}, got ${timestamps.length}.`);
         }
 
-        const analysisResult: VideoAnalysisResult = JSON.parse(jsonText);
-
-        // More robust validation of the AI's response
-        if (!analysisResult || !Array.isArray(analysisResult.timestamps) || !Array.isArray(analysisResult.transcript)) {
-            throw new Error("AI response is missing 'timestamps' or 'transcript' arrays.");
-        }
-        if (analysisResult.timestamps.length !== steps.length) {
-            throw new Error(`AI returned an incorrect number of timestamps. Expected ${steps.length}, but got ${analysisResult.timestamps.length}.`);
-        }
-
-        return analysisResult;
+        return { timestamps, transcript };
 
     } catch (error) {
         console.error("Error analyzing video:", error);
