@@ -308,15 +308,40 @@ Respond ONLY with a single JSON object that strictly adheres to the provided sch
     };
 
     try {
+        // Step 1: Upload the file
         const uploadResponse = await client.files.upload({
             file: videoFile,
         });
 
-        // The SDK is expected to return { file: ... }, but compiler errors suggest it might return the file object directly.
-        // This handles both cases by checking for the presence of the `file` property.
         fileResource = (uploadResponse as any).file ?? uploadResponse;
 
-        const videoPart = { fileData: { mimeType: fileResource.mimeType, fileUri: fileResource.uri } };
+        // Step 2: Poll for ACTIVE state, as file needs to be processed before use.
+        let activeFile = await client.files.get({ name: fileResource.name });
+        const maxAttempts = 15; // Wait for up to 30 seconds
+        const delay = 2000; // 2-second delay between checks
+        let attempts = 0;
+
+        while (activeFile.state === 'PROCESSING' && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            activeFile = await client.files.get({ name: fileResource.name });
+            attempts++;
+        }
+
+        if (activeFile.state !== 'ACTIVE') {
+            // Attempt to delete the failed/stuck file before throwing
+            try {
+                await client.files.delete({ name: fileResource.name });
+            } catch (deleteError) {
+                console.error("Could not clean up non-active file:", deleteError);
+            }
+            throw new Error(`File processing failed or timed out. Final state: ${activeFile.state}`);
+        }
+
+        // Keep the name for the finally block cleanup
+        fileResource.name = activeFile.name;
+
+        // Step 3: Use the active file in the generateContent call
+        const videoPart = { fileData: { mimeType: activeFile.mimeType, fileUri: activeFile.uri } };
         const textPart = { text: prompt };
 
         const result = await client.models.generateContent({
