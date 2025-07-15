@@ -222,14 +222,17 @@ const TrainingPage: React.FC = () => {
   }, [addToast]);
 
   const handleTimeUpdate = (time: number) => {
+    // This function is now only responsible for updating the currentTime
+    // for the TranscriptViewer to highlight the correct line.
+    // It no longer changes the active step, which fixes the auto-skipping bug.
     if (isCompleted) return;
     setCurrentTime(time);
-    if (!moduleData) return;
-    const activeStepFromVideo = findActiveStepIndex(time, steps);
-    if (activeStepFromVideo !== -1 && activeStepFromVideo !== currentStepIndex) {
-      setCurrentStepIndex(activeStepFromVideo);
-    }
   };
+
+  const handleStepSelect = useCallback((time: number, index: number) => {
+    handleSeekTo(time);
+    setCurrentStepIndex(index);
+  }, [handleSeekTo, setCurrentStepIndex]);
 
   const handleRestart = () => {
     setPerformanceReport(null);
@@ -345,7 +348,7 @@ const TrainingPage: React.FC = () => {
                 <ProcessSteps
                   steps={steps}
                   currentStepIndex={currentStepIndex}
-                  onStepClick={handleSeekTo}
+                  onStepSelect={handleStepSelect}
                   markStep={markStep}
                   checkpointAnswer={checkpointAnswer}
                   onCheckpointAnswerChange={setCheckpointAnswer}

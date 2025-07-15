@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useEffect } from 'react';
 import type { ProcessStep, StepStatus, CheckpointEvaluation } from '@/types';
 import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon, XCircleIcon, SendIcon, SparklesIcon, ArrowLeftIcon } from '@/components/Icons';
@@ -6,7 +7,7 @@ import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon, XCircleIcon, SendIcon, 
 interface ProcessStepsProps {
   steps: ProcessStep[];
   currentStepIndex: number;
-  onStepClick: (time: number) => void;
+  onStepSelect: (time: number, index: number) => void;
   markStep: (status: StepStatus) => void;
   checkpointAnswer: string;
   onCheckpointAnswerChange: (value: string) => void;
@@ -19,7 +20,7 @@ interface ProcessStepsProps {
 export const ProcessSteps: React.FC<ProcessStepsProps> = ({
   steps,
   currentStepIndex,
-  onStepClick,
+  onStepSelect,
   markStep,
   checkpointAnswer,
   onCheckpointAnswerChange,
@@ -50,7 +51,7 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
           <div
             key={index}
             ref={isActive ? activeStepRef : null}
-            onClick={() => onStepClick(step.start)}
+            onClick={() => onStepSelect(step.start, index)}
             className={`cursor-pointer p-4 rounded-lg transition-all duration-300 border-l-4 ${isActive
               ? 'bg-indigo-100 dark:bg-indigo-600/30 border-indigo-500 shadow-lg'
               : isCompleted
