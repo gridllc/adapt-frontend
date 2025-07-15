@@ -55,6 +55,52 @@ export interface Database {
           }
         ]
       }
+      checkpoint_responses: {
+        Row: {
+          answer: string
+          checkpoint_text: string
+          comment: string | null
+          created_at: string
+          id: string
+          module_id: string
+          step_index: number
+          user_id: string
+        }
+        Insert: {
+          answer: string
+          checkpoint_text: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          module_id: string
+          step_index: number
+          user_id: string
+        }
+        Update: {
+          answer?: string
+          checkpoint_text?: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          module_id?: string
+          step_index?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "checkpoint_responses_module_id_fkey"
+            columns: ["module_id"]
+            referencedRelation: "modules"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "checkpoint_responses_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       modules: {
         Row: {
           created_at: string

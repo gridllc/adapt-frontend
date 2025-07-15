@@ -1,9 +1,11 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
+import { getCheckpointResponsesForModule } from '@/services/checkpointService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import { VideoPlayer } from '@/components/VideoPlayer';
@@ -14,6 +16,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
+type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses']['Row'];
+
 
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
@@ -24,6 +28,7 @@ const EditPage: React.FC = () => {
     const [module, setModule] = useState<ModuleRow | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const isAdmin = !!user;
 
     const {
         data: initialModuleData,
@@ -41,6 +46,12 @@ const EditPage: React.FC = () => {
     const { data: allSuggestions = [] } = useQuery<Suggestion[]>({
         queryKey: ['suggestions', moduleId],
         queryFn: () => getSuggestionsForModule(moduleId!),
+        enabled: !!moduleId,
+    });
+
+    const { data: checkpointResponses = [] } = useQuery<CheckpointResponseRow[], Error>({
+        queryKey: ['checkpointResponses', moduleId],
+        queryFn: () => getCheckpointResponsesForModule(moduleId!),
         enabled: !!moduleId,
     });
 
@@ -200,8 +211,10 @@ const EditPage: React.FC = () => {
                             module={module}
                             onModuleChange={handleModuleDataChange}
                             suggestions={suggestions}
+                            checkpointResponses={checkpointResponses}
                             onAcceptSuggestion={handleSuggestionAccept}
                             onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}
+                            isAdmin={isAdmin}
                         />
                     </div>
                 </div>

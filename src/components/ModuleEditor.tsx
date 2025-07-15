@@ -1,4 +1,7 @@
 
+
+
+
 import React, { useCallback, useState } from 'react'
 import type {
     AlternativeMethod,
@@ -14,16 +17,20 @@ import {
     DownloadIcon
 } from '@/components/Icons'
 import { useToast } from '@/hooks/useToast'
+import { CheckpointDashboard } from './CheckpointDashboard'
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
+type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses']['Row'];
 
 interface ModuleEditorProps {
     module: ModuleRow | ModuleInsert
     onModuleChange: (module: ModuleRow | ModuleInsert) => void
     suggestions?: Suggestion[]
+    checkpointResponses?: CheckpointResponseRow[];
     onAcceptSuggestion?: (suggestion: Suggestion) => void
     onRejectSuggestion?: (suggestionId: string) => void
+    isAdmin: boolean;
 }
 
 const formatTime = (seconds: number): string => {
@@ -38,8 +45,10 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     module,
     onModuleChange,
     suggestions = [],
+    checkpointResponses = [],
     onAcceptSuggestion = () => { },
     onRejectSuggestion = () => { },
+    isAdmin
 }) => {
     const { addToast } = useToast()
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -250,6 +259,8 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                             .map((line, index) => ({ ...line, originalIndex: index }))
                             .filter(line => line.start >= step.start && line.end <= step.end && step.end > step.start);
 
+                        const stepCheckpointResponses = checkpointResponses.filter(r => r.step_index === idx && r.answer.toLowerCase() === 'no');
+
                         return (
                             <div
                                 key={idx}
@@ -348,6 +359,20 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                         placeholder="e.g., How many screws did you use?"
                                     />
                                 </div>
+
+                                {stepCheckpointResponses.length > 0 && (
+                                    <div className="mt-3 p-3 bg-yellow-100 dark:bg-yellow-900/20 rounded-lg text-sm border border-yellow-200 dark:border-yellow-700">
+                                        <h4 className="font-semibold text-yellow-800 dark:text-yellow-300">Trainee Feedback</h4>
+                                        <p className="text-xs text-yellow-700 dark:text-yellow-400 mb-2">{stepCheckpointResponses.length} trainee(s) answered "No" to this checkpoint.</p>
+                                        <ul className="space-y-1 max-h-24 overflow-y-auto pr-2">
+                                            {stepCheckpointResponses.map(resp => (
+                                                <li key={resp.id} className="text-xs italic text-yellow-800 dark:text-yellow-300 border-l-2 border-yellow-400 pl-2">
+                                                    {resp.comment || "No comment provided."}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
 
                                 {step.alternativeMethods.map((alt, aIdx) => (
                                     <div
@@ -465,6 +490,12 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                     </button>
                 </div>
             </div>
+
+            <CheckpointDashboard
+                moduleId={module.slug}
+                moduleTitle={module.title}
+                isAdmin={isAdmin}
+            />
         </div>
     )
 }

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse, generateImage } from '@/services/geminiService';
@@ -19,6 +20,7 @@ interface ChatTutorProps {
     currentStepIndex: number;
     steps: ProcessStep[];
     onClose: () => void;
+    initialPrompt?: string;
 }
 
 const parseTimestamp = (text: string): number | null => {
@@ -32,7 +34,7 @@ const parseTimestamp = (text: string): number | null => {
     return null;
 };
 
-export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, stepsContext, fullTranscript, onTimestampClick, currentStepIndex, steps, onClose }) => {
+export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, stepsContext, fullTranscript, onTimestampClick, currentStepIndex, steps, onClose, initialPrompt }) => {
     const queryClient = useQueryClient();
     const chatHistoryQueryKey = ['chatHistory', moduleId, sessionToken];
     const { addToast } = useToast();
@@ -66,6 +68,12 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     useEffect(() => {
         setMessages(initialMessages);
     }, [initialMessages]);
+
+    useEffect(() => {
+        if (initialPrompt) {
+            setInput(initialPrompt);
+        }
+    }, [initialPrompt]);
 
     useEffect(() => {
         // This effect runs when the context changes (e.g., user moves to a new step).

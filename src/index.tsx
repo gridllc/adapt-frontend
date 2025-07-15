@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
@@ -18,6 +17,8 @@ import { ToastProvider } from '@/hooks/useToast';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { AuthProvider } from '@/hooks/useAuth';
 import './index.css';
+import LiveCoachPage from '@/pages/LiveCoachPage';
+import { PwaUpdater } from '@/components/PwaUpdater';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -60,6 +61,14 @@ const router = createBrowserRouter([
                 ),
             },
             {
+                path: 'modules/:moduleId/live',
+                element: (
+                    <ProtectedRoute>
+                        <LiveCoachPage />
+                    </ProtectedRoute>
+                )
+            },
+            {
                 path: 'create',
                 element: (
                     <ProtectedRoute>
@@ -84,6 +93,7 @@ root.render(
                 <AuthProvider>
                     <ToastProvider>
                         <RouterProvider router={router} />
+                        <PwaUpdater />
                     </ToastProvider>
                 </AuthProvider>
             </ThemeProvider>

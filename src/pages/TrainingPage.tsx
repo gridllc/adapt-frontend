@@ -7,15 +7,15 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, CheckpointEvaluation, TranscriptLine, StepStatus } from '@/types';
+import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { getChatHistory } from '@/services/chatService';
-import { generatePerformanceSummary, evaluateCheckpointAnswer } from '@/services/geminiService';
-import { submitSuggestion } from '@/services/suggestionsService';
+import { generatePerformanceSummary } from '@/services/geminiService';
+import { logCheckpointResponse } from '@/services/checkpointService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
 
@@ -43,7 +43,7 @@ const TrainingPage: React.FC = () => {
   const { moduleId } = useParams<{ moduleId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { addToast } = useToast();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -53,13 +53,7 @@ const TrainingPage: React.FC = () => {
   const [sessionToken, setSessionToken] = useState('');
   const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-
-  // State for interactive checkpoints
-  const [checkpointAnswer, setCheckpointAnswer] = useState('');
-  const [checkpointFeedback, setCheckpointFeedback] = useState<CheckpointEvaluation | null>(null);
-  const [isEvaluating, setIsEvaluating] = useState(false);
-  const [instructionSuggestion, setInstructionSuggestion] = useState<string | null>(null);
-  const [isSuggestionSubmitted, setIsSuggestionSubmitted] = useState(false);
+  const [initialChatPrompt, setInitialChatPrompt] = useState<string | undefined>();
 
   // Effect to manage session token in URL
   useEffect(() => {
@@ -101,14 +95,6 @@ const TrainingPage: React.FC = () => {
     isLoadingSession,
     goBack,
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, steps.length ?? 0);
-
-  // Reset checkpoint state when the step changes
-  useEffect(() => {
-    setCheckpointAnswer('');
-    setCheckpointFeedback(null);
-    setInstructionSuggestion(null);
-    setIsSuggestionSubmitted(false);
-  }, [currentStepIndex]);
 
 
   useEffect(() => {
@@ -227,9 +213,6 @@ const TrainingPage: React.FC = () => {
   }, [addToast]);
 
   const handleTimeUpdate = (time: number) => {
-    // This function is now only responsible for updating the currentTime
-    // for the TranscriptViewer to highlight the correct line.
-    // It no longer changes the active step, which fixes the auto-skipping bug.
     if (isCompleted) return;
     setCurrentTime(time);
   };
@@ -240,19 +223,15 @@ const TrainingPage: React.FC = () => {
   }, [handleSeekTo, setCurrentStepIndex]);
 
   const handleMarkStep = useCallback((status: StepStatus) => {
-    // This is a wrapper function to add side-effects to the markStep action from the hook.
     if (status === 'unclear') {
-      // Record the action. The hook will not advance the step.
       markStep('unclear');
 
-      // Add side-effects: rewind video and show toast.
       const currentStep = steps[currentStepIndex];
       if (currentStep) {
         handleSeekTo(currentStep.start);
         addToast('info', "Let's try that again", "We'll replay this step for you.");
       }
     } else {
-      // For 'done' status, just call the original function which handles advancing.
       markStep(status);
     }
   }, [markStep, steps, currentStepIndex, handleSeekTo, addToast]);
@@ -262,47 +241,41 @@ const TrainingPage: React.FC = () => {
     resetSession();
   }
 
-  const handleCheckpointSubmit = async () => {
-    if (!moduleData || !checkpointAnswer.trim()) return;
-    const currentStep = steps[currentStepIndex];
-    if (!currentStep?.checkpoint) return;
-
-    setIsEvaluating(true);
-    setCheckpointFeedback(null);
-    setInstructionSuggestion(null);
-
-    try {
-      const evaluation = await evaluateCheckpointAnswer(currentStep, checkpointAnswer);
-      setCheckpointFeedback(evaluation);
-      if (evaluation.suggestedInstructionChange) {
-        setInstructionSuggestion(evaluation.suggestedInstructionChange);
-      }
-
-      if (evaluation.isCorrect) {
-        setTimeout(() => {
-          markStep('done');
-        }, 1500); // Wait 1.5s before advancing to next step
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      addToast('error', 'Evaluation Failed', errorMessage);
-      setCheckpointFeedback({ isCorrect: false, feedback: 'Sorry, I was unable to evaluate your answer. Please try again.' });
-    } finally {
-      setIsEvaluating(false);
+  const handleCheckpointAnswer = useCallback((answer: string, comment?: string) => {
+    const step = steps[currentStepIndex];
+    // Log the response if the user is authenticated and all data is present
+    if (user && moduleId && step?.checkpoint) {
+      logCheckpointResponse({
+        module_id: moduleId,
+        user_id: user.id,
+        step_index: currentStepIndex,
+        checkpoint_text: step.checkpoint,
+        answer: answer,
+        comment: comment,
+      });
     }
-  };
 
-  const handleSuggestionSubmit = async () => {
-    if (!moduleId || !instructionSuggestion) return;
-    try {
-      await submitSuggestion(moduleId, currentStepIndex, instructionSuggestion);
-      addToast('success', 'Suggestion Submitted', 'Thank you! The module owner has been notified.');
-      setIsSuggestionSubmitted(true);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      addToast('error', 'Submission Failed', errorMessage);
+    if (answer.toLowerCase() === 'yes') {
+      addToast('success', 'Checkpoint Passed', 'Great! Moving to the next step.');
+      setTimeout(() => {
+        markStep('done');
+      }, 1000);
+    } else { // For 'no' or other answers, we just stay on the step. The prompt component shows the alternative help.
+      addToast('info', 'Reviewing Step', 'Take another look at this step.');
+      if (step) {
+        handleSeekTo(step.start);
+      }
     }
-  };
+
+    if (comment) {
+      addToast('info', 'Feedback Noted', 'Thank you for your comment!');
+    }
+  }, [currentStepIndex, steps, addToast, markStep, handleSeekTo, user, moduleId]);
+
+  const handleTutorHelp = useCallback((question: string) => {
+    setInitialChatPrompt(`I have a question about this checkpoint: "${question}"`);
+    setIsChatOpen(true);
+  }, []);
 
 
   if (isLoadingModule || isLoadingSession || !sessionToken) {
@@ -314,8 +287,6 @@ const TrainingPage: React.FC = () => {
   }
 
   if (!moduleData) {
-    // This state is reached if loading is done and there is no data.
-    // The useEffect hook above will have likely navigated, but this is a safeguard.
     return <div className="flex items-center justify-center h-screen">Module not found.</div>
   }
 
@@ -389,17 +360,9 @@ const TrainingPage: React.FC = () => {
                   currentStepIndex={currentStepIndex}
                   onStepSelect={handleStepSelect}
                   markStep={handleMarkStep}
-                  checkpointAnswer={checkpointAnswer}
-                  onCheckpointAnswerChange={setCheckpointAnswer}
-                  onCheckpointSubmit={handleCheckpointSubmit}
-                  checkpointFeedback={checkpointFeedback}
-                  isEvaluatingCheckpoint={isEvaluating}
                   goBack={goBack}
-                  instructionSuggestion={instructionSuggestion}
-                  onSuggestionSubmit={handleSuggestionSubmit}
-                  isSuggestionSubmitted={isSuggestionSubmitted}
-                  isAdmin={isAuthenticated}
-                  moduleId={moduleId}
+                  onCheckpointAnswer={handleCheckpointAnswer}
+                  onTutorHelp={handleTutorHelp}
                 />
               )}
 
@@ -444,7 +407,11 @@ const TrainingPage: React.FC = () => {
             onTimestampClick={handleSeekTo}
             currentStepIndex={currentStepIndex}
             steps={steps}
-            onClose={() => setIsChatOpen(false)}
+            onClose={() => {
+              setIsChatOpen(false);
+              setInitialChatPrompt(undefined);
+            }}
+            initialPrompt={initialChatPrompt}
           />
         </div>
       )}
