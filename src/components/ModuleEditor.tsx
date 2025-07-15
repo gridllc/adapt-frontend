@@ -9,7 +9,8 @@ import type { Database } from '@/types/supabase'
 import {
     XIcon,
     LightbulbIcon,
-    CheckCircleIcon
+    CheckCircleIcon,
+    DownloadIcon
 } from '@/components/Icons'
 import { VideoPlayer } from '@/components/VideoPlayer'
 import { useToast } from '@/hooks/useToast'
@@ -19,6 +20,7 @@ type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 interface ModuleEditorProps {
     module: ModuleRow | ModuleInsert
+    title?: string;
     onModuleChange: (module: ModuleRow | ModuleInsert) => void
     suggestions?: Suggestion[]
     onAcceptSuggestion?: (suggestion: Suggestion) => void
@@ -35,6 +37,7 @@ const formatTime = (seconds: number): string => {
 
 export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     module,
+    title,
     onModuleChange,
     suggestions = [],
     onAcceptSuggestion = () => { },
@@ -50,6 +53,47 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     const toggleTranscript = useCallback((index: number) => {
         setOpenTranscripts(prev => ({ ...prev, [index]: !prev[index] }));
     }, []);
+
+    const handleDownload = useCallback(() => {
+        if (!module) return;
+
+        let content = `Module: ${module.title}\n`;
+        if (module.video_url && typeof module.video_url === 'string' && !module.video_url.startsWith('blob:')) {
+            content += `Video URL: ${module.video_url}\n`;
+        }
+        content += `\n===================================\n\n`;
+
+        const moduleSteps = (module.steps as ProcessStep[]) || [];
+        moduleSteps.forEach((step, index) => {
+            content += `Step ${index + 1}: ${step.title}\n`;
+            content += `-----------------------------------\n`;
+            content += `Description: ${step.description}\n`;
+            if (step.checkpoint) {
+                content += `Checkpoint: ${step.checkpoint}\n`;
+            }
+            if (step.alternativeMethods && step.alternativeMethods.length > 0) {
+                content += `Alternative Methods:\n`;
+                step.alternativeMethods.forEach(alt => {
+                    content += `  - ${alt.title}: ${alt.description}\n`;
+                });
+            }
+            content += `\n`;
+        });
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const slug = (module.slug || 'module').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        link.download = `adapt-module-${slug}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        addToast('success', 'Download Started', 'Your module draft is downloading.');
+
+    }, [module, addToast]);
+
 
     // Top-level field updater (title, video_url, etc.)
     const handleFieldChange = useCallback(
@@ -172,38 +216,54 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl space-y-6 animate-fade-in-up">
             {/* === Header: Title + Video URL === */}
-            <div className="grid gap-6 md:grid-cols-2">
-                <div>
-                    <label className="block font-semibold mb-2">Module Title</label>
-                    <input
-                        type="text"
-                        className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 bg-white dark:bg-slate-900 focus:outline-none"
-                        value={module.title}
-                        onChange={(e) =>
-                            handleFieldChange('title', e.currentTarget.value)
-                        }
-                    />
-                </div>
-                <div>
-                    <label className="block font-semibold mb-2">Video URL</label>
-                    <input
-                        type="text"
-                        className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 bg-white dark:bg-slate-900 focus:outline-none"
-                        value={module.video_url || ''}
-                        onChange={(e) =>
-                            handleFieldChange('video_url', e.currentTarget.value)
-                        }
-                        placeholder="Paste Supabase public URL here"
-                    />
-                    {/* Video Preview */}
-                    {module.video_url && (
-                        <div className="mt-4">
-                            <VideoPlayer
-                                video_url={module.video_url}
-                                onTimeUpdate={() => { }}
-                            />
-                        </div>
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    {title ? (
+                        <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400">{title}</h2>
+                    ) : (
+                        <span /> // Placeholder to maintain layout
                     )}
+                    <button
+                        onClick={handleDownload}
+                        className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white text-sm font-semibold py-2 px-3 rounded-lg transition-colors"
+                    >
+                        <DownloadIcon className="h-5 w-5" />
+                        <span>Download Draft</span>
+                    </button>
+                </div>
+                <div className="grid gap-6 md:grid-cols-2">
+                    <div>
+                        <label className="block font-semibold mb-2">Module Title</label>
+                        <input
+                            type="text"
+                            className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 bg-white dark:bg-slate-900 focus:outline-none"
+                            value={module.title}
+                            onChange={(e) =>
+                                handleFieldChange('title', e.currentTarget.value)
+                            }
+                        />
+                    </div>
+                    <div>
+                        <label className="block font-semibold mb-2">Video URL</label>
+                        <input
+                            type="text"
+                            className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 bg-white dark:bg-slate-900 focus:outline-none"
+                            value={module.video_url || ''}
+                            onChange={(e) =>
+                                handleFieldChange('video_url', e.currentTarget.value)
+                            }
+                            placeholder="Paste Supabase public URL here"
+                        />
+                        {/* Video Preview */}
+                        {module.video_url && (
+                            <div className="mt-4">
+                                <VideoPlayer
+                                    video_url={module.video_url}
+                                    onTimeUpdate={() => { }}
+                                />
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

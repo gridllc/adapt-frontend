@@ -20,14 +20,24 @@ import type { File as AiFile } from '@google/genai';
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 type FlowStep = 'initial' | 'analyzing' | 'review' | 'generating' | 'final';
 
-// A new, more capable transcript editor component, defined within this file as requested.
-const ConfidenceTranscriptEditor: React.FC<{
+interface ConfidenceTranscriptEditorProps {
     transcriptLines: TranscriptLine[];
     uncertainWords: string[];
+    originalTranscript: TranscriptLine[];
     onUpdate: (newTranscript: TranscriptLine[]) => void;
-}> = ({ transcriptLines, uncertainWords, onUpdate }) => {
-    const { addToast } = useToast();
+    onRevert: () => void;
+}
+
+// A new, more capable transcript editor component, defined within this file as requested.
+const ConfidenceTranscriptEditor: React.FC<ConfidenceTranscriptEditorProps> = ({
+    transcriptLines,
+    uncertainWords,
+    originalTranscript,
+    onUpdate,
+    onRevert
+}) => {
     const uncertainSet = new Set(uncertainWords.map(w => w.toLowerCase()));
+    const isChanged = JSON.stringify(transcriptLines) !== JSON.stringify(originalTranscript);
 
     const handleLineChange = (index: number, newText: string) => {
         const newLines = [...transcriptLines];
@@ -47,17 +57,28 @@ const ConfidenceTranscriptEditor: React.FC<{
     };
 
     return (
-        <div className="space-y-3 p-3 bg-slate-200/50 dark:bg-slate-900/50 rounded-lg border border-slate-300 dark:border-slate-700 max-h-[50vh] overflow-y-auto">
-            {transcriptLines.map((line, index) => (
-                <div key={index} className="flex items-start gap-3">
-                    <span className="font-mono text-xs text-indigo-500 dark:text-indigo-300 pt-1.5 whitespace-nowrap">
-                        [{new Date(line.start * 1000).toISOString().substr(14, 5)}]
-                    </span>
-                    <div className="w-full text-sm text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700/50 p-2 rounded-md border border-slate-300 dark:border-slate-600 focus-within:ring-2 focus-within:ring-indigo-500">
-                        <p className="whitespace-pre-wrap">{highlightUncertain(line.text)}</p>
+        <div>
+            <div className="flex justify-end mb-2">
+                <button
+                    onClick={onRevert}
+                    disabled={!isChanged}
+                    className="text-xs font-semibold text-slate-500 hover:text-indigo-600 disabled:text-slate-400 disabled:hover:text-slate-400 disabled:cursor-not-allowed transition-colors"
+                >
+                    Revert All Changes
+                </button>
+            </div>
+            <div className="space-y-3 p-3 bg-slate-200/50 dark:bg-slate-900/50 rounded-lg border border-slate-300 dark:border-slate-700 max-h-[50vh] overflow-y-auto">
+                {transcriptLines.map((line, index) => (
+                    <div key={index} className="flex items-start gap-3">
+                        <span className="font-mono text-xs text-indigo-500 dark:text-indigo-300 pt-1.5 whitespace-nowrap">
+                            [{new Date(line.start * 1000).toISOString().substr(14, 5)}]
+                        </span>
+                        <div className="w-full text-sm text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700/50 p-2 rounded-md border border-slate-300 dark:border-slate-600 focus-within:ring-2 focus-within:ring-indigo-500">
+                            <p className="whitespace-pre-wrap">{highlightUncertain(line.text)}</p>
+                        </div>
                     </div>
-                </div>
-            ))}
+                ))}
+            </div>
         </div>
     );
 };
@@ -252,6 +273,14 @@ const CreatePage: React.FC = () => {
         setIsSaving(false);
     }, [uploadedAiFile]);
 
+    const handleRevertTranscript = useCallback(() => {
+        if (analysisResult) {
+            setEditedTranscript(analysisResult.transcript);
+            addToast('info', 'Transcript Reverted', 'All changes to the transcript have been undone.');
+        }
+    }, [analysisResult, addToast]);
+
+
     const renderInitialStep = () => (
         <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up">
             <div className="max-w-2xl mx-auto">
@@ -359,7 +388,9 @@ const CreatePage: React.FC = () => {
                             <ConfidenceTranscriptEditor
                                 transcriptLines={editedTranscript}
                                 uncertainWords={analysisResult.uncertainWords}
+                                originalTranscript={analysisResult.transcript}
                                 onUpdate={setEditedTranscript}
+                                onRevert={handleRevertTranscript}
                             />
                         </details>
                     ) : null}
@@ -377,7 +408,7 @@ const CreatePage: React.FC = () => {
 
     const renderFinalStep = () => (
         <div className="animate-fade-in-up">
-            {generatedModule && <ModuleEditor module={generatedModule} onModuleChange={setGeneratedModule} />}
+            {generatedModule && <ModuleEditor title="3. Review & Refine Final Draft" module={generatedModule} onModuleChange={setGeneratedModule} />}
             <div className="mt-8 flex justify-center gap-4">
                 <button onClick={resetForm} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                     Start Over
@@ -414,7 +445,7 @@ const CreatePage: React.FC = () => {
                     <span>Back to Home</span>
                 </button>
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center">Create with AI</h1>
-                <span className="w-40">
+                <span className="w-40 text-right">
                     {flowStep !== 'initial' && <button onClick={resetForm} className="text-sm text-slate-500 hover:text-red-500">Start Over</button>}
                 </span>
             </header>
