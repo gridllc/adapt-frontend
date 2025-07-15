@@ -101,6 +101,46 @@ export interface Database {
           }
         ]
       }
+      flagged_checkpoints: {
+        Row: {
+          ai_response: string
+          checkpoint_text: string | null
+          flagged_at: string
+          id: string
+          module_id: string
+          user_id: string | null
+        }
+        Insert: {
+          ai_response: string
+          checkpoint_text?: string | null
+          flagged_at: string
+          id?: string
+          module_id: string
+          user_id?: string | null
+        }
+        Update: {
+          ai_response?: string
+          checkpoint_text?: string | null
+          flagged_at?: string
+          id?: string
+          module_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flagged_checkpoints_module_id_fkey"
+            columns: ["module_id"]
+            referencedRelation: "modules"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "flagged_checkpoints_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       modules: {
         Row: {
           created_at: string

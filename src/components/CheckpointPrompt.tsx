@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-    SendIcon,
-    HelpCircleIcon
+  SendIcon,
+  HelpCircleIcon
 } from '@/components/Icons';
 
 interface CheckpointPromptProps {
@@ -10,7 +10,8 @@ interface CheckpointPromptProps {
   allowTextInputOn?: string; // e.g., "no"
   alternativeHelp?: string;
   onAnswer: (answer: string, followupComment?: string) => void;
-  onTutorHelp?: (question: string) => void;
+  onTutorHelp?: (question: string, userAnswer?: string) => void;
+  isLoading?: boolean;
 }
 
 export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
@@ -20,6 +21,7 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
   alternativeHelp,
   onAnswer,
   onTutorHelp,
+  isLoading,
 }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const [comment, setComment] = useState('');
@@ -37,23 +39,25 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
 
   const handleAIHelp = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (onTutorHelp) onTutorHelp(question);
+    if (onTutorHelp) {
+      onTutorHelp(question, selected ?? undefined);
+    }
   };
 
   return (
     <div className="mt-4 p-4 bg-slate-200/50 dark:bg-slate-900/50 rounded-md border border-slate-300 dark:border-slate-700 animate-fade-in-up">
       <p className="font-semibold text-sm text-indigo-700 dark:text-indigo-300 italic">{question}</p>
-      
+
       <div className="flex gap-3 mt-3 flex-wrap">
         {options.map(opt => (
           <button
             key={opt}
             onClick={(e) => handleSelectOption(e, opt)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              selected === opt
+            disabled={isLoading}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${selected === opt
                 ? 'bg-indigo-600 text-white ring-2 ring-offset-2 ring-indigo-500 ring-offset-slate-100 dark:ring-offset-slate-800'
                 : 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
+              } disabled:opacity-50`}
           >
             {opt}
           </button>
@@ -69,7 +73,8 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
             value={comment}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setComment(e.target.value)}
-            className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2 text-sm text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            disabled={isLoading}
+            className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2 text-sm text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
             rows={2}
             placeholder="Your comment..."
           />
@@ -85,17 +90,18 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
       <div className="flex gap-4 items-center mt-4 pt-3 border-t border-slate-300 dark:border-slate-600">
         <button
           onClick={handleSubmit}
-          disabled={!selected}
+          disabled={!selected || isLoading}
           className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-semibold disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center gap-2 transition-all transform hover:scale-105"
         >
           <SendIcon className="h-4 w-4" />
-          Submit Answer
+          {isLoading ? 'Submitting...' : 'Submit Answer'}
         </button>
 
         {onTutorHelp && (
           <button
             onClick={handleAIHelp}
-            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5"
+            disabled={isLoading}
+            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 disabled:opacity-50"
           >
             <HelpCircleIcon className="h-4 w-4" />
             Ask the AI Tutor

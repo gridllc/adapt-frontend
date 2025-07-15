@@ -7,14 +7,14 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus } from '@/types';
+import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus, CheckpointEvaluation } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { getChatHistory } from '@/services/chatService';
-import { generatePerformanceSummary } from '@/services/geminiService';
+import { generatePerformanceSummary, evaluateCheckpointAnswer, submitSuggestion } from '@/services/geminiService';
 import { logCheckpointResponse } from '@/services/checkpointService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
@@ -23,14 +23,17 @@ type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const findActiveStepIndex = (time: number, steps: ProcessStep[]) => {
   let foundIndex = -1;
+  // This allows finding the step even if the video overshoots the last step's end time.
+  if (steps.length > 0 && time >= steps[steps.length - 1].start) {
+    return steps.length - 1;
+  }
+
   for (let i = 0; i < steps.length; i++) {
-    if (time >= steps[i].start) {
-      foundIndex = i;
-    } else {
-      break;
+    if (time >= steps[i].start && time < steps[i].end) {
+      return i;
     }
   }
-  return foundIndex === -1 && steps.length > 0 ? 0 : foundIndex;
+  return -1;
 };
 
 const generateToken = () => Math.random().toString(36).substring(2, 10);
@@ -54,6 +57,13 @@ const TrainingPage: React.FC = () => {
   const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [initialChatPrompt, setInitialChatPrompt] = useState<string | undefined>();
+
+  // State for Checkpoint evaluation
+  const [isEvaluatingCheckpoint, setIsEvaluatingCheckpoint] = useState(false);
+  const [checkpointFeedback, setCheckpointFeedback] = useState<CheckpointEvaluation | null>(null);
+  const [instructionSuggestion, setInstructionSuggestion] = useState<string | null>(null);
+  const [isSuggestionSubmitted, setIsSuggestionSubmitted] = useState(false);
+
 
   // Effect to manage session token in URL
   useEffect(() => {
@@ -203,6 +213,18 @@ const TrainingPage: React.FC = () => {
     }
   }, []);
 
+  // When currentStepIndex changes, seek video to the start of the new step.
+  useEffect(() => {
+    const step = steps?.[currentStepIndex];
+    if (step && videoRef.current) {
+      // Add a small tolerance to avoid seeking if already very close.
+      if (Math.abs(videoRef.current.currentTime - step.start) > 0.5) {
+        handleSeekTo(step.start);
+      }
+    }
+  }, [currentStepIndex, steps, handleSeekTo]);
+
+
   const handleCopyLink = useCallback(() => {
     navigator.clipboard.writeText(window.location.href).then(() => {
       addToast('success', 'Link Copied', 'The training session link is now in your clipboard.');
@@ -215,12 +237,26 @@ const TrainingPage: React.FC = () => {
   const handleTimeUpdate = (time: number) => {
     if (isCompleted) return;
     setCurrentTime(time);
+
+    // Automatically advance the step based on video time, but only if the user isn't on a checkpoint.
+    const currentStep = steps[currentStepIndex];
+    if (currentStep && !currentStep.checkpoint && time > currentStep.end && currentStep.end > 0) {
+      if (currentStepIndex < steps.length - 1) {
+        markStep('done');
+      }
+    }
   };
 
   const handleStepSelect = useCallback((time: number, index: number) => {
     handleSeekTo(time);
     setCurrentStepIndex(index);
   }, [handleSeekTo, setCurrentStepIndex]);
+
+  useEffect(() => {
+    setCheckpointFeedback(null);
+    setInstructionSuggestion(null);
+    setIsSuggestionSubmitted(false);
+  }, [currentStepIndex]);
 
   const handleMarkStep = useCallback((status: StepStatus) => {
     if (status === 'unclear') {
@@ -241,10 +277,12 @@ const TrainingPage: React.FC = () => {
     resetSession();
   }
 
-  const handleCheckpointAnswer = useCallback((answer: string, comment?: string) => {
+  const handleCheckpointAnswer = useCallback(async (answer: string, comment?: string) => {
     const step = steps[currentStepIndex];
-    // Log the response if the user is authenticated and all data is present
-    if (user && moduleId && step?.checkpoint) {
+    if (!step?.checkpoint || !moduleId) return;
+
+    // Log the raw response first (fire-and-forget style)
+    if (user) {
       logCheckpointResponse({
         module_id: moduleId,
         user_id: user.id,
@@ -252,30 +290,75 @@ const TrainingPage: React.FC = () => {
         checkpoint_text: step.checkpoint,
         answer: answer,
         comment: comment,
-      });
+      }).catch(err => console.error("Non-blocking error: Failed to log checkpoint response.", err));
     }
 
-    if (answer.toLowerCase() === 'yes') {
-      addToast('success', 'Checkpoint Passed', 'Great! Moving to the next step.');
-      setTimeout(() => {
-        markStep('done');
-      }, 1000);
-    } else { // For 'no' or other answers, we just stay on the step. The prompt component shows the alternative help.
-      addToast('info', 'Reviewing Step', 'Take another look at this step.');
-      if (step) {
+    // Then, evaluate the answer with AI
+    setIsEvaluatingCheckpoint(true);
+    try {
+      const evaluation = await evaluateCheckpointAnswer(step, answer);
+      setCheckpointFeedback(evaluation);
+      setInstructionSuggestion(evaluation.suggestedInstructionChange ?? null);
+
+      if (evaluation.isCorrect) {
+        addToast('success', 'Checkpoint Passed', 'Great! Moving to the next step.');
+        setTimeout(() => markStep('done'), 1500);
+      } else {
+        addToast('info', 'Reviewing Step', 'Take another look at the instructions.');
         handleSeekTo(step.start);
       }
-    }
-
-    if (comment) {
-      addToast('info', 'Feedback Noted', 'Thank you for your comment!');
+    } catch (err) {
+      console.error("Error evaluating checkpoint with AI", err);
+      addToast('error', 'Evaluation Error', 'Could not get AI feedback. Please try again.');
+      // Fallback to simple logic if AI fails
+      if (answer.toLowerCase() === 'yes') {
+        markStep('done');
+      } else {
+        handleSeekTo(step.start);
+      }
+    } finally {
+      setIsEvaluatingCheckpoint(false);
     }
   }, [currentStepIndex, steps, addToast, markStep, handleSeekTo, user, moduleId]);
 
-  const handleTutorHelp = useCallback((question: string) => {
-    setInitialChatPrompt(`I have a question about this checkpoint: "${question}"`);
+  const handleSuggestionSubmit = async () => {
+    if (!moduleId || !instructionSuggestion) return;
+
+    try {
+      await submitSuggestion(moduleId, currentStepIndex, instructionSuggestion);
+      addToast('success', 'Suggestion Submitted!', 'Thank you for helping improve this training.');
+      setIsSuggestionSubmitted(true);
+    } catch (err) {
+      addToast('error', 'Submission Failed', 'Could not send the suggestion.');
+    }
+  };
+
+  const handleTutorHelp = useCallback((question: string, userAnswer?: string) => {
+    const step = steps[currentStepIndex];
+    if (!step) return;
+
+    let prompt: string;
+
+    // If a checkpoint was just failed, create a more contextual prompt.
+    if (userAnswer && userAnswer.toLowerCase() === 'no' && checkpointFeedback && !checkpointFeedback.isCorrect) {
+      let contextForAi = `I'm on the step: "${step.title}".\n`;
+      contextForAi += `The instruction is: "${step.description}".\n`;
+      if (step.checkpoint) {
+        contextForAi += `I was asked the checkpoint question: "${step.checkpoint}" and I answered "${userAnswer}".\n`;
+      }
+      if (step.alternativeMethods && step.alternativeMethods.length > 0 && step.alternativeMethods[0].description) {
+        contextForAi += `I see a hint that says: "${step.alternativeMethods[0].description}".\n`;
+      }
+      contextForAi += "I'm still stuck. What should I do next?";
+      prompt = contextForAi;
+    } else {
+      // Default prompt if not a failed checkpoint scenario
+      prompt = `I have a question about this checkpoint: "${question}"`;
+    }
+
+    setInitialChatPrompt(prompt);
     setIsChatOpen(true);
-  }, []);
+  }, [steps, currentStepIndex, checkpointFeedback]);
 
 
   if (isLoadingModule || isLoadingSession || !sessionToken) {
@@ -362,6 +445,13 @@ const TrainingPage: React.FC = () => {
                   markStep={handleMarkStep}
                   goBack={goBack}
                   onCheckpointAnswer={handleCheckpointAnswer}
+                  isEvaluatingCheckpoint={isEvaluatingCheckpoint}
+                  checkpointFeedback={checkpointFeedback}
+                  instructionSuggestion={instructionSuggestion}
+                  onSuggestionSubmit={handleSuggestionSubmit}
+                  isSuggestionSubmitted={isSuggestionSubmitted}
+                  isAdmin={!!user}
+                  moduleId={moduleId}
                   onTutorHelp={handleTutorHelp}
                 />
               )}

@@ -58,7 +58,7 @@ export async function getCheckpointFailureStats(moduleId: string): Promise<{ ste
     if (!rawNoResponses) return [];
 
     const statsMap = new Map<string, { step_index: number; checkpoint_text: string; count: number }>();
-    
+
     for (const response of rawNoResponses) {
         if (!response.checkpoint_text) continue;
 
@@ -77,16 +77,16 @@ const convertToCsv = (data: any[]): string => {
     if (data.length === 0) return '';
     const headers = ['Step', 'Checkpoint', 'Answer', 'Comment', 'Timestamp'];
     const rows = data.map(row => [
-      row.step_index + 1,
-      `"${(row.checkpoint_text || '').replace(/"/g, '""')}"`,
-      row.answer,
-      `"${(row.comment || '').replace(/"/g, '""')}"`,
-      new Date(row.created_at).toLocaleString()
+        row.step_index + 1,
+        `"${(row.checkpoint_text || '').replace(/"/g, '""')}"`,
+        row.answer,
+        `"${(row.comment || '').replace(/"/g, '""')}"`,
+        new Date(row.created_at).toLocaleString()
     ]);
 
     return [headers, ...rows]
-      .map(r => r.join(','))
-      .join('\n');
+        .map(r => r.join(','))
+        .join('\n');
 }
 
 /**
@@ -115,7 +115,7 @@ export const sendCheckpointFailuresToSlack = async (moduleId: string, moduleTitl
     if (!slackWebhookUrl) {
         throw new Error("Slack webhook URL is not configured. Please set VITE_SLACK_WEBHOOK_URL in your environment.");
     }
-    
+
     const rawData = await getCheckpointFailuresRaw(moduleId);
     if (rawData.length === 0) {
         throw new Error("No checkpoint failures to export.");
@@ -150,7 +150,7 @@ export const sendCheckpointFailuresToSlack = async (moduleId: string, moduleTitl
         }),
         headers: { 'Content-Type': 'application/json' }
     });
-    
+
     if (!response.ok) {
         throw new Error(`Failed to send notification to Slack. Status: ${response.status}`);
     }

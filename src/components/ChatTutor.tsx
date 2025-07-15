@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse, generateImage } from '@/services/geminiService';
@@ -7,7 +6,7 @@ import * as ttsService from '../services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
 import { getChatHistory, saveChatMessage } from '@/services/chatService';
 import type { ChatMessage, ProcessStep } from '@/types';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon } from '@/components/Icons';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon, ClockIcon, AlertTriangleIcon } from '@/components/Icons';
 import { useToast } from '@/hooks/useToast';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
@@ -50,7 +49,9 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
+    const [showTimestamps, setShowTimestamps] = useState(true);
     const [submittedSuggestions, setSubmittedSuggestions] = useState<string[]>([]);
+    const [flaggedMessageIds, setFlaggedMessageIds] = useState<string[]>([]);
     const chatRef = useRef<Chat | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -252,7 +253,43 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         }
     }, [moduleId, currentStepIndex, addToast]);
 
-    const renderMessageContent = (text: string) => {
+    const handleSubmitToOwner = useCallback(async (aiMessage: string, messageId: string) => {
+        if (flaggedMessageIds.includes(messageId)) {
+            addToast('info', 'Already Flagged', 'This response has already been submitted for review.');
+            return;
+        }
+
+        addToast('info', 'Submitting...', 'Sending this conversation to the owner for review.');
+        try {
+            const res = await fetch('/api/flag-checkpoint', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    moduleId,
+                    checkpointText: stepsContext,
+                    aiMessage,
+                    timestamp: Date.now(),
+                }),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ detail: 'Failed to submit' }));
+                throw new Error(errorData.detail || "Failed to submit");
+            }
+
+            setFlaggedMessageIds(prev => [...prev, messageId]);
+            addToast("success", "Submitted to owner for review.");
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "Error submitting issue. Please try again later.";
+            addToast('error', 'Submission Failed', errorMessage);
+            console.error(err);
+        }
+    }, [moduleId, stepsContext, addToast, flaggedMessageIds]);
+
+    const renderMessageContent = (message: ChatMessage, index: number) => {
+        const text = message.text;
+
+        // --- Suggestion Box Rendering ---
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);
         if (suggestionMatch) {
             const suggestionText = suggestionMatch[1];
@@ -280,22 +317,54 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
             );
         }
 
+        // --- Timestamp and Text Rendering ---
         const parts = text.split(/(\[(?:\d{2}:)?\d{2}:\d{2}\])/g);
-        return parts.map((part, index) => {
+        const renderedParts = parts.map((part, partIndex) => {
             const time = parseTimestamp(part);
             if (time !== null) {
-                return (
-                    <button
-                        key={index}
-                        onClick={() => onTimestampClick(time)}
-                        className="bg-indigo-500 text-white font-mono px-2 py-1 rounded-md text-sm hover:bg-indigo-400 transition-colors"
-                    >
-                        {part.replace(/[\[\]]/g, '')}
-                    </button>
-                );
+                if (showTimestamps) {
+                    return (
+                        <button
+                            key={partIndex}
+                            onClick={() => onTimestampClick(time)}
+                            className="bg-indigo-500 text-white font-mono px-2 py-1 rounded-md text-sm hover:bg-indigo-400 transition-colors"
+                        >
+                            {part.replace(/[\[\]]/g, '')}
+                        </button>
+                    );
+                }
+                return null;
             }
-            return <span key={index}>{part}</span>;
+            return <span key={partIndex}>{part}</span>;
         });
+
+        // --- "Submit to Owner" Button Logic ---
+        const unknownResponseRegex = /\b(i (don’t|do not) (know|have enough|have that info)|i'm sorry|i am sorry|i cannot answer|i can't answer|i am unable to|that information isn't in this specific training)\b/i;
+        const showSubmitToOwner = message.role === 'model' && unknownResponseRegex.test(text);
+
+        const userPrompt = index > 0 ? messages[index - 1] : null;
+        const canSubmit = showSubmitToOwner && userPrompt && userPrompt.role === 'user';
+        const isFlagged = flaggedMessageIds.includes(message.id);
+
+        return (
+            <>
+                {renderedParts}
+                {canSubmit && (
+                    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-600">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                            This answer seems unhelpful. You can notify the module owner to help them improve this training.
+                        </p>
+                        <button
+                            onClick={() => handleSubmitToOwner(message.text, message.id)}
+                            disabled={isFlagged}
+                            className="w-full mt-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-1.5 px-3 rounded-full transition-colors flex items-center justify-center gap-2 disabled:bg-green-600 disabled:cursor-not-allowed"
+                        >
+                            {isFlagged ? <><CheckCircleIcon className="h-4 w-4" /> Submitted</> : <><AlertTriangleIcon className="h-4 w-4" /> Submit to Owner</>}
+                        </button>
+                    </div>
+                )}
+            </>
+        )
     };
 
     const toggleAutoSpeak = () => {
@@ -343,6 +412,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 </div>
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={() => setShowTimestamps(prev => !prev)}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        aria-label={showTimestamps ? "Hide timestamps" : "Show timestamps"}
+                        title={showTimestamps ? "Hide timestamps" : "Show timestamps"}
+                    >
+                        <ClockIcon className={`h-5 w-5 ${showTimestamps ? 'text-indigo-500 dark:text-indigo-400' : ''}`} />
+                    </button>
+                    <button
                         onClick={handleDownloadChat}
                         className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                         aria-label="Download chat history"
@@ -373,11 +450,11 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                             <BotIcon className="h-5 w-5 text-white" />
                         </div>
                         <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none">
-                            <p className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I can answer questions about the process, or draw a diagram if you ask. Try typing <code className="bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded-md font-mono text-sm">/draw a simple diagram</code>.</p>
+                            <p className="text-base whitespace-pre-wrap">Hello! I’m your AI Tutor. I can help you troubleshoot this step or clarify anything unclear. Ask me about the current issue if you're stuck.</p>
                         </div>
                     </div>
                 )}
-                {messages.map((msg) => (
+                {messages.map((msg, idx) => (
                     <div key={msg.id} className={`flex items-start gap-3 ${msg.role === 'user' ? 'justify-end' : ''} animate-fade-in-up`}>
                         {msg.role === 'model' && (
                             <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center relative">
@@ -398,15 +475,15 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                             ) : msg.imageUrl ? (
                                 <img src={msg.imageUrl} alt={msg.text || 'Generated image'} className="rounded-lg max-w-full h-auto" />
                             ) : (
-                                <div className="text-base whitespace-pre-wrap">{renderMessageContent(msg.text)}</div>
+                                <div className="text-base whitespace-pre-wrap">{renderMessageContent(msg, idx)}</div>
                             )}
 
                             {msg.citations && msg.citations.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
                                     <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">Sources:</h4>
                                     <div className="space-y-1">
-                                        {msg.citations.map((citation, idx) => (
-                                            citation?.uri && <a key={idx} href={citation.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 hover:underline">
+                                        {msg.citations.map((citation, cIdx) => (
+                                            citation?.uri && <a key={cIdx} href={citation.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 hover:underline">
                                                 <LinkIcon className="h-3 w-3 flex-shrink-0" />
                                                 <span className="truncate">{citation.title || new URL(citation.uri).hostname}</span>
                                             </a>
