@@ -7,6 +7,7 @@ export {
   BookOpen as BookOpenIcon,
   Bot as BotIcon,
   CheckCircle as CheckCircleIcon,
+  Clock as ClockIcon,
   Database as DatabaseIcon,
   Download as DownloadIcon,
   Eye as EyeIcon,
