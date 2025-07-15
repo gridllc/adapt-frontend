@@ -7,7 +7,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, CheckpointEvaluation, TranscriptLine } from '@/types';
+import type { ProcessStep, PerformanceReportData, CheckpointEvaluation, TranscriptLine, StepStatus } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
@@ -234,6 +234,24 @@ const TrainingPage: React.FC = () => {
     setCurrentStepIndex(index);
   }, [handleSeekTo, setCurrentStepIndex]);
 
+  const handleMarkStep = useCallback((status: StepStatus) => {
+    // This is a wrapper function to add side-effects to the markStep action from the hook.
+    if (status === 'unclear') {
+      // Record the action. The hook will not advance the step.
+      markStep('unclear');
+
+      // Add side-effects: rewind video and show toast.
+      const currentStep = steps[currentStepIndex];
+      if (currentStep) {
+        handleSeekTo(currentStep.start);
+        addToast('info', "Let's try that again", "We'll replay this step for you.");
+      }
+    } else {
+      // For 'done' status, just call the original function which handles advancing.
+      markStep(status);
+    }
+  }, [markStep, steps, currentStepIndex, handleSeekTo, addToast]);
+
   const handleRestart = () => {
     setPerformanceReport(null);
     resetSession();
@@ -349,7 +367,7 @@ const TrainingPage: React.FC = () => {
                   steps={steps}
                   currentStepIndex={currentStepIndex}
                   onStepSelect={handleStepSelect}
-                  markStep={markStep}
+                  markStep={handleMarkStep}
                   checkpointAnswer={checkpointAnswer}
                   onCheckpointAnswerChange={setCheckpointAnswer}
                   onCheckpointSubmit={handleCheckpointSubmit}
