@@ -1,6 +1,7 @@
 
 
 
+
 export interface AlternativeMethod {
   title: string;
   description: string;
@@ -129,6 +130,7 @@ export interface AuthUser {
 export interface CheckpointEvaluation {
   isCorrect: boolean;
   feedback: string;
+  suggestedInstructionChange?: string;
 }
 
 export interface DetectedObject {

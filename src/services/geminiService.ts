@@ -316,15 +316,24 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
         **Process Step Description (Source of Truth):** "${step.description}"
         **Checkpoint Question:** "${step.checkpoint}"
         **User's Answer:** "${userAnswer}"
-        **Your Task:** Evaluate if the user's answer is correct. If yes, set isCorrect to true and provide brief, positive feedback. If no, set isCorrect to false and provide a gentle correction guiding them to the right answer.`;
+        
+        **Your Task:**
+        1.  Evaluate if the user's answer is correct based on the step description. Set 'isCorrect' to true or false.
+        2.  Provide brief 'feedback' explaining your decision.
+        3.  **Crucially:** If the user's answer is technically wrong but their reasoning is logical because the original instruction was incomplete or ambiguous (e.g., the instruction was "Open the door" and the checkpoint was "Did you close it?"), you MUST provide a 'suggestedInstructionChange'. This new text should be the improved, clearer version of the instruction. If the instruction was fine, this field should be null.`;
 
     const evaluationSchema = {
         type: Type.OBJECT,
         properties: {
-            isCorrect: { type: Type.BOOLEAN },
-            feedback: { type: Type.STRING },
+            isCorrect: { type: Type.BOOLEAN, description: "Whether the user's answer is correct based on the instructions." },
+            feedback: { type: Type.STRING, description: "Gentle, helpful feedback for the user." },
+            suggestedInstructionChange: {
+                type: Type.STRING,
+                nullable: true,
+                description: "If the instruction was flawed, provide a revised, clearer instruction text here. Otherwise, this MUST be null."
+            }
         },
-        required: ["isCorrect", "feedback"],
+        required: ["isCorrect", "feedback", "suggestedInstructionChange"],
     };
 
     try {

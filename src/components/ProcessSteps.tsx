@@ -1,8 +1,9 @@
 
 
 import React, { useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { ProcessStep, StepStatus, CheckpointEvaluation } from '@/types';
-import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon, XCircleIcon, SendIcon, SparklesIcon, ArrowLeftIcon } from '@/components/Icons';
+import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon, XCircleIcon, SendIcon, SparklesIcon, ArrowLeftIcon, AlertTriangleIcon, PencilIcon } from '@/components/Icons';
 
 interface ProcessStepsProps {
   steps: ProcessStep[];
@@ -15,6 +16,11 @@ interface ProcessStepsProps {
   checkpointFeedback: CheckpointEvaluation | null;
   isEvaluatingCheckpoint: boolean;
   goBack: () => void;
+  instructionSuggestion: string | null;
+  onSuggestionSubmit: () => void;
+  isSuggestionSubmitted: boolean;
+  isAdmin: boolean;
+  moduleId: string | undefined;
 }
 
 export const ProcessSteps: React.FC<ProcessStepsProps> = ({
@@ -28,8 +34,14 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
   checkpointFeedback,
   isEvaluatingCheckpoint,
   goBack,
+  instructionSuggestion,
+  onSuggestionSubmit,
+  isSuggestionSubmitted,
+  isAdmin,
+  moduleId,
 }) => {
   const activeStepRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Scroll the active step into the center of the view smoothly.
@@ -113,6 +125,44 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                         {checkpointFeedback.isCorrect ? <CheckCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" /> : <XCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />}
                         <span>{checkpointFeedback.feedback}</span>
                       </div>
+                    )}
+
+                    {!checkpointFeedback?.isCorrect && instructionSuggestion && (
+                      isAdmin ? (
+                        // Admin view: Prompt to fix the step directly
+                        <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/50 rounded-lg text-sm animate-fade-in-up space-y-2 border border-red-300 dark:border-red-700">
+                          <div className="flex items-center gap-2 font-bold text-red-800 dark:text-red-200">
+                            <AlertTriangleIcon className="h-5 w-5" />
+                            <span>Instruction Mismatch Detected</span>
+                          </div>
+                          <p className="text-red-900 dark:text-red-100 italic">"This checkpoint surfaced a missing detail in the instructions. Here's a suggested fix:"</p>
+                          <p className="p-2 bg-white/50 dark:bg-black/20 rounded-md font-medium text-slate-700 dark:text-slate-200">"{instructionSuggestion}"</p>
+                          <button
+                            onClick={() => navigate(`/modules/${moduleId}/edit`)}
+                            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                            Edit Step to Apply Fix
+                          </button>
+                        </div>
+                      ) : (
+                        // Trainee view: Submit suggestion to owner
+                        <div className="mt-3 p-3 bg-yellow-100/80 dark:bg-yellow-900/50 rounded-lg text-sm animate-fade-in-up space-y-2 border border-yellow-300 dark:border-yellow-700">
+                          <div className="flex items-center gap-2 font-bold text-yellow-800 dark:text-yellow-200">
+                            <LightbulbIcon className="h-5 w-5" />
+                            <span>AI Improvement Suggestion</span>
+                          </div>
+                          <p className="text-yellow-900 dark:text-yellow-100 italic">"The instructions for this step seem a bit unclear. Here's a suggested improvement:"</p>
+                          <p className="p-2 bg-white/50 dark:bg-black/20 rounded-md font-medium text-slate-700 dark:text-slate-200">"{instructionSuggestion}"</p>
+                          <button
+                            onClick={onSuggestionSubmit}
+                            disabled={isSuggestionSubmitted}
+                            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors disabled:bg-green-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          >
+                            {isSuggestionSubmitted ? <> <CheckCircleIcon className="h-4 w-4" /> Submitted </> : 'Submit this fix to the owner'}
+                          </button>
+                        </div>
+                      )
                     )}
                   </div>
                 ) : (

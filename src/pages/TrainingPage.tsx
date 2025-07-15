@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { getChatHistory } from '@/services/chatService';
 import { generatePerformanceSummary, evaluateCheckpointAnswer } from '@/services/geminiService';
+import { submitSuggestion } from '@/services/suggestionsService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
 
@@ -57,6 +58,8 @@ const TrainingPage: React.FC = () => {
   const [checkpointAnswer, setCheckpointAnswer] = useState('');
   const [checkpointFeedback, setCheckpointFeedback] = useState<CheckpointEvaluation | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [instructionSuggestion, setInstructionSuggestion] = useState<string | null>(null);
+  const [isSuggestionSubmitted, setIsSuggestionSubmitted] = useState(false);
 
   // Effect to manage session token in URL
   useEffect(() => {
@@ -103,6 +106,8 @@ const TrainingPage: React.FC = () => {
   useEffect(() => {
     setCheckpointAnswer('');
     setCheckpointFeedback(null);
+    setInstructionSuggestion(null);
+    setIsSuggestionSubmitted(false);
   }, [currentStepIndex]);
 
 
@@ -264,10 +269,14 @@ const TrainingPage: React.FC = () => {
 
     setIsEvaluating(true);
     setCheckpointFeedback(null);
+    setInstructionSuggestion(null);
 
     try {
       const evaluation = await evaluateCheckpointAnswer(currentStep, checkpointAnswer);
       setCheckpointFeedback(evaluation);
+      if (evaluation.suggestedInstructionChange) {
+        setInstructionSuggestion(evaluation.suggestedInstructionChange);
+      }
 
       if (evaluation.isCorrect) {
         setTimeout(() => {
@@ -280,6 +289,18 @@ const TrainingPage: React.FC = () => {
       setCheckpointFeedback({ isCorrect: false, feedback: 'Sorry, I was unable to evaluate your answer. Please try again.' });
     } finally {
       setIsEvaluating(false);
+    }
+  };
+
+  const handleSuggestionSubmit = async () => {
+    if (!moduleId || !instructionSuggestion) return;
+    try {
+      await submitSuggestion(moduleId, currentStepIndex, instructionSuggestion);
+      addToast('success', 'Suggestion Submitted', 'Thank you! The module owner has been notified.');
+      setIsSuggestionSubmitted(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      addToast('error', 'Submission Failed', errorMessage);
     }
   };
 
@@ -374,6 +395,11 @@ const TrainingPage: React.FC = () => {
                   checkpointFeedback={checkpointFeedback}
                   isEvaluatingCheckpoint={isEvaluating}
                   goBack={goBack}
+                  instructionSuggestion={instructionSuggestion}
+                  onSuggestionSubmit={handleSuggestionSubmit}
+                  isSuggestionSubmitted={isSuggestionSubmitted}
+                  isAdmin={isAuthenticated}
+                  moduleId={moduleId}
                 />
               )}
 
