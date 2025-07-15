@@ -1,3 +1,4 @@
+
 import React, { useCallback, useState } from 'react'
 import type {
     AlternativeMethod,
@@ -12,7 +13,6 @@ import {
     CheckCircleIcon,
     DownloadIcon
 } from '@/components/Icons'
-import { VideoPlayer } from '@/components/VideoPlayer'
 import { useToast } from '@/hooks/useToast'
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
@@ -20,7 +20,6 @@ type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 interface ModuleEditorProps {
     module: ModuleRow | ModuleInsert
-    title?: string;
     onModuleChange: (module: ModuleRow | ModuleInsert) => void
     suggestions?: Suggestion[]
     onAcceptSuggestion?: (suggestion: Suggestion) => void
@@ -37,7 +36,6 @@ const formatTime = (seconds: number): string => {
 
 export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     module,
-    title,
     onModuleChange,
     suggestions = [],
     onAcceptSuggestion = () => { },
@@ -95,24 +93,13 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     }, [module, addToast]);
 
 
-    // Top-level field updater (title, video_url, etc.)
     const handleFieldChange = useCallback(
         (field: keyof ModuleInsert, value: string) => {
-            // Prevent persisting blob URLs
-            if (field === 'video_url' && value.startsWith('blob:')) {
-                addToast(
-                    'error',
-                    'Invalid Video URL',
-                    'Please paste a permanent, hosted URL (e.g. Supabase public URL).'
-                )
-                return
-            }
             onModuleChange({ ...module, [field]: value })
         },
-        [addToast, module, onModuleChange]
+        [module, onModuleChange]
     );
 
-    // Update a single field on one step
     const handleStepChange = useCallback(
         (
             index: number,
@@ -136,7 +123,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
         onModuleChange({ ...module, transcript: newTranscript });
     }, [module, onModuleChange, transcript]);
 
-    // Update an alternative method on a step
     const handleAltChange = useCallback(
         (
             stepIndex: number,
@@ -156,7 +142,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
         [module, onModuleChange, steps]
     )
 
-    // Add / remove alternative methods
     const addAlternativeMethod = useCallback(
         (stepIndex: number) => {
             const newSteps = steps.map((s, i) =>
@@ -192,7 +177,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
         [module, onModuleChange, steps]
     )
 
-    // Add / remove steps
     const addStep = useCallback(() => {
         const newStep: ProcessStep = {
             title: 'New Step',
@@ -214,26 +198,11 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     )
 
     return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl space-y-6 animate-fade-in-up">
-            {/* === Header: Title + Video URL === */}
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl space-y-6">
             <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                    {title ? (
-                        <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400">{title}</h2>
-                    ) : (
-                        <span /> // Placeholder to maintain layout
-                    )}
-                    <button
-                        onClick={handleDownload}
-                        className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white text-sm font-semibold py-2 px-3 rounded-lg transition-colors"
-                    >
-                        <DownloadIcon className="h-5 w-5" />
-                        <span>Download Draft</span>
-                    </button>
-                </div>
-                <div className="grid gap-6 md:grid-cols-2">
                     <div>
-                        <label className="block font-semibold mb-2">Module Title</label>
+                        <label className="block font-semibold mb-1">Module Title</label>
                         <input
                             type="text"
                             className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 bg-white dark:bg-slate-900 focus:outline-none"
@@ -243,31 +212,16 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                             }
                         />
                     </div>
-                    <div>
-                        <label className="block font-semibold mb-2">Video URL</label>
-                        <input
-                            type="text"
-                            className="w-full border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 bg-white dark:bg-slate-900 focus:outline-none"
-                            value={module.video_url || ''}
-                            onChange={(e) =>
-                                handleFieldChange('video_url', e.currentTarget.value)
-                            }
-                            placeholder="Paste Supabase public URL here"
-                        />
-                        {/* Video Preview */}
-                        {module.video_url && (
-                            <div className="mt-4">
-                                <VideoPlayer
-                                    video_url={module.video_url}
-                                    onTimeUpdate={() => { }}
-                                />
-                            </div>
-                        )}
-                    </div>
+                    <button
+                        onClick={handleDownload}
+                        className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white text-sm font-semibold py-2 px-3 rounded-lg transition-colors self-end"
+                    >
+                        <DownloadIcon className="h-5 w-5" />
+                        <span>Download Draft</span>
+                    </button>
                 </div>
             </div>
 
-            {/* === Steps Editor === */}
             <div>
                 <div className="flex justify-between items-center mb-3">
                     <h2 className="font-semibold text-lg">Process Steps</h2>
@@ -292,7 +246,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                             (s) => s.stepIndex === idx
                         );
 
-                        // We need the original index to update the correct line
                         const stepTranscriptLines = transcript
                             .map((line, index) => ({ ...line, originalIndex: index }))
                             .filter(line => line.start >= step.start && line.end <= step.end && step.end > step.start);
@@ -396,7 +349,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                     />
                                 </div>
 
-                                {/* Alternative Methods */}
                                 {step.alternativeMethods.map((alt, aIdx) => (
                                     <div
                                         key={aIdx}
@@ -447,7 +399,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                     Add alternative method
                                 </button>
 
-                                {/* Transcript for this step */}
                                 {transcript && transcript.length > 0 && step.end > step.start && (
                                     <div>
                                         <button onClick={() => toggleTranscript(idx)} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline mt-2">
@@ -475,8 +426,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                     </div>
                                 )}
 
-
-                                {/* Suggestions for this step */}
                                 {showSuggestions && stepSuggestions.length > 0 && (
                                     <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                                         <h4 className="font-semibold mb-2">Trainee Suggestions</h4>

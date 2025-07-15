@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
-import type { AlternativeMethod, Suggestion } from '@/types';
+import { VideoPlayer } from '@/components/VideoPlayer';
+import type { AlternativeMethod, Suggestion, ProcessStep } from '@/types';
 import type { Database } from '@/types/supabase';
 import { BookOpenIcon, TrashIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
@@ -159,6 +161,13 @@ const EditPage: React.FC = () => {
         }
     }
 
+    const handleModuleDataChange = useCallback((updatedModuleData: ModuleRow) => {
+        setModule(prev => ({
+            ...(prev || {} as ModuleRow), // Ensure prev is not null
+            ...updatedModuleData
+        }));
+    }, []);
+
     if (isLoading || !module) {
         return <div className="text-center p-8 text-slate-500 dark:text-slate-400">Loading editor...</div>;
     }
@@ -175,14 +184,27 @@ const EditPage: React.FC = () => {
             </header>
 
             <div className="animate-fade-in-up">
-                <ModuleEditor
-                    module={module}
-                    onModuleChange={setModule}
-                    suggestions={suggestions}
-                    onAcceptSuggestion={handleSuggestionAccept}
-                    onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}
-                    showAnalysisButton={false}
-                />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                    <div className="lg:sticky top-6">
+                        <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Video Preview</h2>
+                        {module.video_url ? (
+                            <VideoPlayer video_url={module.video_url} onTimeUpdate={() => { }} />
+                        ) : (
+                            <div className="aspect-video bg-slate-200 dark:bg-slate-800 rounded-lg flex items-center justify-center">
+                                <p className="text-slate-500">No video URL provided.</p>
+                            </div>
+                        )}
+                    </div>
+                    <div>
+                        <ModuleEditor
+                            module={module}
+                            onModuleChange={handleModuleDataChange}
+                            suggestions={suggestions}
+                            onAcceptSuggestion={handleSuggestionAccept}
+                            onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}
+                        />
+                    </div>
+                </div>
                 <div className="mt-8 flex justify-center items-center gap-4">
                     <button
                         onClick={handleDelete}

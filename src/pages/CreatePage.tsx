@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -97,7 +98,7 @@ const CreatePage: React.FC = () => {
     const [title, setTitle] = useState('');
     const [notes, setNotes] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
-    const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+    const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -109,7 +110,7 @@ const CreatePage: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
 
     // Use a ref to hold the blob URL to prevent re-renders
-    const previewUrlRef = useRef<string | null>(null);
+    const videoBlobUrlRef = useRef<string | null>(null);
 
     useEffect(() => {
         if (!isAuthenticated) navigate('/login');
@@ -117,7 +118,7 @@ const CreatePage: React.FC = () => {
 
     // Effect to clean up the blob URL on unmount
     useEffect(() => {
-        const urlToClean = previewUrlRef.current;
+        const urlToClean = videoBlobUrlRef.current;
         return () => {
             if (urlToClean) {
                 URL.revokeObjectURL(urlToClean);
@@ -129,13 +130,13 @@ const CreatePage: React.FC = () => {
         const file = event.target.files?.[0];
         if (file) {
             // Revoke the old URL if it exists to prevent memory leaks
-            if (previewUrlRef.current) {
-                URL.revokeObjectURL(previewUrlRef.current);
+            if (videoBlobUrlRef.current) {
+                URL.revokeObjectURL(videoBlobUrlRef.current);
             }
 
             const newUrl = URL.createObjectURL(file);
-            previewUrlRef.current = newUrl;
-            setVideoPreviewUrl(newUrl); // Update state to trigger re-render with the preview
+            videoBlobUrlRef.current = newUrl;
+            setVideoUrl(newUrl); // Update state to trigger re-render with the preview
             setVideoFile(file);
 
             const videoElement = document.createElement('video');
@@ -152,17 +153,16 @@ const CreatePage: React.FC = () => {
             videoElement.onerror = () => {
                 addToast('error', 'Metadata Error', 'Could not read metadata from the video file.');
             };
-            // The object URL from createObjectURL can be used directly for metadata reading
             videoElement.src = newUrl;
         }
     };
 
     const handleRemoveVideo = useCallback(() => {
-        if (previewUrlRef.current) {
-            URL.revokeObjectURL(previewUrlRef.current);
-            previewUrlRef.current = null;
+        if (videoBlobUrlRef.current) {
+            URL.revokeObjectURL(videoBlobUrlRef.current);
+            videoBlobUrlRef.current = null;
         }
-        setVideoPreviewUrl(null);
+        setVideoUrl(null);
         setVideoFile(null);
         setVideoMetadata(null);
     }, []);
@@ -228,15 +228,12 @@ const CreatePage: React.FC = () => {
                 confidence: analysisResult.confidence
             });
 
-            // Re-integrate original timestamps into the generated steps
             const timedModuleData: GeneratedModuleData = { ...moduleData, steps: [] };
             timedModuleData.steps = moduleData.steps.map(generatedStep => {
                 const bestLine = editedTranscript.find(line => line.text.includes(generatedStep.title) || generatedStep.description.includes(line.text.substring(0, 30)));
                 return { ...generatedStep, start: bestLine?.start ?? 0, end: bestLine?.end ?? 0 };
             });
 
-            // Use the stable URL from the ref for the final module data
-            (timedModuleData as ModuleInsert).video_url = previewUrlRef.current;
             (timedModuleData as ModuleInsert).transcript = editedTranscript;
 
             setGeneratedModule(timedModuleData as ModuleInsert);
@@ -284,15 +281,15 @@ const CreatePage: React.FC = () => {
         if (uploadedAiFile) {
             await deleteUploadedVideo(uploadedAiFile);
         }
-        if (previewUrlRef.current) {
-            URL.revokeObjectURL(previewUrlRef.current);
-            previewUrlRef.current = null;
+        if (videoBlobUrlRef.current) {
+            URL.revokeObjectURL(videoBlobUrlRef.current);
+            videoBlobUrlRef.current = null;
         }
         setFlowStep('initial');
         setTitle('');
         setNotes('');
         setVideoFile(null);
-        setVideoPreviewUrl(null);
+        setVideoUrl(null);
         setVideoMetadata(null);
         setUploadedAiFile(null);
         setAnalysisResult(null);
@@ -330,7 +327,7 @@ const CreatePage: React.FC = () => {
 
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Training Video</label>
-                        {videoFile && videoPreviewUrl ? (
+                        {videoFile && videoUrl ? (
                             <div>
                                 <div className="bg-slate-200 dark:bg-slate-900/50 p-3 rounded-lg flex items-center justify-between">
                                     <div className="flex items-center gap-3">
@@ -342,7 +339,7 @@ const CreatePage: React.FC = () => {
                                     </button>
                                 </div>
                                 <div className="mt-4 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700">
-                                    <VideoPlayer video_url={videoPreviewUrl} onTimeUpdate={() => { }} />
+                                    <VideoPlayer video_url={videoUrl} onTimeUpdate={() => { }} />
                                 </div>
                             </div>
                         ) : (
@@ -445,7 +442,16 @@ const CreatePage: React.FC = () => {
 
     const renderFinalStep = () => (
         <div className="animate-fade-in-up">
-            {generatedModule && <ModuleEditor title="3. Review & Refine Final Draft" module={generatedModule} onModuleChange={setGeneratedModule} />}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                <div className="lg:sticky top-6">
+                    <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">3. Video Preview</h2>
+                    {videoUrl && <VideoPlayer video_url={videoUrl} onTimeUpdate={() => { }} />}
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">4. Refine Final Draft</h2>
+                    {generatedModule && <ModuleEditor module={generatedModule} onModuleChange={setGeneratedModule} />}
+                </div>
+            </div>
             <div className="mt-8 flex justify-center gap-4">
                 <button onClick={resetForm} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                     Start Over
