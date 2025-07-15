@@ -1,4 +1,6 @@
 
+
+
 export interface AlternativeMethod {
   title: string;
   description: string;
@@ -19,13 +21,12 @@ export interface ProcessStep {
   alternativeMethods: AlternativeMethod[];
 }
 
-export interface TrainingModule {
-  slug: string;
-  title: string;
-  videoUrl: string;
-  steps: ProcessStep[];
-  transcript?: TranscriptLine[];
-  userId?: string;
+export interface VideoMetadata {
+  originalName: string;
+  size: number;
+  duration: number;
+  width: number;
+  height: number;
 }
 
 export interface ChatMessage {

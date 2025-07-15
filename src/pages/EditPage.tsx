@@ -5,10 +5,13 @@ import { getModule, saveModule, deleteModule } from '@/services/moduleService';
 import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
-import type { TrainingModule, Suggestion, AlternativeMethod } from '@/types';
+import type { AlternativeMethod, Suggestion } from '@/types';
+import type { Database } from '@/types/supabase';
 import { BookOpenIcon, TrashIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
+
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
@@ -16,7 +19,7 @@ const EditPage: React.FC = () => {
     const queryClient = useQueryClient();
     const { isAuthenticated, user } = useAuth();
     const { addToast } = useToast();
-    const [module, setModule] = useState<TrainingModule | null>(null);
+    const [module, setModule] = useState<ModuleRow | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -25,7 +28,7 @@ const EditPage: React.FC = () => {
         isLoading,
         isError,
         error: queryError
-    } = useQuery({
+    } = useQuery<ModuleRow | undefined>({
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId!),
         enabled: !!moduleId,
@@ -87,20 +90,20 @@ const EditPage: React.FC = () => {
     const handleSuggestionAccept = async (suggestion: Suggestion) => {
         if (!module) return;
 
-        const newSteps = [...module.steps];
+        const newSteps = [...module.steps as any[]];
         const stepToUpdate = newSteps[suggestion.stepIndex];
 
         if (stepToUpdate) {
             const newAlternativeMethod: AlternativeMethod = {
                 title: "AI-Suggested Improvement",
-                description: suggestion.text
+                description: suggestion.text || ''
             };
             stepToUpdate.alternativeMethods.push(newAlternativeMethod);
 
             setModule({ ...module, steps: newSteps });
         }
 
-        await deleteSuggestion(suggestion.id);
+        await deleteSuggestion(suggestion.id.toString());
         queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
         addToast('success', 'Suggestion Accepted', 'The new method has been added to the step.');
     };
@@ -177,7 +180,7 @@ const EditPage: React.FC = () => {
                     onModuleChange={setModule}
                     suggestions={suggestions}
                     onAcceptSuggestion={handleSuggestionAccept}
-                    onRejectSuggestion={handleSuggestionReject}
+                    onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}
                     showAnalysisButton={false}
                 />
                 <div className="mt-8 flex justify-center items-center gap-4">

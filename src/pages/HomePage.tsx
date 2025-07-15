@@ -3,11 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveModule, deleteModule } from '@/services/moduleService';
 import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon } from '@/components/Icons';
-import type { TrainingModule } from '@/types';
+import type { ProcessStep } from '@/types';
+import type { Database } from '@/types/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useTheme } from '@/hooks/useTheme';
 import { ModuleCardSkeleton } from '@/components/ModuleCardSkeleton';
+
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
+type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
@@ -18,7 +22,7 @@ const HomePage: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
     const [searchTerm, setSearchTerm] = useState('');
 
-    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<TrainingModule[], Error>({
+    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<ModuleRow[], Error>({
         queryKey: ['modules'],
         queryFn: getAvailableModules
     });
@@ -48,7 +52,7 @@ const HomePage: React.FC = () => {
                 const text = e.target?.result;
                 if (typeof text !== 'string') throw new Error("Could not read file.");
 
-                const moduleData = JSON.parse(text) as TrainingModule;
+                const moduleData = JSON.parse(text) as ModuleInsert;
 
                 const savedModule = await saveModule({ moduleData });
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
@@ -243,7 +247,7 @@ const HomePage: React.FC = () => {
                                     </div>
                                     <div>
                                         <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{module.title}</h3>
-                                        <p className="text-slate-500 dark:text-slate-400">{module.steps.length} steps</p>
+                                        <p className="text-slate-500 dark:text-slate-400">{((module.steps as ProcessStep[]) || []).length} steps</p>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">

@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -6,7 +8,8 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, TrainingModule, CheckpointEvaluation } from '@/types';
+import type { ProcessStep, PerformanceReportData, CheckpointEvaluation, TranscriptLine } from '@/types';
+import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -15,6 +18,8 @@ import { getChatHistory } from '@/services/chatService';
 import { generatePerformanceSummary, evaluateCheckpointAnswer } from '@/services/geminiService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
+
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const findActiveStepIndex = (time: number, steps: ProcessStep[]) => {
   let foundIndex = -1;
@@ -72,13 +77,15 @@ const TrainingPage: React.FC = () => {
     isLoading: isLoadingModule,
     isError,
     error,
-  } = useQuery<TrainingModule | undefined, Error>({
+  } = useQuery<ModuleRow | undefined, Error>({
     queryKey: ['module', moduleId],
     queryFn: () => getModule(moduleId!),
     enabled: !!moduleId && !!sessionToken,
     staleTime: 1000 * 60 * 5, // 5 minutes
     retry: false,
   });
+
+  const steps = (moduleData?.steps as ProcessStep[]) || [];
 
   const {
     currentStepIndex,
@@ -88,7 +95,7 @@ const TrainingPage: React.FC = () => {
     isCompleted,
     resetSession,
     isLoadingSession,
-  } = useTrainingSession(moduleId ?? 'unknown', sessionToken, moduleData?.steps.length ?? 0);
+  } = useTrainingSession(moduleId ?? 'unknown', sessionToken, steps.length ?? 0);
 
   // Reset checkpoint state when the step changes
   useEffect(() => {
@@ -109,7 +116,7 @@ const TrainingPage: React.FC = () => {
   useEffect(() => {
     if (!moduleData || currentStepIndex < 0 || isCompleted) return;
 
-    const { title, steps } = moduleData;
+    const { title } = moduleData;
 
     // Context window: previous, current, and next step
     const prevStep = steps[currentStepIndex - 1];
@@ -133,7 +140,7 @@ const TrainingPage: React.FC = () => {
 
     setAiContext(context.trim());
 
-  }, [currentStepIndex, moduleData, isCompleted]);
+  }, [currentStepIndex, moduleData, isCompleted, steps]);
 
   // Effect to generate performance report upon completion
   useEffect(() => {
@@ -145,7 +152,7 @@ const TrainingPage: React.FC = () => {
         const unclearStepIndexes = new Set(
           userActions.filter(a => a.status === 'unclear').map(a => a.stepIndex)
         );
-        const unclearSteps = Array.from(unclearStepIndexes).map((i: number) => moduleData.steps[i]).filter(Boolean);
+        const unclearSteps = Array.from(unclearStepIndexes).map((i: number) => steps[i]).filter(Boolean);
 
         const chatHistory = await getChatHistory(moduleId, sessionToken);
         const userQuestions = chatHistory
@@ -153,7 +160,7 @@ const TrainingPage: React.FC = () => {
           .map(msg => msg.text.trim());
 
         try {
-          const aiFeedback = await generatePerformanceSummary(moduleData.title, unclearSteps, userQuestions);
+          const { summary: aiFeedback } = await generatePerformanceSummary(moduleData.title, unclearSteps, userQuestions);
 
           setPerformanceReport({
             moduleTitle: moduleData.title,
@@ -179,7 +186,7 @@ const TrainingPage: React.FC = () => {
       };
       generateReport();
     }
-  }, [isCompleted, moduleData, userActions, moduleId, sessionToken, performanceReport, isGeneratingReport]);
+  }, [isCompleted, moduleData, userActions, moduleId, sessionToken, performanceReport, isGeneratingReport, steps]);
 
 
   const handleSeekTo = useCallback((time: number) => {
@@ -205,18 +212,18 @@ const TrainingPage: React.FC = () => {
     const lastAction = userActions[userActions.length - 1];
 
     if (lastAction.status === 'done' && lastAction.stepIndex === currentStepIndex - 1) {
-      const nextStep = moduleData.steps[currentStepIndex];
+      const nextStep = steps[currentStepIndex];
       if (nextStep) {
         handleSeekTo(nextStep.start);
       }
     }
-  }, [currentStepIndex, userActions, handleSeekTo, moduleData, isCompleted]);
+  }, [currentStepIndex, userActions, handleSeekTo, moduleData, isCompleted, steps]);
 
   const handleTimeUpdate = (time: number) => {
     if (isCompleted) return;
     setCurrentTime(time);
     if (!moduleData) return;
-    const activeStepFromVideo = findActiveStepIndex(time, moduleData.steps);
+    const activeStepFromVideo = findActiveStepIndex(time, steps);
     if (activeStepFromVideo !== -1 && activeStepFromVideo !== currentStepIndex) {
       setCurrentStepIndex(activeStepFromVideo);
     }
@@ -229,7 +236,7 @@ const TrainingPage: React.FC = () => {
 
   const handleCheckpointSubmit = async () => {
     if (!moduleData || !checkpointAnswer.trim()) return;
-    const currentStep = moduleData.steps[currentStepIndex];
+    const currentStep = steps[currentStepIndex];
     if (!currentStep?.checkpoint) return;
 
     setIsEvaluating(true);
@@ -268,6 +275,9 @@ const TrainingPage: React.FC = () => {
     return <div className="flex items-center justify-center h-screen">Module not found.</div>
   }
 
+  const transcript = (moduleData.transcript as TranscriptLine[]) || [];
+
+
   return (
     <>
       <header className="bg-white/80 dark:bg-slate-800/50 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 p-4 sticky top-0 z-20 flex justify-between items-center">
@@ -295,7 +305,7 @@ const TrainingPage: React.FC = () => {
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden">
           <VideoPlayer
             ref={videoRef}
-            videoUrl={moduleData.videoUrl}
+            video_url={moduleData.video_url}
             onTimeUpdate={handleTimeUpdate}
           />
         </div>
@@ -334,7 +344,7 @@ const TrainingPage: React.FC = () => {
 
               {activeTab === 'steps' && (
                 <ProcessSteps
-                  steps={moduleData.steps}
+                  steps={steps}
                   currentStepIndex={currentStepIndex}
                   onStepClick={handleSeekTo}
                   markStep={markStep}
@@ -347,9 +357,9 @@ const TrainingPage: React.FC = () => {
               )}
 
               {activeTab === 'transcript' && (
-                moduleData.transcript && moduleData.transcript.length > 0 ? (
+                transcript.length > 0 ? (
                   <TranscriptViewer
-                    transcript={moduleData.transcript}
+                    transcript={transcript}
                     currentTime={currentTime}
                     onLineClick={handleSeekTo}
                   />
@@ -385,7 +395,7 @@ const TrainingPage: React.FC = () => {
             transcriptContext={aiContext}
             onTimestampClick={handleSeekTo}
             currentStepIndex={currentStepIndex}
-            steps={moduleData.steps}
+            steps={steps}
             onClose={() => setIsChatOpen(false)}
           />
         </div>

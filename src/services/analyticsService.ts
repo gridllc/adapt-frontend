@@ -1,7 +1,12 @@
 
 
+
 import { supabase } from '@/services/apiClient';
-import type { TrainingModule, AnalysisHotspot, UserAction, QuestionStats } from '@/types';
+import type { AnalysisHotspot, UserAction, QuestionStats, ProcessStep } from '@/types';
+import type { Database } from '@/types/supabase';
+
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
+
 
 /**
  * Scans the database for all chat histories associated with a given module,
@@ -36,7 +41,7 @@ export const getQuestionFrequency = async (moduleId: string): Promise<QuestionSt
     const sessionStepMap = new Map<string, UserAction[]>();
     sessionData.forEach(session => {
         if (session.user_actions) {
-            sessionStepMap.set(session.session_token, session.user_actions);
+            sessionStepMap.set(session.session_token, session.user_actions as UserAction[]);
         }
     });
 
@@ -80,10 +85,11 @@ export const getQuestionFrequency = async (moduleId: string): Promise<QuestionSt
  * @param module The training module data.
  * @returns The identified hotspot, or null if no significant confusion is found.
  */
-export const findHotspots = (stats: QuestionStats[], module: TrainingModule): AnalysisHotspot | null => {
+export const findHotspots = (stats: QuestionStats[], module: ModuleRow): AnalysisHotspot | null => {
     if (stats.length === 0) return null;
 
     const stepConfusion: Record<number, { questions: Set<string>; totalCount: number }> = {};
+    const steps = (module.steps as ProcessStep[]) || [];
 
     stats.forEach(stat => {
         if (!stepConfusion[stat.stepIndex]) {
@@ -102,7 +108,7 @@ export const findHotspots = (stats: QuestionStats[], module: TrainingModule): An
             maxUniqueQuestions = data.questions.size;
             topHotspot = {
                 stepIndex,
-                stepTitle: module.steps[stepIndex]?.title || 'Unknown Step',
+                stepTitle: steps[stepIndex]?.title || 'Unknown Step',
                 questions: Array.from(data.questions),
                 questionCount: data.totalCount,
             };

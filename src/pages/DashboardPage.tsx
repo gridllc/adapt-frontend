@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveModule } from '@/services/moduleService';
 import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
 import { generateRefinementSuggestion } from '@/services/geminiService';
@@ -8,59 +8,75 @@ import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/compo
 import { RefinementModal } from '@/components/RefinementModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import type { TrainingModule, AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types';
+import type { AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats } from '@/types';
+import type { Database } from '@/types/supabase';
+
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const DashboardPage: React.FC = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { user } = useAuth();
     const { addToast } = useToast();
-    const [modules, setModules] = useState<TrainingModule[]>([]);
-    const [selectedModule, setSelectedModule] = useState<TrainingModule | null>(null);
+    const [modules, setModules] = useState<ModuleRow[]>([]);
+    const [selectedModule, setSelectedModule] = useState<ModuleRow | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [refinement, setRefinement] = useState<RefinementSuggestion | null>(null);
+
+    const { data: availableModules, isLoading: isLoadingModules } = useQuery<ModuleRow[], Error>({
+        queryKey: ['modules'],
+        queryFn: getAvailableModules,
+    });
 
     useEffect(() => {
-        const fetchModules = async () => {
-            try {
-                const availableModules = await getAvailableModules();
-                setModules(availableModules);
-                if (availableModules.length > 0) {
-                    setSelectedModule(availableModules[0]);
-                }
-            } catch (error) {
-                console.error("Failed to fetch modules:", error);
+        if (availableModules) {
+            setModules(availableModules);
+            if (availableModules.length > 0 && !selectedModule) {
+                setSelectedModule(availableModules[0]);
             }
-        };
-        fetchModules();
-    }, []);
+        }
+    }, [availableModules, selectedModule]);
 
-    const { data: analysisData, isLoading: isAnalyzing } = useQuery({
+    const { data: analysisData, isLoading: isAnalyzing } = useQuery<{ stats: QuestionStats[]; hotspot: AnalysisHotspot | null }, Error>({
         queryKey: ['dashboardAnalysis', selectedModule?.slug],
         queryFn: async () => {
-            if (!selectedModule) return { stats: [], hotspot: null, refinement: null };
+            if (!selectedModule) return { stats: [], hotspot: null };
 
             const stats = await getQuestionFrequency(selectedModule.slug);
             const hotspot = findHotspots(stats, selectedModule);
-            let refinement: RefinementSuggestion | null = null;
 
-            if (hotspot) {
-                try {
-                    const stepToRefine = selectedModule.steps[hotspot.stepIndex];
-                    if (stepToRefine) {
-                        refinement = await generateRefinementSuggestion(stepToRefine, hotspot.questions);
-                    }
-                } catch (error) {
-                    console.error("Failed to get AI refinement:", error);
-                    // Silently fail, don't show an error to the user for this background task
-                }
-            }
-            return { stats, hotspot, refinement };
+            return { stats, hotspot };
         },
         enabled: !!selectedModule,
     });
 
+    useEffect(() => {
+        // Reset refinement when the selected module changes
+        setRefinement(null);
+    }, [selectedModule]);
+
+
     const questionStats: QuestionStats[] = analysisData?.stats ?? [];
     const hotspot: AnalysisHotspot | null = analysisData?.hotspot ?? null;
-    const refinement = analysisData?.refinement ?? null;
+
+    const refinementMutation = useMutation({
+        mutationFn: ({ step, questions }: { step: ProcessStep; questions: string[] }) => generateRefinementSuggestion(step, questions),
+        onSuccess: (data) => {
+            setRefinement(data);
+            addToast('success', 'Suggestion Ready', 'The AI has generated a refinement suggestion.');
+        },
+        onError: (error) => {
+            addToast('error', 'Suggestion Failed', error.message);
+        },
+    });
+
+    const handleGenerateSuggestion = () => {
+        if (!hotspot || !selectedModule) return;
+        const stepToRefine = (selectedModule.steps as ProcessStep[])[hotspot.stepIndex];
+        if (stepToRefine) {
+            refinementMutation.mutate({ step: stepToRefine, questions: hotspot.questions });
+        }
+    };
 
     const handleModuleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
         const newSelectedModuleId = event.target.value;
@@ -76,7 +92,7 @@ const DashboardPage: React.FC = () => {
         }
 
         const updatedModule = { ...selectedModule };
-        const newSteps = [...updatedModule.steps];
+        const newSteps = [...(updatedModule.steps as ProcessStep[])];
         const stepToUpdate: ProcessStep = { ...newSteps[hotspot.stepIndex] };
 
         // Apply changes
@@ -93,8 +109,8 @@ const DashboardPage: React.FC = () => {
 
         // Save the updated module and navigate to the editor for final review
         try {
-            // Use the new, correct saveModule function
             const savedModule = await saveModule({ moduleData: updatedModule });
+            await queryClient.invalidateQueries({ queryKey: ['modules'] });
             addToast('success', 'Changes Applied', 'Redirecting to the editor for your final review.');
             navigate(`/modules/${savedModule.slug}/edit`);
         } catch (err) {
@@ -104,7 +120,7 @@ const DashboardPage: React.FC = () => {
 
         setIsModalOpen(false);
 
-    }, [selectedModule, hotspot, refinement, user, navigate, addToast]);
+    }, [selectedModule, hotspot, refinement, user, navigate, addToast, queryClient]);
 
     return (
         <div className="max-w-4xl mx-auto p-8">
@@ -131,12 +147,13 @@ const DashboardPage: React.FC = () => {
                         value={selectedModule?.slug || ''}
                         onChange={handleModuleChange}
                         className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        disabled={modules.length === 0}
+                        disabled={modules.length === 0 || isLoadingModules}
                     >
-                        {modules.map(module => (
+                        {isLoadingModules && <option>Loading modules...</option>}
+                        {!isLoadingModules && modules.map(module => (
                             <option key={module.slug} value={module.slug}>{module.title}</option>
                         ))}
-                        {modules.length === 0 && <option>No modules available</option>}
+                        {!isLoadingModules && modules.length === 0 && <option>No modules available</option>}
                     </select>
                 </div>
 
@@ -148,13 +165,13 @@ const DashboardPage: React.FC = () => {
                     </div>
                 )}
 
-                {!isAnalyzing && hotspot && refinement && (
+                {!isAnalyzing && hotspot && (
                     <div className="bg-gradient-to-br from-indigo-200 dark:from-indigo-900/70 to-slate-200/50 dark:to-slate-900/50 p-6 rounded-xl border border-indigo-300 dark:border-indigo-700 mb-8 animate-fade-in-up">
                         <div className="flex items-center gap-3 mb-4">
                             <LightbulbIcon className="h-8 w-8 text-yellow-500 dark:text-yellow-400 flex-shrink-0" />
                             <div>
-                                <h3 className="text-lg font-bold text-yellow-700 dark:text-yellow-300">AI Refinement Suggestion</h3>
-                                <p className="text-sm text-indigo-800 dark:text-indigo-200">The AI found a point of confusion and suggests this improvement.</p>
+                                <h3 className="text-lg font-bold text-yellow-700 dark:text-yellow-300">AI Refinement Opportunity</h3>
+                                <p className="text-sm text-indigo-800 dark:text-indigo-200">The AI found a point of confusion and can suggest an improvement.</p>
                             </div>
                         </div>
 
@@ -166,19 +183,31 @@ const DashboardPage: React.FC = () => {
                             <ul className="list-disc list-inside text-sm text-slate-700 dark:text-slate-300 mb-4">
                                 {hotspot.questions.slice(0, 3).map((q, i) => <li key={i} className="italic truncate">"{q}"</li>)}
                             </ul>
-
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Suggested New Description</p>
-                            <p className="text-sm text-slate-800 dark:text-slate-200 bg-slate-200 dark:bg-slate-800 p-2 rounded-md">"{refinement.newDescription}"</p>
                         </div>
 
-                        <div className="text-center mt-4">
-                            <button
-                                onClick={() => setIsModalOpen(true)}
-                                className="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700 transition-colors transform hover:scale-105"
-                            >
-                                Preview & Apply
-                            </button>
-                        </div>
+                        {!refinement && (
+                            <div className="text-center mt-4">
+                                <button
+                                    onClick={handleGenerateSuggestion}
+                                    disabled={refinementMutation.isPending}
+                                    className="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700 transition-colors transform hover:scale-105 disabled:opacity-50"
+                                >
+                                    {refinementMutation.isPending ? 'Generating...' : 'Generate AI Suggestion'}
+                                </button>
+                            </div>
+                        )}
+
+                        {refinement && (
+                            <div className="text-center mt-4 animate-fade-in-up">
+                                <p className="text-sm text-green-700 dark:text-green-300 mb-2">Suggestion generated!</p>
+                                <button
+                                    onClick={() => setIsModalOpen(true)}
+                                    className="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors transform hover:scale-105"
+                                >
+                                    Preview & Apply
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -204,7 +233,7 @@ const DashboardPage: React.FC = () => {
                 <RefinementModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
-                    currentStep={selectedModule.steps[hotspot.stepIndex]}
+                    currentStep={(selectedModule.steps as ProcessStep[])[hotspot.stepIndex]}
                     suggestion={refinement}
                     onApply={handleApplyRefinement}
                 />

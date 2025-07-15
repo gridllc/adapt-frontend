@@ -1,5 +1,8 @@
 
 
+
+
+
 import { GoogleGenAI, Chat, Content, Type, File } from "@google/genai";
 import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
@@ -35,8 +38,17 @@ function getAiClient(): GoogleGenAI {
     return cachedClient;
 }
 
+// --- Centralized System Instructions ---
 
-function getSystemInstruction(processContext: string): string {
+const INSTRUCTIONAL_DESIGNER_BASE = `You are an expert instructional designer. Your task is to analyze the provided text describing a process and convert it into a structured training module. Your output must ONLY be based on the text provided. Do not invent or infer any steps or details not present in the input. Create a main title for the module and break the process down into logical, sequential steps. For each step, create a short, action-oriented title and a clear description. Where appropriate, also generate a 'checkpoint' question to test understanding, and any 'alternativeMethods' that might be relevant (like a pro-tip or shortcut). Ensure the final output is a valid JSON object adhering to the provided schema.`;
+
+const REFINEMENT_DESIGNER_BASE = `You are an expert instructional designer tasked with improving a training module.
+    You will be given a step from the module and a list of questions that real trainees have asked about it.
+    Your job is to rewrite the step's description to be clearer and to proactively answer the questions.
+    If appropriate, also suggest a new 'alternative method' (like a pro-tip or shortcut).
+    You MUST respond in valid JSON format.`;
+
+function getChatTutorSystemInstruction(processContext: string): string {
     return `You are the Adapt AI Tutor, an expert teaching assistant. Your single most important goal is to teach a trainee the specific process designed by their company's owner.
 
 The 'PROCESS STEPS' provided below are your **single source of truth**. You must treat this material as the official training manual.
@@ -55,7 +67,7 @@ ${processContext}
 
 export const startChat = (processContext: string, history: Content[] = []): Chat => {
     const client = getAiClient();
-    const systemInstruction = getSystemInstruction(processContext);
+    const systemInstruction = getChatTutorSystemInstruction(processContext);
 
     const chat = client.chats.create({
         model: 'gemini-2.5-flash',
@@ -70,8 +82,8 @@ export const startChat = (processContext: string, history: Content[] = []): Chat
 };
 
 /**
- * Simulates a call to a fallback provider (e.g., GPT) if the primary one fails.
- * For now, it uses a non-streaming Gemini call to demonstrate the mechanism.
+ * Simulates a call to a fallback provider if the primary one fails.
+ * This version prunes the history to the last 20 messages to avoid context overload.
  * @param prompt The user's latest prompt.
  * @param history The existing chat history to provide context.
  * @param processContext The process steps to include in the system instruction.
@@ -80,10 +92,13 @@ export const startChat = (processContext: string, history: Content[] = []): Chat
 export const getFallbackResponse = async (prompt: string, history: ChatMessage[], processContext: string): Promise<string> => {
     console.log("Attempting fallback AI provider...");
     const client = getAiClient();
-    const systemInstruction = getSystemInstruction(processContext);
+    const systemInstruction = getChatTutorSystemInstruction(processContext);
+
+    // Prune history to the last 20 messages to avoid overly large contexts.
+    const recentHistory = history.slice(-20);
 
     // Convert ChatMessage[] to Content[]
-    const geminiHistory: Content[] = history.map(msg => ({
+    const geminiHistory: Content[] = recentHistory.map(msg => ({
         role: msg.role,
         parts: [{ text: msg.text }]
     }));
@@ -160,20 +175,20 @@ const moduleSchema = {
 
 export const createModuleFromText = async (processText: string) => {
     const client = getAiClient();
-    const systemInstruction = `You are an expert instructional designer. Your task is to analyze the provided text describing a process and convert it into a structured training module. Create a main title for the module and break the process down into logical, sequential steps. For each step, create a short, action-oriented title and a clear description. Where appropriate, also generate a 'checkpoint' question to test understanding, and any 'alternativeMethods' that might be relevant (like a pro-tip or shortcut). Ensure the final output is a valid JSON object adhering to the provided schema.`;
+    let jsonText: string | undefined;
 
     try {
         const result = await client.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: processText,
             config: {
-                systemInstruction,
+                systemInstruction: INSTRUCTIONAL_DESIGNER_BASE,
                 responseMimeType: "application/json",
                 responseSchema: moduleSchema,
             },
         });
 
-        const jsonText = result.text?.trim();
+        jsonText = result.text?.trim();
         if (!jsonText) {
             throw new Error("The AI returned an empty response.");
         }
@@ -182,7 +197,7 @@ export const createModuleFromText = async (processText: string) => {
         // Initialize the module with default values for fields not generated by the AI
         return {
             ...generatedData,
-            videoUrl: '',
+            video_url: '',
             steps: generatedData.steps.map((step: any) => ({
                 ...step,
                 start: 0,
@@ -196,6 +211,8 @@ export const createModuleFromText = async (processText: string) => {
     } catch (error) {
         console.error("Error generating module with Gemini:", error);
         if (error instanceof SyntaxError) {
+            // For debugging, log the malformed response that caused the parse error.
+            console.error("Malformed JSON response from AI:", jsonText);
             throw new Error("Failed to generate module. The AI returned invalid JSON. Please try again.");
         }
         throw new Error("Failed to generate training module. The AI couldn't understand the process. Please try rewriting it.");
@@ -286,7 +303,7 @@ const pollFileState = async (file: File, client: GoogleGenAI): Promise<void> => 
         pollCount++;
     }
 
-    throw new Error('Video processing timed out after 30 seconds.');
+    throw new Error(`Video processing timed out after ${POLL_INTERVAL_MS * MAX_POLLS / 1000}s.`);
 };
 
 export const analyzeVideoContent = async (
@@ -327,15 +344,19 @@ export const analyzeVideoContent = async (
         `;
 
         const transcriptPrompt = `
-            Transcribe this video with these exact rules:
-            
-            1. Write exactly what the speaker says. Transcribe every word, repetition, and self-correction.
-            2. Remove only these specific filler sounds: "um", "uh", "ah", "er", "mm".
-            3. Keep all other words, even if they seem like filler (e.g., "like", "you know", "so", "well", "okay").
-            4. Preserve the speaker's original grammar and word choice. Do not "fix" sentences.
-            5. Do not add, change, or interpret any words. Do not paraphrase or summarize.
-            
-            Output format: JSON array of { start: number, end: number, text: string } where start and end are in seconds.
+            Your task is to perform a verbatim transcription of a video. Follow these rules with absolute precision:
+
+            1.  **Literal Transcription:** Transcribe every single word exactly as it is spoken. This includes all repetitions, self-corrections, and conversational words (e.g., "like", "you know", "so", "well").
+            2.  **Do Not Sanitize:** Do NOT remove filler words like "um", "uh", or "ah". Do NOT correct grammar. Do NOT paraphrase or summarize. Your output must be a raw, unfiltered account of the speech.
+            3.  **No AI Additions:** Do not add any text, punctuation, or formatting that was not explicitly spoken.
+            4.  **Audio Quality:** The audio quality may be imperfect. Transcribe all audible speech to the best of your ability.
+
+            For example:
+            - Spoken: "So, okay, I, uh, I think you should, like, grab the... grab the red one."
+            - ✅ CORRECT transcription: "So, okay, I, uh, I think you should, like, grab the... grab the red one."
+            - ❌ INCORRECT transcription: "Grab the red one."
+
+            Output format MUST be a valid JSON array of objects: { start: number, end: number, text: string } where start and end are in seconds.
         `;
 
         const timestampSchema = {
@@ -386,18 +407,31 @@ export const analyzeVideoContent = async (
         console.log("Analysis calls completed.");
 
         const timestamps = JSON.parse(timestampResponse.text);
-        const transcript = JSON.parse(transcriptResponse.text);
+        const rawTranscript = JSON.parse(transcriptResponse.text);
 
         if (!timestamps || !Array.isArray(timestamps)) {
             throw new Error("Invalid timestamp data received from AI. The response was not an array.");
         }
-        if (!transcript || !Array.isArray(transcript)) {
+        if (!rawTranscript || !Array.isArray(rawTranscript)) {
             throw new Error("Invalid transcript data received from AI. The response was not an array.");
         }
 
         if (timestamps.length !== steps.length) {
             console.warn(`Timestamp mismatch: AI returned ${timestamps.length} timestamps but module has ${steps.length} steps. The results may be inaccurate.`);
         }
+
+        if (rawTranscript.length === 0) {
+            console.warn("AI returned an empty transcript. This may indicate audio issues or model failure.");
+        }
+
+        // This improved regex is more precise to avoid matching parts of real words.
+        const fillerWordRegex = /\b(?:u+m+|e+r+|a+h+)\b/gi;
+
+        const transcript = rawTranscript.map((line: { text: string; }) => ({
+            ...line,
+            // Remove filler words and clean up any resulting extra whitespace.
+            text: line.text.replace(fillerWordRegex, '').replace(/\s\s+/g, ' ').trim()
+        }));
 
         return { timestamps, transcript };
 
@@ -443,11 +477,6 @@ export const generateRefinementSuggestion = async (
     questions: string[]
 ): Promise<RefinementSuggestion> => {
     const client = getAiClient();
-    const systemInstruction = `You are an expert instructional designer tasked with improving a training module.
-    You will be given a step from the module and a list of questions that real trainees have asked about it.
-    Your job is to rewrite the step's description to be clearer and to proactively answer the questions.
-    If appropriate, also suggest a new 'alternative method' (like a pro-tip or shortcut).
-    You MUST respond in valid JSON format.`;
 
     const prompt = `
         **Current Step Title:**
@@ -493,7 +522,7 @@ export const generateRefinementSuggestion = async (
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
-                systemInstruction,
+                systemInstruction: REFINEMENT_DESIGNER_BASE,
                 responseMimeType: "application/json",
                 responseSchema: refinementSchema,
             },
@@ -511,7 +540,7 @@ export const generatePerformanceSummary = async (
     moduleTitle: string,
     unclearSteps: ProcessStep[],
     userQuestions: string[]
-): Promise<string> => {
+): Promise<{ summary: string }> => {
     const client = getAiClient();
     const systemInstruction = "You are a friendly and encouraging AI coach. Your job is to provide positive, summarized feedback to a trainee who has just completed a module. Speak directly to the trainee. Keep the feedback concise (2-3 sentences).";
 
@@ -529,15 +558,34 @@ export const generatePerformanceSummary = async (
         }
     }
 
+    const summarySchema = {
+        type: Type.OBJECT,
+        properties: {
+            summary: {
+                type: Type.STRING,
+                description: "The concise, friendly feedback message for the user."
+            }
+        },
+        required: ["summary"]
+    };
+
     try {
         const result = await client.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
-            config: { systemInstruction },
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: summarySchema,
+            },
         });
-        return result.text || "Great job completing the training!";
+        const jsonText = result.text?.trim();
+        if (!jsonText) {
+            return { summary: "Great job completing the training!" };
+        }
+        return JSON.parse(jsonText);
     } catch (error) {
         console.error("Error generating performance summary:", error);
-        return "Congratulations on completing the training module!"; // Fallback
+        return { summary: "Congratulations on completing the training module!" }; // Fallback
     }
 };

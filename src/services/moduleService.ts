@@ -1,32 +1,14 @@
 
-import type { TrainingModule } from '@/types';
+
+
 import { supabase } from '@/services/apiClient';
+import type { Database } from '@/types/supabase';
+import type { ProcessStep, TranscriptLine } from '@/types';
 
-const isTrainingModule = (data: any): data is TrainingModule => {
-    return (
-        typeof data === 'object' &&
-        data !== null &&
-        typeof data.slug === 'string' &&
-        typeof data.title === 'string' &&
-        (typeof data.videoUrl === 'string' || data.videoUrl === null) &&
-        Array.isArray(data.steps)
-    );
-};
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
+type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
-const mapToTrainingModule = (data: any): TrainingModule | null => {
-    if (!data) return null;
-    const module: TrainingModule = {
-        slug: data.slug,
-        title: data.title,
-        videoUrl: data.video_url || '',
-        steps: data.steps || [],
-        transcript: data.transcript || [],
-        userId: data.user_id,
-    };
-    return isTrainingModule(module) ? module : null;
-}
-
-export const getModule = async (slug: string): Promise<TrainingModule | undefined> => {
+export const getModule = async (slug: string): Promise<ModuleRow | undefined> => {
     if (!slug) return undefined;
 
     try {
@@ -41,17 +23,14 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
         }
 
         if (data) {
-            const mappedModule = mapToTrainingModule(data);
-            if (mappedModule) return mappedModule;
+            return data;
         }
 
         // Fallback for static sub-modules used in live coaching
         const response = await fetch(`/modules/${slug}.json`);
         if (response.ok) {
-            const staticModule = await response.json();
-            if (isTrainingModule(staticModule)) {
-                return staticModule;
-            }
+            const staticModule = await response.json() as ModuleRow;
+            return staticModule;
         }
 
         return undefined;
@@ -62,7 +41,7 @@ export const getModule = async (slug: string): Promise<TrainingModule | undefine
     }
 };
 
-export const getAvailableModules = async (): Promise<TrainingModule[]> => {
+export const getAvailableModules = async (): Promise<ModuleRow[]> => {
     const { data, error } = await supabase
         .from('modules')
         .select('*');
@@ -77,22 +56,34 @@ export const getAvailableModules = async (): Promise<TrainingModule[]> => {
         return [];
     }
 
-    return data.map(mapToTrainingModule).filter((m): m is TrainingModule => m !== null);
+    return data;
 };
 
 export const saveModule = async ({
     moduleData,
     videoFile,
 }: {
-    moduleData: TrainingModule,
+    moduleData: ModuleRow | ModuleInsert,
     videoFile?: File | null,
-}): Promise<TrainingModule> => {
+}): Promise<ModuleRow> => {
+    // Validate transcript data before proceeding
+    if (moduleData.transcript) {
+        const invalidLines = (moduleData.transcript as TranscriptLine[]).filter(
+            line => typeof line.text !== 'string' || line.text.trim() === '' || (typeof line.start === 'number' && typeof line.end === 'number' && line.start > line.end)
+        );
+        if (invalidLines.length > 0) {
+            throw new Error(
+                `Cannot save: ${invalidLines.length} transcript line(s) have missing text or invalid timestamps.`
+            );
+        }
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
         throw new Error('User not authenticated. Cannot save module.');
     }
 
-    let video_url = moduleData.videoUrl;
+    let video_url = moduleData.video_url;
 
     // This is the critical logic: if a real file is passed, upload it and use its URL,
     // overriding any temporary blob: URL that might be in moduleData.
@@ -105,6 +96,7 @@ export const saveModule = async ({
             .upload(filePath, videoFile, {
                 cacheControl: '3600',
                 upsert: true,
+                resumable: true, // Enable chunked uploads for large files
             });
 
         if (uploadError) {
@@ -116,17 +108,18 @@ export const saveModule = async ({
         video_url = data.publicUrl;
     }
 
-    const dbData = {
+    const dbData: ModuleInsert = {
         slug: moduleData.slug,
         title: moduleData.title,
-        steps: moduleData.steps,
-        transcript: moduleData.transcript,
+        steps: moduleData.steps as ProcessStep[],
+        transcript: moduleData.transcript as TranscriptLine[],
         video_url: video_url,
+        metadata: moduleData.metadata,
         user_id: user.id,
     };
 
     // Use upsert to handle both creation of new modules and updating of existing ones.
-    const { data, error } = await supabase
+    const { data: savedData, error } = await supabase
         .from('modules')
         .upsert(dbData, { onConflict: 'slug' })
         .select()
@@ -137,12 +130,11 @@ export const saveModule = async ({
         throw new Error(`Failed to save module: ${error.message}`);
     }
 
-    const savedModule = mapToTrainingModule(data);
-    if (!savedModule) {
+    if (!savedData) {
         throw new Error("Data returned after save is not a valid TrainingModule.");
     }
 
-    return savedModule;
+    return savedData;
 };
 
 export const deleteModule = async (slug: string): Promise<void> => {

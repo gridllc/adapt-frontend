@@ -1,14 +1,20 @@
 
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { createModuleFromText, analyzeVideoContent } from '@/services/geminiService';
 import { saveModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
-import type { TrainingModule } from '@/types';
+import { TranscriptViewer } from '@/components/TranscriptViewer';
+import type { ProcessStep, TranscriptLine, VideoMetadata } from '@/types';
+import type { Database } from '@/types/supabase';
 import { BookOpenIcon, LightbulbIcon, UploadCloudIcon, FileTextIcon, XIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
+
+type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 const CreatePage: React.FC = () => {
     const navigate = useNavigate();
@@ -17,8 +23,8 @@ const CreatePage: React.FC = () => {
     const { addToast } = useToast();
     const [processText, setProcessText] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
-    const [videoBlobUrl, setVideoBlobUrl] = useState('');
-    const [generatedModule, setGeneratedModule] = useState<TrainingModule | null>(null);
+    const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
+    const [generatedModule, setGeneratedModule] = useState<ModuleInsert | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -34,25 +40,46 @@ const CreatePage: React.FC = () => {
     useEffect(() => {
         if (videoFile) {
             const objectUrl = URL.createObjectURL(videoFile);
-            setVideoBlobUrl(objectUrl);
             // When a new video file is added, update the generated module to use its blob URL for preview
             if (generatedModule) {
-                setGeneratedModule(prev => prev ? { ...prev, videoUrl: objectUrl } : null);
+                setGeneratedModule(prev => prev ? { ...prev, video_url: objectUrl } : null);
             }
             return () => URL.revokeObjectURL(objectUrl);
         }
-        setVideoBlobUrl('');
-    }, [videoFile, generatedModule]);
+    }, [videoFile]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
             setVideoFile(file);
+
+            // Extract metadata from video file
+            const videoElement = document.createElement('video');
+            videoElement.preload = 'metadata';
+
+            videoElement.onloadedmetadata = () => {
+                window.URL.revokeObjectURL(videoElement.src);
+                setVideoMetadata({
+                    originalName: file.name,
+                    size: file.size,
+                    duration: Math.round(videoElement.duration),
+                    width: videoElement.videoWidth,
+                    height: videoElement.videoHeight,
+                });
+            };
+
+            videoElement.onerror = () => {
+                addToast('error', 'Metadata Error', 'Could not read metadata from the video file.');
+                setVideoMetadata(null);
+            };
+
+            videoElement.src = URL.createObjectURL(file);
         }
     };
 
     const handleRemoveVideo = useCallback(() => {
         setVideoFile(null);
+        setVideoMetadata(null);
     }, []);
 
     const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
@@ -61,11 +88,11 @@ const CreatePage: React.FC = () => {
         setIsDragging(false);
         const file = event.dataTransfer.files?.[0];
         if (file && file.type.startsWith('video/')) {
-            setVideoFile(file);
+            handleFileChange({ target: { files: [file] } } as any);
         } else if (file) {
             addToast('error', 'Invalid File Type', 'Please upload a video file.');
         }
-    }, [addToast]);
+    }, [addToast, handleFileChange]);
 
     const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
         event.preventDefault();
@@ -95,7 +122,7 @@ const CreatePage: React.FC = () => {
         try {
             const moduleData = await createModuleFromText(processText);
             // Assign the blob URL for immediate preview in the editor
-            moduleData.videoUrl = videoFile ? URL.createObjectURL(videoFile) : '';
+            moduleData.video_url = videoFile ? URL.createObjectURL(videoFile) : '';
             setGeneratedModule(moduleData);
             addToast('success', 'Module Generated', 'The AI has created a draft. Please review and edit.');
         } catch (err) {
@@ -113,10 +140,10 @@ const CreatePage: React.FC = () => {
         try {
             // As per the approved logic, this service now runs two parallel AI calls:
             // one for timestamps and one for a clean transcript.
-            const { timestamps, transcript } = await analyzeVideoContent(videoFile, generatedModule.steps);
+            const { timestamps, transcript } = await analyzeVideoContent(videoFile, generatedModule.steps as ProcessStep[]);
 
             // Merge the new, more accurate data into the current module state.
-            const updatedSteps = generatedModule.steps.map((step, index) => ({
+            const updatedSteps = (generatedModule.steps as ProcessStep[]).map((step, index) => ({
                 ...step,
                 // The timestamps from the AI might be floats, so we round them for clean display.
                 // The nullish coalescing operator (??) ensures we don't overwrite existing values if the AI fails for a specific step.
@@ -146,7 +173,11 @@ const CreatePage: React.FC = () => {
 
         setIsSaving(true);
         try {
-            const cleanedModule = { ...generatedModule, videoUrl: '' }; // remove blob URL
+            const cleanedModule: ModuleInsert = {
+                ...generatedModule,
+                video_url: '', // remove blob URL
+                metadata: videoMetadata || undefined,
+            };
             const savedModule = await saveModule({ moduleData: cleanedModule, videoFile });
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             addToast('success', 'Module Saved', `Navigating to your new training: "${savedModule.title}"`);
@@ -162,6 +193,7 @@ const CreatePage: React.FC = () => {
     const resetForm = () => {
         setProcessText('');
         setVideoFile(null);
+        setVideoMetadata(null);
         setGeneratedModule(null);
         setIsLoading(false);
         setIsAnalyzing(false);
@@ -251,6 +283,22 @@ const CreatePage: React.FC = () => {
                         isAnalyzing={isAnalyzing}
                         showAnalysisButton={!!videoFile}
                     />
+
+                    {generatedModule.transcript && (generatedModule.transcript as TranscriptLine[]).length > 0 && (
+                        <div className="mt-8 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl">
+                            <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Video Transcript</h2>
+                            <div className="max-h-[40vh] overflow-y-auto">
+                                <TranscriptViewer
+                                    transcript={generatedModule.transcript as TranscriptLine[]}
+                                    currentTime={0}
+                                    onLineClick={() => {
+                                        addToast('info', 'Preview Only', 'Seeking video from the transcript is available on the main training page.');
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     <div className="mt-8 flex justify-center gap-4">
                         <button onClick={resetForm} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving}>
                             Start Over
