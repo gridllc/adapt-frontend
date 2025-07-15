@@ -345,7 +345,10 @@ const CreatePage: React.FC = () => {
                         ) : (
                             <label onDrop={handleDrop} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} className={`flex flex-col items-center justify-center w-full h-40 px-4 transition bg-white dark:bg-slate-900 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-300 dark:border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}>
                                 <UploadCloudIcon className={`w-10 h-10 ${isDragging ? 'text-indigo-400' : 'text-slate-400 dark:text-slate-500'}`} />
-                                <span className="mt-2 font-medium text-slate-500 dark:text-slate-400">Drop video file or <span className="text-indigo-500 dark:text-indigo-400 underline">browse</span></span>
+                                <div className="mt-2 text-center">
+                                    <p className="font-medium text-slate-600 dark:text-slate-300">Tap or click to upload a file</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">You'll be able to record with your phone or choose from your device.</p>
+                                </div>
                                 <input type="file" name="file_upload" className="hidden" accept="video/*" onChange={handleFileChange} />
                             </label>
                         )}
