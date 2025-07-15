@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -95,6 +96,7 @@ const TrainingPage: React.FC = () => {
     isCompleted,
     resetSession,
     isLoadingSession,
+    goBack,
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, steps.length ?? 0);
 
   // Reset checkpoint state when the step changes
@@ -219,18 +221,6 @@ const TrainingPage: React.FC = () => {
     });
   }, [addToast]);
 
-  useEffect(() => {
-    if (!moduleData || userActions.length === 0 || isCompleted) return;
-    const lastAction = userActions[userActions.length - 1];
-
-    if (lastAction.status === 'done' && lastAction.stepIndex === currentStepIndex - 1) {
-      const nextStep = steps[currentStepIndex];
-      if (nextStep) {
-        handleSeekTo(nextStep.start);
-      }
-    }
-  }, [currentStepIndex, userActions, handleSeekTo, moduleData, isCompleted, steps]);
-
   const handleTimeUpdate = (time: number) => {
     if (isCompleted) return;
     setCurrentTime(time);
@@ -318,7 +308,7 @@ const TrainingPage: React.FC = () => {
             onTimeUpdate={handleTimeUpdate}
           />
         </div>
-        <div className="lg:col-span-1 h-[75vh] bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden flex flex-col">
+        <div className={`lg:col-span-1 h-[75vh] bg-white dark:bg-slate-800 rounded-lg shadow-xl flex flex-col ${isCompleted ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
           {isCompleted ? (
             isGeneratingReport ? (
@@ -362,6 +352,7 @@ const TrainingPage: React.FC = () => {
                   onCheckpointSubmit={handleCheckpointSubmit}
                   checkpointFeedback={checkpointFeedback}
                   isEvaluatingCheckpoint={isEvaluating}
+                  goBack={goBack}
                 />
               )}
 

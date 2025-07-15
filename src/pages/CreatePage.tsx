@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,10 +13,11 @@ import { saveModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TranscriptLine, VideoMetadata } from '@/types';
 import type { Database } from '@/types/supabase';
-import { BookOpenIcon, UploadCloudIcon, FileTextIcon, XIcon, SparklesIcon, VideoIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons';
+import { BookOpenIcon, UploadCloudIcon, XIcon, SparklesIcon, VideoIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import type { File as AiFile } from '@google/genai';
+import { VideoPlayer } from '@/components/VideoPlayer';
 
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 type FlowStep = 'initial' | 'analyzing' | 'review' | 'generating' | 'final';
@@ -28,7 +30,7 @@ interface ConfidenceTranscriptEditorProps {
     onRevert: () => void;
 }
 
-// A new, more capable transcript editor component, defined within this file as requested.
+// A new, more capable transcript editor component
 const ConfidenceTranscriptEditor: React.FC<ConfidenceTranscriptEditorProps> = ({
     transcriptLines,
     uncertainWords,
@@ -95,6 +97,7 @@ const CreatePage: React.FC = () => {
     const [title, setTitle] = useState('');
     const [notes, setNotes] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
+    const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
     const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
@@ -105,26 +108,39 @@ const CreatePage: React.FC = () => {
     const [generatedModule, setGeneratedModule] = useState<ModuleInsert | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
+    // Use a ref to hold the blob URL to prevent re-renders
+    const previewUrlRef = useRef<string | null>(null);
+
     useEffect(() => {
         if (!isAuthenticated) navigate('/login');
     }, [isAuthenticated, navigate]);
 
+    // Effect to clean up the blob URL on unmount
     useEffect(() => {
-        if (videoFile && generatedModule) {
-            const objectUrl = URL.createObjectURL(videoFile);
-            setGeneratedModule(prev => prev ? { ...prev, video_url: objectUrl } : null);
-            return () => URL.revokeObjectURL(objectUrl);
-        }
-    }, [videoFile, generatedModule]);
+        const urlToClean = previewUrlRef.current;
+        return () => {
+            if (urlToClean) {
+                URL.revokeObjectURL(urlToClean);
+            }
+        };
+    }, []);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
+            // Revoke the old URL if it exists to prevent memory leaks
+            if (previewUrlRef.current) {
+                URL.revokeObjectURL(previewUrlRef.current);
+            }
+
+            const newUrl = URL.createObjectURL(file);
+            previewUrlRef.current = newUrl;
+            setVideoPreviewUrl(newUrl); // Update state to trigger re-render with the preview
             setVideoFile(file);
+
             const videoElement = document.createElement('video');
             videoElement.preload = 'metadata';
             videoElement.onloadedmetadata = () => {
-                window.URL.revokeObjectURL(videoElement.src);
                 setVideoMetadata({
                     originalName: file.name,
                     size: file.size,
@@ -136,11 +152,17 @@ const CreatePage: React.FC = () => {
             videoElement.onerror = () => {
                 addToast('error', 'Metadata Error', 'Could not read metadata from the video file.');
             };
-            videoElement.src = URL.createObjectURL(file);
+            // The object URL from createObjectURL can be used directly for metadata reading
+            videoElement.src = newUrl;
         }
     };
 
     const handleRemoveVideo = useCallback(() => {
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+        }
+        setVideoPreviewUrl(null);
         setVideoFile(null);
         setVideoMetadata(null);
     }, []);
@@ -195,7 +217,7 @@ const CreatePage: React.FC = () => {
 
     // Step 2: Generate Module
     const handleGenerateModule = async () => {
-        if (!analysisResult || !title) return;
+        if (!analysisResult || !title || !videoFile) return;
         setFlowStep('generating');
         try {
             const transcriptText = editedTranscript.map(line => line.text).join('\n');
@@ -213,7 +235,8 @@ const CreatePage: React.FC = () => {
                 return { ...generatedStep, start: bestLine?.start ?? 0, end: bestLine?.end ?? 0 };
             });
 
-            (timedModuleData as ModuleInsert).video_url = URL.createObjectURL(videoFile!);
+            // Use the stable URL from the ref for the final module data
+            (timedModuleData as ModuleInsert).video_url = previewUrlRef.current;
             (timedModuleData as ModuleInsert).transcript = editedTranscript;
 
             setGeneratedModule(timedModuleData as ModuleInsert);
@@ -261,10 +284,15 @@ const CreatePage: React.FC = () => {
         if (uploadedAiFile) {
             await deleteUploadedVideo(uploadedAiFile);
         }
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+        }
         setFlowStep('initial');
         setTitle('');
         setNotes('');
         setVideoFile(null);
+        setVideoPreviewUrl(null);
         setVideoMetadata(null);
         setUploadedAiFile(null);
         setAnalysisResult(null);
@@ -302,15 +330,20 @@ const CreatePage: React.FC = () => {
 
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Training Video</label>
-                        {videoFile ? (
-                            <div className="bg-slate-200 dark:bg-slate-900/50 p-3 rounded-lg flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <VideoIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
-                                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{videoFile.name}</span>
+                        {videoFile && videoPreviewUrl ? (
+                            <div>
+                                <div className="bg-slate-200 dark:bg-slate-900/50 p-3 rounded-lg flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <VideoIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
+                                        <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{videoFile.name}</span>
+                                    </div>
+                                    <button onClick={handleRemoveVideo} className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" disabled={flowStep !== 'initial'}>
+                                        <XIcon className="h-5 w-5" />
+                                    </button>
                                 </div>
-                                <button onClick={handleRemoveVideo} className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" disabled={flowStep !== 'initial'}>
-                                    <XIcon className="h-5 w-5" />
-                                </button>
+                                <div className="mt-4 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700">
+                                    <VideoPlayer video_url={videoPreviewUrl} onTimeUpdate={() => { }} />
+                                </div>
                             </div>
                         ) : (
                             <label onDrop={handleDrop} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} className={`flex flex-col items-center justify-center w-full h-40 px-4 transition bg-white dark:bg-slate-900 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-300 dark:border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}>
@@ -370,6 +403,10 @@ const CreatePage: React.FC = () => {
             <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up">
                 <div className="max-w-4xl mx-auto">
                     <div className="text-center mb-6">
+                        <div className="flex items-center justify-center gap-2 text-green-600 dark:text-green-400 font-semibold mb-2">
+                            <CheckCircleIcon className="h-6 w-6" />
+                            <span>Analysis Complete</span>
+                        </div>
                         <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400">2. Review Transcript</h2>
                         <p className={`font-semibold ${confidenceColor}`}>{confidenceText}</p>
                         <p className="text-slate-600 dark:text-slate-300 mt-1">

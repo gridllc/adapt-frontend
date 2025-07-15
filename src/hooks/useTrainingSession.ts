@@ -101,6 +101,10 @@ export function useTrainingSession(moduleId: string, sessionToken: string, total
     [totalSteps, currentStepIndex]
   );
 
+  const goBack = useCallback(() => {
+    setCurrentStepIndex(prevIndex => Math.max(0, prevIndex - 1));
+  }, []);
+
   const resetSession = useCallback(() => {
     // This now resets the local state, and the useEffect will trigger a save
     setCurrentStepIndex(0);
@@ -118,5 +122,6 @@ export function useTrainingSession(moduleId: string, sessionToken: string, total
     isCompleted,
     resetSession,
     isLoadingSession, // Expose loading state
+    goBack,
   };
 }

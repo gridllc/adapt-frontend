@@ -2,6 +2,7 @@
 // Using a central file like this makes it easy to manage and swap icons in the future.
 export {
   AlertTriangle as AlertTriangleIcon,
+  ArrowLeft as ArrowLeftIcon,
   BarChart as BarChartIcon,
   BookOpen as BookOpenIcon,
   Bot as BotIcon,

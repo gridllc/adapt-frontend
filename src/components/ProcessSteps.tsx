@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import type { ProcessStep, StepStatus, CheckpointEvaluation } from '@/types';
-import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon, XCircleIcon, SendIcon, SparklesIcon } from '@/components/Icons';
+import { CheckCircleIcon, LightbulbIcon, HelpCircleIcon, XCircleIcon, SendIcon, SparklesIcon, ArrowLeftIcon } from '@/components/Icons';
 
 interface ProcessStepsProps {
   steps: ProcessStep[];
@@ -13,6 +13,7 @@ interface ProcessStepsProps {
   onCheckpointSubmit: () => void;
   checkpointFeedback: CheckpointEvaluation | null;
   isEvaluatingCheckpoint: boolean;
+  goBack: () => void;
 }
 
 export const ProcessSteps: React.FC<ProcessStepsProps> = ({
@@ -24,7 +25,8 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
   onCheckpointAnswerChange,
   onCheckpointSubmit,
   checkpointFeedback,
-  isEvaluatingCheckpoint
+  isEvaluatingCheckpoint,
+  goBack,
 }) => {
   const activeStepRef = useRef<HTMLDivElement>(null);
 
@@ -115,6 +117,16 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                 ) : (
                   // Standard Action Buttons
                   <div className="flex items-center justify-center gap-3">
+                    {currentStepIndex > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); goBack(); }}
+                        className="flex items-center gap-2 bg-slate-500 hover:bg-slate-600 text-white text-sm font-semibold py-2 px-4 rounded-full transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-100 dark:focus:ring-offset-slate-800 focus:ring-slate-400"
+                        aria-label="Go to previous step"
+                      >
+                        <ArrowLeftIcon className="h-5 w-5" />
+                        <span>Back</span>
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); markStep('done'); }}
                       className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-full transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-100 dark:focus:ring-offset-slate-800 focus:ring-green-500"
