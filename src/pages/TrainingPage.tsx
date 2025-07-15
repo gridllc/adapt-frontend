@@ -1,6 +1,8 @@
 
 
 
+
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -283,7 +285,6 @@ const TrainingPage: React.FC = () => {
     const step = steps[currentStepIndex];
     if (!step?.checkpoint || !moduleId) return;
 
-    // Log the raw response first (fire-and-forget style)
     if (user) {
       logCheckpointResponse({
         module_id: moduleId,
@@ -295,7 +296,6 @@ const TrainingPage: React.FC = () => {
       }).catch(err => console.error("Non-blocking error: Failed to log checkpoint response.", err));
     }
 
-    // Then, evaluate the answer with AI
     setIsEvaluatingCheckpoint(true);
     try {
       const evaluation = await evaluateCheckpointAnswer(step, answer);
@@ -306,22 +306,19 @@ const TrainingPage: React.FC = () => {
         addToast('success', 'Checkpoint Passed', 'Great! Moving to the next step.');
         setTimeout(() => markStep('done'), 1500);
       } else {
-        addToast('info', 'Reviewing Step', 'Take another look at the instructions.');
-        handleSeekTo(step.start);
+        addToast('info', 'Noted. Moving on.', 'Let\'s proceed to the next step.');
+        // Advance to the next step regardless of the answer. The "no" is logged for analytics.
+        setTimeout(() => markStep('done'), 1500);
       }
     } catch (err) {
       console.error("Error evaluating checkpoint with AI", err);
-      addToast('error', 'Evaluation Error', 'Could not get AI feedback. Please try again.');
-      // Fallback to simple logic if AI fails
-      if (answer.toLowerCase() === 'yes') {
-        markStep('done');
-      } else {
-        handleSeekTo(step.start);
-      }
+      addToast('error', 'Evaluation Error', 'Could not get AI feedback. Moving on.');
+      // If AI evaluation fails, just advance to the next step to not block the user.
+      markStep('done');
     } finally {
       setIsEvaluatingCheckpoint(false);
     }
-  }, [currentStepIndex, steps, addToast, markStep, handleSeekTo, user, moduleId]);
+  }, [currentStepIndex, steps, addToast, markStep, user, moduleId]);
 
   const handleSuggestionSubmit = async () => {
     if (!moduleId || !instructionSuggestion) return;
