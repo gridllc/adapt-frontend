@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -48,7 +46,8 @@ const TrainingPage: React.FC = () => {
 
   const [currentTime, setCurrentTime] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>('steps');
-  const [aiContext, setAiContext] = useState('');
+  const [stepsContext, setStepsContext] = useState('');
+  const [fullTranscript, setFullTranscript] = useState('');
   const [sessionToken, setSessionToken] = useState('');
   const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -86,6 +85,7 @@ const TrainingPage: React.FC = () => {
   });
 
   const steps = (moduleData?.steps as ProcessStep[]) || [];
+  const transcript = (moduleData?.transcript as TranscriptLine[]) || [];
 
   const {
     currentStepIndex,
@@ -112,19 +112,23 @@ const TrainingPage: React.FC = () => {
     }
   }, [isError, moduleData, moduleId, navigate, error]);
 
-  // Generate a focused AI context based on the current step
+  // Generate focused AI contexts based on the current step and transcript
   useEffect(() => {
-    if (!moduleData || currentStepIndex < 0 || isCompleted) return;
+    if (!moduleData || currentStepIndex < 0 || isCompleted) {
+      setStepsContext('');
+      setFullTranscript('');
+      return;
+    };
 
     const { title } = moduleData;
 
-    // Context window: previous, current, and next step
+    // 1. Create context from the process steps (previous, current, next)
     const prevStep = steps[currentStepIndex - 1];
     const currentStep = steps[currentStepIndex];
     const nextStep = steps[currentStepIndex + 1];
 
-    let context = `Module: ${title}\n`;
-    context += `The trainee is on step ${currentStepIndex + 1} of ${steps.length}.\n\n--- RELEVANT STEPS ---\n`;
+    let stepCtx = `Module: ${title}\n`;
+    stepCtx += `The trainee is on step ${currentStepIndex + 1} of ${steps.length}.\n\n--- RELEVANT STEPS ---\n`;
 
     const formatStep = (step: ProcessStep | undefined, label: string) => {
       if (!step) return '';
@@ -134,13 +138,21 @@ const TrainingPage: React.FC = () => {
       return stepStr + '\n';
     }
 
-    context += formatStep(prevStep, "Previous");
-    context += formatStep(currentStep, "Current");
-    context += formatStep(nextStep, "Next");
+    stepCtx += formatStep(prevStep, "Previous");
+    stepCtx += formatStep(currentStep, "Current");
+    stepCtx += formatStep(nextStep, "Next");
 
-    setAiContext(context.trim());
+    setStepsContext(stepCtx.trim());
 
-  }, [currentStepIndex, moduleData, isCompleted, steps]);
+    // 2. Create context from the full video transcript
+    if (transcript && transcript.length > 0) {
+      const transcriptText = transcript.map(line => `[${line.start.toFixed(2)}] ${line.text}`).join('\n');
+      setFullTranscript(transcriptText);
+    } else {
+      setFullTranscript('');
+    }
+
+  }, [currentStepIndex, moduleData, isCompleted, steps, transcript]);
 
   // Effect to generate performance report upon completion
   useEffect(() => {
@@ -275,9 +287,6 @@ const TrainingPage: React.FC = () => {
     return <div className="flex items-center justify-center h-screen">Module not found.</div>
   }
 
-  const transcript = (moduleData.transcript as TranscriptLine[]) || [];
-
-
   return (
     <>
       <header className="bg-white/80 dark:bg-slate-800/50 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 p-4 sticky top-0 z-20 flex justify-between items-center">
@@ -392,7 +401,8 @@ const TrainingPage: React.FC = () => {
           <ChatTutor
             moduleId={moduleId}
             sessionToken={sessionToken}
-            transcriptContext={aiContext}
+            stepsContext={stepsContext}
+            fullTranscript={fullTranscript}
             onTimestampClick={handleSeekTo}
             currentStepIndex={currentStepIndex}
             steps={steps}

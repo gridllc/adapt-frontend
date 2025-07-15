@@ -1,449 +1,292 @@
+import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
+import type { File as AiFile } from "@google/genai";
+import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine } from "@/types";
 
+// --- Custom Return Types for Decoupling ---
 
+export interface GeneratedModuleData {
+    slug: string;
+    title: string;
+    steps: ProcessStep[];
+    transcript?: TranscriptLine[];
+}
 
+export interface TranscriptAnalysis {
+    transcript: TranscriptLine[];
+    confidence: number;
+    uncertainWords: string[];
+}
 
-
-import { GoogleGenAI, Chat, Content, Type, File } from "@google/genai";
-import type { ProcessStep, VideoAnalysisResult, ChatMessage, RefinementSuggestion, CheckpointEvaluation } from "@/types";
 
 // --- AI Client Initialization ---
 
-// The client is cached to avoid re-initialization on every call.
 let cachedClient: GoogleGenAI | null = null;
 
-/**
- * Lazily initializes and returns the GoogleGenAI client instance.
- * It uses the API key from the execution environment.
- * 
- * @throws {Error} If no API key is found in the environment.
- * @returns {GoogleGenAI} The initialized Gemini AI client.
- */
 function getAiClient(): GoogleGenAI {
     if (cachedClient) {
         return cachedClient;
     }
-
-    // Per the coding guidelines, the API key MUST be obtained from `process.env.API_KEY`.
-    // The execution environment is expected to provide this variable.
     const apiKey = process.env.API_KEY;
-
     if (!apiKey) {
-        throw new Error(
-            "AI features are unavailable. The required API key is missing from the environment."
-        );
+        throw new Error("AI features are unavailable. The required API key is missing from the environment.");
     }
-
-    // Create and cache the new client.
     cachedClient = new GoogleGenAI({ apiKey });
     return cachedClient;
 }
 
-// --- Centralized System Instructions ---
+// --- Schemas for AI Response Validation ---
 
-const INSTRUCTIONAL_DESIGNER_BASE = `You are an expert instructional designer. Your task is to analyze the provided text describing a process and convert it into a structured training module. Your output must ONLY be based on the text provided. Do not invent or infer any steps or details not present in the input. Create a main title for the module and break the process down into logical, sequential steps. For each step, create a short, action-oriented title and a clear description. Where appropriate, also generate a 'checkpoint' question to test understanding, and any 'alternativeMethods' that might be relevant (like a pro-tip or shortcut). Ensure the final output is a valid JSON object adhering to the provided schema.`;
-
-const REFINEMENT_DESIGNER_BASE = `You are an expert instructional designer tasked with improving a training module.
-    You will be given a step from the module and a list of questions that real trainees have asked about it.
-    Your job is to rewrite the step's description to be clearer and to proactively answer the questions.
-    If appropriate, also suggest a new 'alternative method' (like a pro-tip or shortcut).
-    You MUST respond in valid JSON format.`;
-
-function getChatTutorSystemInstruction(processContext: string): string {
-    return `You are the Adapt AI Tutor, an expert teaching assistant. Your single most important goal is to teach a trainee the specific process designed by their company's owner.
-
-The 'PROCESS STEPS' provided below are your **single source of truth**. You must treat this material as the official training manual.
-
-**Your Core Directives:**
-1.  **Prioritize Provided Context:** Always base your answers on the provided 'PROCESS STEPS'. When asked a question (e.g., "what's next?", "how much cheese?"), find the relevant step and explain it using only the owner's instructions.
-2.  **Handle Out-of-Scope Questions:** If a trainee asks a question that absolutely cannot be answered from the 'PROCESS STEPS' (e.g., "what is the history of sourdough bread?"), you may use Google Search. However, you MUST first state: "That information isn't in this specific training, but here is what I found online:" before providing the answer. When using search, you will be provided citation metadata that you must include.
-3.  **Use Timestamps:** If a user's question relates to a specific part of the video, suggest they review it by including a timestamp in your answer in the format [HH:MM:SS] or [MM:SS].
-4.  **Suggest Improvements Correctly:** If a trainee's question implies they are looking for a better or faster way to do something, you may suggest a new method. You MUST format this suggestion clearly by wrapping it in special tags: [SUGGESTION]Your suggestion here.[/SUGGESTION]. Do not present suggestions as official process.
-
---- PROCESS STEPS (Source of Truth) ---
-${processContext}
---- END PROCESS STEPS ---
-`;
-}
-
-export const startChat = (processContext: string, history: Content[] = []): Chat => {
-    const client = getAiClient();
-    const systemInstruction = getChatTutorSystemInstruction(processContext);
-
-    const chat = client.chats.create({
-        model: 'gemini-2.5-flash',
-        config: {
-            systemInstruction: systemInstruction,
-            tools: [{ googleSearch: {} }],
-        },
-        history: history,
-    });
-
-    return chat;
-};
-
-/**
- * Simulates a call to a fallback provider if the primary one fails.
- * This version prunes the history to the last 20 messages to avoid context overload.
- * @param prompt The user's latest prompt.
- * @param history The existing chat history to provide context.
- * @param processContext The process steps to include in the system instruction.
- * @returns The text of the fallback response.
- */
-export const getFallbackResponse = async (prompt: string, history: ChatMessage[], processContext: string): Promise<string> => {
-    console.log("Attempting fallback AI provider...");
-    const client = getAiClient();
-    const systemInstruction = getChatTutorSystemInstruction(processContext);
-
-    // Prune history to the last 20 messages to avoid overly large contexts.
-    const recentHistory = history.slice(-20);
-
-    // Convert ChatMessage[] to Content[]
-    const geminiHistory: Content[] = recentHistory.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.text }]
-    }));
-
-    // Add the current prompt to the history for the one-off call
-    const contents = [...geminiHistory, { role: 'user', parts: [{ text: prompt }] }];
-
-    try {
-        const result = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents,
-            config: { systemInstruction },
-        });
-        const text = result.text;
-        if (!text) {
-            throw new Error("Fallback AI provider returned an empty response.");
-        }
-        return text;
-    } catch (error) {
-        console.error("Fallback AI provider also failed:", error);
-        throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");
-    }
-};
-
-
-const moduleSchema = {
+const transcriptWithConfidenceSchema = {
     type: Type.OBJECT,
     properties: {
-        slug: {
-            type: Type.STRING,
-            description: "A URL-friendly slug for the module, based on the title (e.g., 'how-to-make-sandwich')."
+        overallConfidence: {
+            type: Type.NUMBER,
+            description: "A score from 0.0 to 1.0 representing your confidence in the transcription's accuracy based on audio clarity. 1.0 is perfect, 0.0 is unintelligible."
         },
-        title: {
-            type: Type.STRING,
-            description: "A concise, descriptive title for the overall process."
+        uncertainWords: {
+            type: Type.ARRAY,
+            description: "An array of specific words or short phrases from the transcript that you are uncertain about due to mumbling, background noise, or ambiguity.",
+            items: { type: Type.STRING }
         },
+        transcript: {
+            type: Type.ARRAY,
+            description: "A full, line-by-line transcript of the video.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    start: { type: Type.NUMBER, description: "Start time of the speech segment in seconds." },
+                    end: { type: Type.NUMBER, description: "End time of the speech segment in seconds." },
+                    text: { type: Type.STRING, description: "The transcribed text for this segment, with filler words like 'um' or 'uh' removed." },
+                },
+                required: ["start", "end", "text"]
+            }
+        }
+    },
+    required: ["overallConfidence", "uncertainWords", "transcript"]
+};
+
+const moduleFromTextSchema = {
+    type: Type.OBJECT,
+    properties: {
+        slug: { type: Type.STRING, description: "A URL-friendly slug for the module, based on the title (e.g., 'how-to-boil-water')." },
+        title: { type: Type.STRING, description: "A concise, descriptive title for the overall process." },
         steps: {
             type: Type.ARRAY,
             description: "A list of the sequential steps in the process.",
             items: {
                 type: Type.OBJECT,
                 properties: {
-                    title: {
-                        type: Type.STRING,
-                        description: "A short, action-oriented title for the step (e.g., 'Toast the Bread')."
-                    },
-                    description: {
-                        type: Type.STRING,
-                        description: "A detailed explanation of how to perform this step."
-                    },
-                    checkpoint: {
-                        type: Type.STRING,
-                        description: "A question to verify the trainee's understanding of this step. Should be null if not applicable."
-                    },
+                    start: { type: Type.NUMBER, description: "The start time of this step in seconds. Set to 0 as a placeholder." },
+                    end: { type: Type.NUMBER, description: "The end time of this step in seconds. Set to 0 as a placeholder." },
+                    title: { type: Type.STRING, description: "A short, action-oriented title for the step (e.g., 'Toast the Bread')." },
+                    description: { type: Type.STRING, description: "A detailed explanation of how to perform this step." },
+                    checkpoint: { type: Type.STRING, nullable: true, description: "A question to verify the trainee's understanding of this step. Should be null if not applicable." },
                     alternativeMethods: {
                         type: Type.ARRAY,
-                        description: "Optional alternative ways to perform the step, like an expert tip or shortcut. Should be an empty array if not applicable.",
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                title: { type: Type.STRING },
-                                description: { type: Type.STRING }
-                            },
-                            required: ["title", "description"]
-                        }
+                        description: "Optional alternative ways to perform the step. Should be an empty array if not applicable.",
+                        items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING } }, required: ["title", "description"] }
                     }
                 },
-                required: ["title", "description"]
+                required: ["start", "end", "title", "description", "checkpoint", "alternativeMethods"]
             }
-        }
+        },
     },
     required: ["slug", "title", "steps"]
 };
 
-export const createModuleFromText = async (processText: string) => {
-    const client = getAiClient();
-    let jsonText: string | undefined;
 
-    try {
-        const result = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: processText,
-            config: {
-                systemInstruction: INSTRUCTIONAL_DESIGNER_BASE,
-                responseMimeType: "application/json",
-                responseSchema: moduleSchema,
-            },
-        });
+// --- Internal File Handling Helper ---
+const _uploadAndPollFile = async (videoFile: globalThis.File, client: GoogleGenAI): Promise<AiFile> => {
+    console.log(`[AI Service] Uploading video "${videoFile.name}"...`);
+    const uploadedFile = await client.files.upload({ file: videoFile });
 
-        jsonText = result.text?.trim();
-        if (!jsonText) {
-            throw new Error("The AI returned an empty response.");
-        }
-        const generatedData = JSON.parse(jsonText);
-
-        // Initialize the module with default values for fields not generated by the AI
-        return {
-            ...generatedData,
-            video_url: '',
-            steps: generatedData.steps.map((step: any) => ({
-                ...step,
-                start: 0,
-                end: 0,
-                checkpoint: step.checkpoint || null,
-                alternativeMethods: step.alternativeMethods || [],
-            })),
-            transcript: []
-        };
-
-    } catch (error) {
-        console.error("Error generating module with Gemini:", error);
-        if (error instanceof SyntaxError) {
-            // For debugging, log the malformed response that caused the parse error.
-            console.error("Malformed JSON response from AI:", jsonText);
-            throw new Error("Failed to generate module. The AI returned invalid JSON. Please try again.");
-        }
-        throw new Error("Failed to generate training module. The AI couldn't understand the process. Please try rewriting it.");
-    }
-};
-
-export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: string): Promise<CheckpointEvaluation> => {
-    const client = getAiClient();
-    const systemInstruction = `You are a helpful and strict training evaluator. Your task is to determine if a user's answer to a checkpoint question is correct based ONLY on the provided step description. You must respond in JSON format.`;
-
-    const prompt = `
-        **Process Step Description (Source of Truth):**
-        "${step.description}"
-
-        **Checkpoint Question:**
-        "${step.checkpoint}"
-
-        **User's Answer:**
-        "${userAnswer}"
-
-        **Your Task:**
-        Evaluate if the user's answer is correct based on the description.
-        - If the answer is definitively correct, set isCorrect to true and provide brief, positive feedback.
-        - If the answer is incorrect, or if the description doesn't contain enough information to judge, set isCorrect to false and provide a gentle, helpful correction that guides the user to the right answer using the description.
-    `;
-
-    const evaluationSchema = {
-        type: Type.OBJECT,
-        properties: {
-            isCorrect: {
-                type: Type.BOOLEAN,
-                description: "True if the user's answer is correct, otherwise false.",
-            },
-            feedback: {
-                type: Type.STRING,
-                description: "A brief, helpful feedback message for the user.",
-            },
-        },
-        required: ["isCorrect", "feedback"],
-    };
-
-    try {
-        const result = await client.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: evaluationSchema,
-            },
-        });
-
-        const jsonText = result.text?.trim();
-        if (!jsonText) {
-            throw new Error("AI evaluation returned an empty response.");
-        }
-
-        return JSON.parse(jsonText) as CheckpointEvaluation;
-
-    } catch (error) {
-        console.error("Error evaluating checkpoint:", error);
-        if (error instanceof SyntaxError) {
-            throw new Error("The AI returned an invalid response. Please try again.");
-        }
-        throw new Error("An error occurred during checkpoint evaluation.");
-    }
-};
-
-const pollFileState = async (file: File, client: GoogleGenAI): Promise<void> => {
-    const MAX_POLLS = 15;
+    const MAX_POLLS = 20;
     const POLL_INTERVAL_MS = 2000;
-
     let pollCount = 0;
+
     while (pollCount < MAX_POLLS) {
-        if (file.state === 'ACTIVE') {
-            return;
+        console.log(`[AI Service] Polling for active video state (${pollCount + 1}/${MAX_POLLS})... Current state: ${uploadedFile.state}`);
+        if (uploadedFile.state === 'ACTIVE') {
+            console.log("[AI Service] Video is active and ready for analysis.");
+            return uploadedFile;
         }
-        if (file.state === 'FAILED') {
-            throw new Error(`Video processing failed. State: ${file.state}. Error: ${file.error?.message}`);
+        if (uploadedFile.state === 'FAILED') {
+            throw new Error(`Video processing failed. State: ${uploadedFile.state}. Error: ${uploadedFile.error?.message}`);
         }
+
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-        // Re-fetch the file to get the updated state
+
         try {
-            file = await client.files.get({ name: file.name });
+            const freshFile = await client.files.get({ name: uploadedFile.name });
+            uploadedFile.state = freshFile.state;
+            uploadedFile.error = freshFile.error;
         } catch (e) {
             throw new Error(`Could not check video processing status: ${(e as Error).message}`);
         }
         pollCount++;
     }
-
     throw new Error(`Video processing timed out after ${POLL_INTERVAL_MS * MAX_POLLS / 1000}s.`);
+}
+
+
+// --- Module Creation Services ---
+
+export const uploadVideo = async (videoFile: globalThis.File): Promise<AiFile> => {
+    const client = getAiClient();
+    return await _uploadAndPollFile(videoFile, client);
 };
 
-export const analyzeVideoContent = async (
-    videoFile: globalThis.File,
-    steps: ProcessStep[]
-): Promise<VideoAnalysisResult> => {
+export const getTranscriptWithConfidence = async (uploadedFile: AiFile): Promise<TranscriptAnalysis> => {
     const client = getAiClient();
-
-    console.log("Uploading video to AI for analysis...");
-    const uploadedFile = await client.files.upload({
-        file: videoFile,
-    });
+    console.log("[AI Service] Generating transcript with confidence from video...");
+    const videoFilePart = { fileData: { mimeType: uploadedFile.mimeType, fileUri: uploadedFile.uri } };
+    const prompt = `You are an expert transcriber with a confidence scoring system. Analyze this video and return a JSON object containing:
+1.  'transcript': A full, clean, line-by-line transcript.
+2.  'overallConfidence': A score from 0.0 to 1.0 indicating how clear the audio was and how confident you are in the transcription.
+3.  'uncertainWords': An array of words or short phrases you were unsure about.
+The output MUST be a single, valid JSON object adhering to the provided schema.`;
 
     try {
-        console.log("Polling for active video state...");
-        await pollFileState(uploadedFile, client);
-        console.log("Video is active. Starting parallel analysis.");
-
-        const videoFilePart = {
-            fileData: {
-                mimeType: uploadedFile.mimeType,
-                fileUri: uploadedFile.uri,
+        const result = await client.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }, videoFilePart] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: transcriptWithConfidenceSchema,
             },
+        });
+        const jsonText = result.text?.trim();
+        if (!jsonText) {
+            console.warn("[AI Service] Transcript generation returned empty response. This may be normal for silent videos.");
+            return { transcript: [], confidence: 0, uncertainWords: [] };
+        }
+        console.log("[AI Service] Parsing generated transcript...");
+        const parsed = JSON.parse(jsonText);
+        return {
+            transcript: parsed.transcript || [],
+            confidence: parsed.overallConfidence ?? 0.5,
+            uncertainWords: parsed.uncertainWords || []
         };
+    } catch (error) {
+        console.error("[AI Service] Error generating transcript:", error);
+        if (error instanceof SyntaxError) throw new Error("The AI returned invalid JSON for the transcript.");
+        throw error;
+    }
+};
 
-        const timestampsPrompt = `
-            You are analyzing a training video to find when each process step occurs.
-            
-            Process steps to locate:
-            ${steps.map((s, i) => `${i + 1}. ${s.title}: ${s.description}`).join('\n')}
+export const generateModuleFromContext = async (context: {
+    title: string;
+    transcript: string;
+    notes?: string;
+    confidence: number;
+}): Promise<GeneratedModuleData> => {
+    const client = getAiClient();
+    console.log("[AI Service] Generating module from context...");
 
-            Watch the video and identify the exact start and end times (in seconds) for each step.
-            Base your timing on when the speaker begins and ends explaining each step.
-            
-            IMPORTANT: Return exactly ${steps.length} timing objects, one for each step in order.
-            
-            Output format: JSON array of objects with "start" and "end" properties (numbers in seconds).
-        `;
+    const structuredPrompt = {
+        instruction: "Analyze the provided transcript and context to generate a structured training module with a title, slug, and numbered, timestamped steps. The steps should be based on the content of the transcript.",
+        process_title: context.title,
+        transcript: context.transcript,
+        transcript_confidence: context.confidence,
+        additional_context: context.notes || "No additional notes provided.",
+        output_format: {
+            steps: "A numbered list, where each step has a title, detailed description, an optional checkpoint question, and optional alternative methods.",
+            tone: "instructional, clear, concise"
+        }
+    };
 
-        const transcriptPrompt = `
-            Your task is to perform a verbatim transcription of a video. Follow these rules with absolute precision:
-
-            1.  **Literal Transcription:** Transcribe every single word exactly as it is spoken. This includes all repetitions, self-corrections, and conversational words (e.g., "like", "you know", "so", "well").
-            2.  **Do Not Sanitize:** Do NOT remove filler words like "um", "uh", or "ah". Do NOT correct grammar. Do NOT paraphrase or summarize. Your output must be a raw, unfiltered account of the speech.
-            3.  **No AI Additions:** Do not add any text, punctuation, or formatting that was not explicitly spoken.
-            4.  **Audio Quality:** The audio quality may be imperfect. Transcribe all audible speech to the best of your ability.
-
-            For example:
-            - Spoken: "So, okay, I, uh, I think you should, like, grab the... grab the red one."
-            - ✅ CORRECT transcription: "So, okay, I, uh, I think you should, like, grab the... grab the red one."
-            - ❌ INCORRECT transcription: "Grab the red one."
-
-            Output format MUST be a valid JSON array of objects: { start: number, end: number, text: string } where start and end are in seconds.
-        `;
-
-        const timestampSchema = {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    start: { type: Type.NUMBER },
-                    end: { type: Type.NUMBER },
-                },
-                required: ["start", "end"]
-            }
-        };
-
-        const transcriptSchema = {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    start: { type: Type.NUMBER, description: "Start time of the line in seconds." },
-                    end: { type: Type.NUMBER, description: "End time of the line in seconds." },
-                    text: { type: Type.STRING, description: "The transcribed text for this segment." },
-                },
-                required: ["start", "end", "text"]
-            }
-        };
-
-        const timestampPromise = client.models.generateContent({
+    try {
+        const result = await client.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: timestampsPrompt }, videoFilePart] },
+            contents: JSON.stringify(structuredPrompt),
             config: {
                 responseMimeType: "application/json",
-                responseSchema: timestampSchema
-            }
+                responseSchema: moduleFromTextSchema,
+            },
         });
 
-        const transcriptPromise = client.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [{ text: transcriptPrompt }, videoFilePart] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: transcriptSchema
-            }
-        });
-
-        const [timestampResponse, transcriptResponse] = await Promise.all([timestampPromise, transcriptPromise]);
-
-        console.log("Analysis calls completed.");
-
-        const timestamps = JSON.parse(timestampResponse.text);
-        const rawTranscript = JSON.parse(transcriptResponse.text);
-
-        if (!timestamps || !Array.isArray(timestamps)) {
-            throw new Error("Invalid timestamp data received from AI. The response was not an array.");
-        }
-        if (!rawTranscript || !Array.isArray(rawTranscript)) {
-            throw new Error("Invalid transcript data received from AI. The response was not an array.");
+        const jsonText = result.text?.trim();
+        if (!jsonText) {
+            console.error("[AI Service] AI response for module generation was empty.");
+            throw new Error("The AI returned an empty response. The input text may have been too short or unclear.");
         }
 
-        if (timestamps.length !== steps.length) {
-            console.warn(`Timestamp mismatch: AI returned ${timestamps.length} timestamps but module has ${steps.length} steps. The results may be inaccurate.`);
-        }
-
-        if (rawTranscript.length === 0) {
-            console.warn("AI returned an empty transcript. This may indicate audio issues or model failure.");
-        }
-
-        // This improved regex is more precise to avoid matching parts of real words.
-        const fillerWordRegex = /\b(?:u+m+|e+r+|a+h+)\b/gi;
-
-        const transcript = rawTranscript.map((line: { text: string; }) => ({
-            ...line,
-            // Remove filler words and clean up any resulting extra whitespace.
-            text: line.text.replace(fillerWordRegex, '').replace(/\s\s+/g, ' ').trim()
-        }));
-
-        return { timestamps, transcript };
+        console.log("[AI Service] Parsing generated JSON from text...");
+        return JSON.parse(jsonText) as GeneratedModuleData;
 
     } catch (error) {
-        console.error("Error during video content analysis:", error);
+        console.error("[AI Service] Error generating module from context:", error);
         if (error instanceof SyntaxError) {
             throw new Error("The AI returned invalid JSON. Please check the model or prompt.");
         }
         throw error;
-    } finally {
-        console.log("Cleaning up uploaded video file...");
+    }
+};
+
+export const deleteUploadedVideo = async (uploadedFile: AiFile): Promise<void> => {
+    console.log(`[AI Service] Cleaning up uploaded video file: ${uploadedFile.name}`);
+    const client = getAiClient();
+    try {
         await client.files.delete({ name: uploadedFile.name });
+        console.log("[AI Service] Cleanup successful.");
+    } catch (err) {
+        console.error("[AI Service] Failed to clean up file:", err);
+    }
+};
+
+
+// --- Chat & Tutoring Services ---
+
+function getChatTutorSystemInstruction(stepsContext: string, fullTranscript?: string): string {
+    const transcriptSection = fullTranscript?.trim()
+        ? `--- FULL VIDEO TRANSCRIPT (For additional context) ---\n${fullTranscript}\n--- END FULL VIDEO TRANSCRIPT ---`
+        : "A video transcript was not available for this module.";
+
+    return `You are the Adapt AI Tutor, an expert teaching assistant. Your single most important goal is to teach a trainee the specific process designed by their company's owner.
+
+Your instructions are provided in the 'PROCESS STEPS' document below. This is your primary source of truth.
+
+A 'FULL VIDEO TRANSCRIPT' may also be provided for additional context.
+
+**Your Core Directives:**
+1.  **Prioritize Process Steps:** Always base your answers on the 'PROCESS STEPS'. When asked a question (e.g., "what's next?"), find the relevant step and explain it using only the owner's instructions from that document.
+2.  **Use Transcript for Context:** Use the 'FULL VIDEO TRANSCRIPT' only to answer questions about something the speaker said that isn't in the step descriptions.
+3.  **Handle Out-of-Scope Questions:** If a question cannot be answered from the provided materials, you may use Google Search. You MUST first state: "That information isn't in this specific training, but here is what I found online:" before providing the answer.
+4.  **Use Timestamps:** When referencing the transcript, include the relevant timestamp in your answer in the format [HH:MM:SS] or [MM:SS].
+5.  **Suggest Improvements Correctly:** If a trainee's question implies they are looking for a better or faster way to do something, you may suggest a new method. You MUST format this suggestion clearly by wrapping it in special tags: [SUGGESTION]Your suggestion here.[/SUGGESTION]. Do not present suggestions as official process.
+
+--- PROCESS STEPS (Source of Truth) ---
+${stepsContext}
+--- END PROCESS STEPS ---
+
+${transcriptSection}
+`;
+}
+
+export const startChat = (stepsContext: string, fullTranscript?: string, history: Content[] = []): Chat => {
+    const client = getAiClient();
+    const systemInstruction = getChatTutorSystemInstruction(stepsContext, fullTranscript);
+    return client.chats.create({
+        model: 'gemini-2.5-flash',
+        config: { systemInstruction, tools: [{ googleSearch: {} }] },
+        history,
+    });
+};
+
+export const getFallbackResponse = async (prompt: string, history: ChatMessage[], stepsContext: string, fullTranscript: string): Promise<string> => {
+    console.log("[AI Service] Attempting fallback AI provider...");
+    const client = getAiClient();
+    const systemInstruction = getChatTutorSystemInstruction(stepsContext, fullTranscript);
+    const geminiHistory: Content[] = history.slice(-20).map(msg => ({ role: msg.role, parts: [{ text: msg.text }] }));
+    const contents = [...geminiHistory, { role: 'user', parts: [{ text: prompt }] }];
+
+    try {
+        const result = await client.models.generateContent({ model: 'gemini-2.5-flash', contents, config: { systemInstruction } });
+        if (!result.text) throw new Error("Fallback AI provider returned an empty response.");
+        return result.text;
+    } catch (error) {
+        console.error("[AI Service] Fallback AI provider also failed:", error);
+        throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");
     }
 };
 
@@ -453,65 +296,71 @@ export const generateImage = async (prompt: string): Promise<string> => {
         const response = await client.models.generateImages({
             model: 'imagen-3.0-generate-002',
             prompt: `A clean, simple, minimalist, black-and-white technical line drawing of: ${prompt}. The diagram should be on a plain white background.`,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/png',
-                aspectRatio: '1:1',
-            },
+            config: { numberOfImages: 1, outputMimeType: 'image/png', aspectRatio: '1:1' },
         });
 
-        if (!response.generatedImages || response.generatedImages.length === 0) {
-            throw new Error("The AI did not return an image.");
-        }
-        const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-        return `data:image/png;base64,${base64ImageBytes}`;
+        if (!response.generatedImages?.[0]?.image.imageBytes) throw new Error("The AI did not return an image.");
+        return `data:image/png;base64,${response.generatedImages[0].image.imageBytes}`;
     } catch (error) {
-        console.error("Error generating image:", error);
+        console.error("[AI Service] Error generating image:", error);
         throw new Error("Failed to generate the image. The model may be unavailable or the prompt was blocked.");
     }
 }
 
+// --- Evaluation and Refinement Services ---
 
-export const generateRefinementSuggestion = async (
-    step: ProcessStep,
-    questions: string[]
-): Promise<RefinementSuggestion> => {
+export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: string): Promise<CheckpointEvaluation> => {
     const client = getAiClient();
-
+    const systemInstruction = `You are a helpful and strict training evaluator. Your task is to determine if a user's answer to a checkpoint question is correct based ONLY on the provided step description. You must respond in JSON format.`;
     const prompt = `
-        **Current Step Title:**
-        "${step.title}"
+        **Process Step Description (Source of Truth):** "${step.description}"
+        **Checkpoint Question:** "${step.checkpoint}"
+        **User's Answer:** "${userAnswer}"
+        **Your Task:** Evaluate if the user's answer is correct. If yes, set isCorrect to true and provide brief, positive feedback. If no, set isCorrect to false and provide a gentle correction guiding them to the right answer.`;
 
-        **Current Step Description:**
-        "${step.description}"
+    const evaluationSchema = {
+        type: Type.OBJECT,
+        properties: {
+            isCorrect: { type: Type.BOOLEAN },
+            feedback: { type: Type.STRING },
+        },
+        required: ["isCorrect", "feedback"],
+    };
 
-        **Current Alternative Methods:**
-        ${JSON.stringify(step.alternativeMethods)}
+    try {
+        const result = await client.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { systemInstruction, responseMimeType: "application/json", responseSchema: evaluationSchema },
+        });
+        if (!result.text) throw new Error("AI evaluation returned an empty response.");
+        return JSON.parse(result.text) as CheckpointEvaluation;
+    } catch (error) {
+        console.error("[AI Service] Error evaluating checkpoint:", error);
+        throw new Error("An error occurred during checkpoint evaluation.");
+    }
+};
 
-        **Trainee Questions (Points of Confusion):**
-        - ${questions.join('\n- ')}
-
+export const generateRefinementSuggestion = async (step: ProcessStep, questions: string[]): Promise<RefinementSuggestion> => {
+    const client = getAiClient();
+    const systemInstruction = `You are an expert instructional designer tasked with improving a training module. You will be given a step and questions trainees have asked. Your job is to rewrite the step's description to be clearer and to proactively answer the questions. If appropriate, also suggest a new 'alternative method'. You MUST respond in valid JSON format.`;
+    const prompt = `
+        **Current Step Title:** "${step.title}"
+        **Current Step Description:** "${step.description}"
+        **Current Alternative Methods:** ${JSON.stringify(step.alternativeMethods)}
+        **Trainee Questions (Points of Confusion):**\n- ${questions.join('\n- ')}
         **Your Task:**
         1.  **Rewrite the description:** Create a 'newDescription' that is much clearer and directly addresses the trainee questions.
-        2.  **Suggest a new alternative method (optional):** If you can think of a good shortcut or pro-tip related to the questions, create a 'newAlternativeMethod' object with a title and description. If not, this should be null.
-    `;
+        2.  **Suggest a new alternative method (optional):** If you can think of a good shortcut or pro-tip, create a 'newAlternativeMethod' object. If not, this should be null.`;
 
     const refinementSchema = {
         type: Type.OBJECT,
         properties: {
-            newDescription: {
-                type: Type.STRING,
-                description: "The improved, clearer description for the process step.",
-            },
+            newDescription: { type: Type.STRING },
             newAlternativeMethod: {
-                type: Type.OBJECT,
-                nullable: true,
-                properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING }
-                },
+                type: Type.OBJECT, nullable: true,
+                properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
                 required: ["title", "description"],
-                description: "A new pro-tip or shortcut to add, or null if not applicable."
             }
         },
         required: ["newDescription", "newAlternativeMethod"],
@@ -521,71 +370,41 @@ export const generateRefinementSuggestion = async (
         const result = await client.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
-            config: {
-                systemInstruction: REFINEMENT_DESIGNER_BASE,
-                responseMimeType: "application/json",
-                responseSchema: refinementSchema,
-            },
+            config: { systemInstruction, responseMimeType: "application/json", responseSchema: refinementSchema },
         });
-        const jsonText = result.text?.trim();
-        if (!jsonText) throw new Error("AI returned empty refinement suggestion.");
-        return JSON.parse(jsonText);
+        if (!result.text) throw new Error("AI returned empty refinement suggestion.");
+        return JSON.parse(result.text);
     } catch (error) {
-        console.error("Error generating refinement suggestion:", error);
+        console.error("[AI Service] Error generating refinement suggestion:", error);
         throw new Error("Failed to get AI refinement suggestion.");
     }
 };
 
-export const generatePerformanceSummary = async (
-    moduleTitle: string,
-    unclearSteps: ProcessStep[],
-    userQuestions: string[]
-): Promise<{ summary: string }> => {
+export const generatePerformanceSummary = async (moduleTitle: string, unclearSteps: ProcessStep[], userQuestions: string[]): Promise<{ summary: string }> => {
     const client = getAiClient();
     const systemInstruction = "You are a friendly and encouraging AI coach. Your job is to provide positive, summarized feedback to a trainee who has just completed a module. Speak directly to the trainee. Keep the feedback concise (2-3 sentences).";
-
     let prompt = `The trainee just completed the "${moduleTitle}" module.`;
 
     if (unclearSteps.length === 0 && userQuestions.length === 0) {
         prompt += " They completed it without any issues or questions. Provide a brief, positive, congratulatory message."
     } else {
         prompt += " Here is a summary of the areas where they seemed to have some trouble. Based on this, provide a constructive and encouraging feedback message."
-        if (unclearSteps.length > 0) {
-            prompt += `\n- They marked the following steps as unclear: ${unclearSteps.map(s => `"${s.title}"`).join(', ')}.`;
-        }
-        if (userQuestions.length > 0) {
-            prompt += `\n- They asked the following questions: ${userQuestions.map(q => `"${q}"`).join(', ')}.`;
-        }
+        if (unclearSteps.length > 0) prompt += `\n- They marked these steps as unclear: ${unclearSteps.map(s => `"${s.title}"`).join(', ')}.`;
+        if (userQuestions.length > 0) prompt += `\n- They asked these questions: ${userQuestions.map(q => `"${q}"`).join(', ')}.`;
     }
 
-    const summarySchema = {
-        type: Type.OBJECT,
-        properties: {
-            summary: {
-                type: Type.STRING,
-                description: "The concise, friendly feedback message for the user."
-            }
-        },
-        required: ["summary"]
-    };
+    const summarySchema = { type: Type.OBJECT, properties: { summary: { type: Type.STRING } }, required: ["summary"] };
 
     try {
         const result = await client.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
-            config: {
-                systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: summarySchema,
-            },
+            config: { systemInstruction, responseMimeType: "application/json", responseSchema: summarySchema },
         });
-        const jsonText = result.text?.trim();
-        if (!jsonText) {
-            return { summary: "Great job completing the training!" };
-        }
-        return JSON.parse(jsonText);
+        if (!result.text) return { summary: "Great job completing the training!" };
+        return JSON.parse(result.text);
     } catch (error) {
-        console.error("Error generating performance summary:", error);
-        return { summary: "Congratulations on completing the training module!" }; // Fallback
+        console.error("[AI Service] Error generating performance summary:", error);
+        return { summary: "Congratulations on completing the training module!" };
     }
 };

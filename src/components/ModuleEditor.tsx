@@ -8,7 +8,6 @@ import type {
 import type { Database } from '@/types/supabase'
 import {
     XIcon,
-    SparklesIcon,
     LightbulbIcon,
     CheckCircleIcon
 } from '@/components/Icons'
@@ -24,9 +23,6 @@ interface ModuleEditorProps {
     suggestions?: Suggestion[]
     onAcceptSuggestion?: (suggestion: Suggestion) => void
     onRejectSuggestion?: (suggestionId: string) => void
-    onAnalyze?: () => void
-    isAnalyzing?: boolean
-    showAnalysisButton: boolean
 }
 
 const formatTime = (seconds: number): string => {
@@ -43,9 +39,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     suggestions = [],
     onAcceptSuggestion = () => { },
     onRejectSuggestion = () => { },
-    onAnalyze,
-    isAnalyzing = false,
-    showAnalysisButton
 }) => {
     const { addToast } = useToast()
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -178,7 +171,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl space-y-6 animate-fade-in-up">
-            {/* === Header: Title + Video URL + AI Button === */}
+            {/* === Header: Title + Video URL === */}
             <div className="grid gap-6 md:grid-cols-2">
                 <div>
                     <label className="block font-semibold mb-2">Module Title</label>
@@ -202,16 +195,6 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                         }
                         placeholder="Paste Supabase public URL here"
                     />
-                    {showAnalysisButton && onAnalyze && (
-                        <button
-                            onClick={onAnalyze}
-                            disabled={isAnalyzing}
-                            className="mt-3 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition"
-                        >
-                            <SparklesIcon className="h-5 w-5" />
-                            {isAnalyzing ? 'Analyzing...' : 'Set Timestamps with AI'}
-                        </button>
-                    )}
                     {/* Video Preview */}
                     {module.video_url && (
                         <div className="mt-4">

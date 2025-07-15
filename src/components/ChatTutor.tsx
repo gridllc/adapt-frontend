@@ -13,7 +13,8 @@ import type { Chat, Content, GroundingChunk } from '@google/genai';
 interface ChatTutorProps {
     moduleId: string;
     sessionToken: string;
-    transcriptContext: string;
+    stepsContext: string;
+    fullTranscript: string;
     onTimestampClick: (time: number) => void;
     currentStepIndex: number;
     steps: ProcessStep[];
@@ -31,7 +32,7 @@ const parseTimestamp = (text: string): number | null => {
     return null;
 };
 
-export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, transcriptContext, onTimestampClick, currentStepIndex, steps, onClose }) => {
+export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, stepsContext, fullTranscript, onTimestampClick, currentStepIndex, steps, onClose }) => {
     const queryClient = useQueryClient();
     const chatHistoryQueryKey = ['chatHistory', moduleId, sessionToken];
     const { addToast } = useToast();
@@ -67,7 +68,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
     }, [initialMessages]);
 
     useEffect(() => {
-        // Filter out image-only messages from history sent to Gemini
+        // This effect runs when the context changes (e.g., user moves to a new step).
+        // We re-initialize the chat with the new context and existing history.
+        if (!stepsContext) {
+            setError('Waiting for training context...');
+            return;
+        }
+        setError(null);
+
         const textBasedHistory = messages.filter(msg => msg.text.trim() !== '');
         const geminiHistory: Content[] = textBasedHistory.map(msg => ({
             role: msg.role,
@@ -75,7 +83,8 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         }));
 
         try {
-            chatRef.current = startChat(transcriptContext, geminiHistory);
+            // Pass both the step instructions and the full transcript to the AI.
+            chatRef.current = startChat(stepsContext, fullTranscript, geminiHistory);
         } catch (err) {
             console.error("Failed to initialize chat:", err);
             setError(err instanceof Error ? err.message : 'Could not start AI chat.');
@@ -84,7 +93,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         return () => {
             ttsService.cancel();
         }
-    }, [transcriptContext, messages]);
+    }, [stepsContext, fullTranscript, messages]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -187,7 +196,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
         } catch (err) {
             console.warn("Primary AI provider failed. Attempting fallback.", err);
             try {
-                const fallbackText = await getFallbackResponse(enrichedInput, messages, transcriptContext);
+                const fallbackText = await getFallbackResponse(enrichedInput, messages, stepsContext, fullTranscript);
                 finalModelText = fallbackText;
                 isFallback = true;
                 setMessages(prev =>
@@ -221,7 +230,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, tr
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
             }
         }
-    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, transcriptContext, messages, persistMessage, addToast, moduleId, sessionToken]);
+    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken]);
 
     const handleSuggestionSubmit = useCallback(async (suggestionText: string) => {
         try {
