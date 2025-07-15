@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -354,7 +355,7 @@ const TrainingPage: React.FC = () => {
       prompt = contextForAi;
     } else {
       // Default prompt if not a failed checkpoint scenario
-      prompt = `I have a question about this checkpoint: "${question}"`;
+      prompt = question;
     }
 
     setInitialChatPrompt(prompt);

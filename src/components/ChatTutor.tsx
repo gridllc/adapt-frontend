@@ -71,12 +71,6 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     }, [initialMessages]);
 
     useEffect(() => {
-        if (initialPrompt) {
-            setInput(initialPrompt);
-        }
-    }, [initialPrompt]);
-
-    useEffect(() => {
         // This effect runs when the context changes (e.g., user moves to a new step).
         // We re-initialize the chat with the new context and existing history.
         if (!stepsContext) {
@@ -118,13 +112,11 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         return prompt;
     }, [currentStepIndex, steps]);
 
-    const handleSendMessage = useCallback(async (e: React.FormEvent) => {
-        e.preventDefault();
-        const trimmedInput = input.trim();
+    const sendMessage = useCallback(async (promptText: string) => {
+        const trimmedInput = promptText.trim();
         if (!trimmedInput || isLoading || !chatRef.current) return;
 
         ttsService.cancel();
-        setInput('');
 
         // Handle image generation command
         if (trimmedInput.toLowerCase().startsWith('/draw ')) {
@@ -239,7 +231,22 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
             }
         }
-    }, [input, isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken]);
+    }, [isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken]);
+
+    const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
+        e.preventDefault();
+        const textToSend = input.trim();
+        if (!textToSend) return;
+        setInput(''); // Clear input after grabbing value
+        await sendMessage(textToSend);
+    }, [input, sendMessage]);
+
+    useEffect(() => {
+        if (initialPrompt) {
+            sendMessage(initialPrompt);
+        }
+    }, [initialPrompt, sendMessage]);
+
 
     const handleSuggestionSubmit = useCallback(async (suggestionText: string) => {
         try {
@@ -450,7 +457,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                             <BotIcon className="h-5 w-5 text-white" />
                         </div>
                         <div className="max-w-xs md:max-w-md break-words p-3 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none">
-                            <p className="text-base whitespace-pre-wrap">Hello! I’m your AI Tutor. I can help you troubleshoot this step or clarify anything unclear. Ask me about the current issue if you're stuck.</p>
+                            <p className="text-base whitespace-pre-wrap">Hello! I'm the Adapt AI Tutor. I can try to answer questions about the process.</p>
                         </div>
                     </div>
                 )}
@@ -518,7 +525,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 <div ref={messagesEndRef} />
             </div>
             <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
-                <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                <form onSubmit={handleFormSubmit} className="flex items-center gap-2">
                     <input
                         type="text"
                         value={input}
