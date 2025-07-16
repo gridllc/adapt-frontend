@@ -2,7 +2,9 @@
 // Using a central file like this makes it easy to manage and swap icons in the future.
 export {
   AlertTriangle as AlertTriangleIcon,
+  ArrowDown as ArrowDownIcon,
   ArrowLeft as ArrowLeftIcon,
+  ArrowUp as ArrowUpIcon,
   BarChart as BarChartIcon,
   BookOpen as BookOpenIcon,
   Bot as BotIcon,
@@ -24,6 +26,7 @@ export {
   Mic as MicIcon,
   Moon as MoonIcon,
   Pencil as PencilIcon,
+  PlayCircle as PlayCircleIcon,
   RefreshCw as RefreshCwIcon,
   Search as SearchIcon,
   Send as SendIcon,
@@ -31,7 +34,10 @@ export {
   Sparkles as SparklesIcon,
   Star as StarIcon,
   Sun as SunIcon,
+  ThumbsDown as ThumbsDownIcon,
+  ThumbsUp as ThumbsUpIcon,
   Trash2 as TrashIcon,
+  Trophy as TrophyIcon,
   UploadCloud as UploadCloudIcon,
   User as UserIcon,
   Video as VideoIcon,

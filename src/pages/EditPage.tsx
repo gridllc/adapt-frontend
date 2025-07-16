@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveModule, deleteModule } from '@/services/moduleService';
@@ -9,9 +10,10 @@ import { ModuleEditor } from '@/components/ModuleEditor';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import type { AlternativeMethod, TraineeSuggestion, ProcessStep, AiSuggestion } from '@/types';
 import type { Database } from '@/types/supabase';
-import { BookOpenIcon, TrashIcon } from '@/components/Icons';
+import { BookOpenIcon, TrashIcon, VideoIcon, AlertTriangleIcon, RefreshCwIcon, SparklesIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
+import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
 type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses']['Row'];
@@ -28,11 +30,16 @@ const EditPage: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const isAdmin = !!user;
+    const [initialFocusStepIndex, setInitialFocusStepIndex] = useState<number | undefined>();
+
+    // --- Refs and state for video player integration ---
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [currentTime, setCurrentTime] = useState(0);
 
     const {
         data: initialModuleData,
         isLoading,
-        isError,
+        isError: isModuleError,
         error: queryError
     } = useQuery<ModuleRow | undefined>({
         queryKey: ['module', moduleId],
@@ -41,6 +48,27 @@ const EditPage: React.FC = () => {
         staleTime: 1000 * 60 * 5, // 5 minutes,
         retry: false, // Don't retry on not found
     });
+
+    const videoPath = useMemo(() => {
+        if (!initialModuleData?.video_url) return null;
+        try {
+            const url = new URL(initialModuleData.video_url);
+            const BUCKET_NAME = 'training-videos';
+            const pathParts = url.pathname.split(`/${BUCKET_NAME}/`);
+            return pathParts[1] || null;
+        } catch (e) {
+            console.error("Could not parse video URL to get path:", initialModuleData.video_url);
+            return null;
+        }
+    }, [initialModuleData?.video_url]);
+
+    const {
+        videoUrl: publicVideoUrl,
+        isLoading: isLoadingVideo,
+        isError: isVideoError,
+        retry: retryVideoUrl,
+    } = useSafeVideoUrl(videoPath);
+
 
     const { data: traineeSuggestions = [] } = useQuery<TraineeSuggestion[]>({
         queryKey: ['traineeSuggestions', moduleId],
@@ -64,21 +92,33 @@ const EditPage: React.FC = () => {
     useEffect(() => {
         if (!moduleId) return;
 
-        const channel = supabase
+        const traineeChannel = supabase
             .channel(`suggestions-for-${moduleId}`)
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'suggestions', filter: `module_id=eq.${moduleId}` },
                 (payload) => {
-                    console.log('New suggestion received!', payload);
+                    console.log('New trainee suggestion received!', payload);
                     queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
-                    addToast('info', 'New Suggestion', 'A trainee has submitted a new suggestion for this module.');
+                    addToast('info', 'New Trainee Suggestion', 'A trainee has submitted a new suggestion for this module.');
                 }
-            )
-            .subscribe();
+            ).subscribe();
+
+        const aiChannel = supabase
+            .channel(`ai-suggestions-for-${moduleId}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'suggested_fixes', filter: `module_id=eq.${moduleId}` },
+                (payload) => {
+                    console.log('New AI suggestion received!', payload);
+                    queryClient.invalidateQueries({ queryKey: ['aiSuggestions', moduleId] });
+                    addToast('info', 'AI Suggestion Updated', 'A new AI-generated suggestion is available for this module.');
+                }
+            ).subscribe();
 
         return () => {
-            supabase.removeChannel(channel);
+            supabase.removeChannel(traineeChannel);
+            supabase.removeChannel(aiChannel);
         };
     }, [moduleId, queryClient, addToast]);
 
@@ -100,11 +140,12 @@ const EditPage: React.FC = () => {
 
             if (navigationState?.suggestion && typeof navigationState.stepIndex === 'number') {
                 const { suggestion, stepIndex } = navigationState;
-                const steps = moduleToEdit.steps as ProcessStep[];
+                const steps = (moduleToEdit.steps as ProcessStep[]) ?? [];
 
                 if (steps && steps[stepIndex]) {
                     steps[stepIndex] = { ...steps[stepIndex], description: suggestion };
                     moduleToEdit.steps = steps;
+                    setInitialFocusStepIndex(stepIndex);
 
                     addToast('info', 'Suggestion Applied', `AI fix pre-filled for Step ${stepIndex + 1}. Review and save changes.`);
 
@@ -119,16 +160,26 @@ const EditPage: React.FC = () => {
 
 
     useEffect(() => {
-        if (!isLoading && (isError || !initialModuleData)) {
+        if (!isLoading && (isModuleError || !initialModuleData)) {
             console.error(`Failed to load module for editing: ${moduleId}`, queryError);
             navigate('/not-found');
         }
-    }, [isLoading, isError, initialModuleData, moduleId, navigate, queryError]);
+    }, [isLoading, isModuleError, initialModuleData, moduleId, navigate, queryError]);
+
+    // --- Callback to seek video from ModuleEditor ---
+    const handleSeek = useCallback((time: number) => {
+        if (videoRef.current) {
+            videoRef.current.currentTime = time;
+            if (videoRef.current.paused) {
+                videoRef.current.play().catch(console.error);
+            }
+        }
+    }, []);
 
     const handleSuggestionAccept = async (suggestion: TraineeSuggestion) => {
         if (!module) return;
 
-        const newSteps = [...module.steps as any[]];
+        const newSteps = [...((module.steps as ProcessStep[]) ?? [])];
         const stepToUpdate = newSteps[suggestion.stepIndex];
 
         if (stepToUpdate) {
@@ -223,11 +274,28 @@ const EditPage: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
                     <div className="lg:sticky top-6">
                         <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Video Preview</h2>
-                        {module.video_url ? (
-                            <VideoPlayer video_url={module.video_url} onTimeUpdate={() => { }} />
+                        {isLoadingVideo ? (
+                            <div className="w-full aspect-video flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 rounded-lg p-4">
+                                <SparklesIcon className="h-12 w-12 text-indigo-400 animate-pulse" />
+                                <p className="mt-4 text-slate-500">Verifying video...</p>
+                            </div>
+                        ) : isVideoError ? (
+                            <div className="w-full aspect-video flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 rounded-lg p-4">
+                                <AlertTriangleIcon className="h-12 w-12 text-red-500 mb-4" />
+                                <p className="text-red-500 text-center">Could not load the video. The path might be missing or incorrect.</p>
+                                <button
+                                    onClick={retryVideoUrl}
+                                    className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg flex items-center gap-2"
+                                >
+                                    <RefreshCwIcon className="h-5 w-5" /> Try Again
+                                </button>
+                            </div>
+                        ) : publicVideoUrl ? (
+                            <VideoPlayer ref={videoRef} video_url={publicVideoUrl} onTimeUpdate={setCurrentTime} />
                         ) : (
-                            <div className="aspect-video bg-slate-200 dark:bg-slate-800 rounded-lg flex items-center justify-center">
-                                <p className="text-slate-500">No video URL provided.</p>
+                            <div className="aspect-video bg-slate-200 dark:bg-slate-800 rounded-lg flex flex-col items-center justify-center">
+                                <VideoIcon className="h-16 w-16 text-slate-400 dark:text-slate-600" />
+                                <p className="mt-4 text-slate-500">No video provided for this module.</p>
                             </div>
                         )}
                     </div>
@@ -241,6 +309,9 @@ const EditPage: React.FC = () => {
                             onAcceptSuggestion={handleSuggestionAccept}
                             onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}
                             isAdmin={isAdmin}
+                            currentTime={currentTime}
+                            onSeek={handleSeek}
+                            initialFocusStepIndex={initialFocusStepIndex}
                         />
                     </div>
                 </div>

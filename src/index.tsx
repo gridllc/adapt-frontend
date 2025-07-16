@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
@@ -19,6 +20,7 @@ import { ThemeProvider } from '@/hooks/useTheme';
 import { AuthProvider } from '@/hooks/useAuth';
 import './index.css';
 import LiveCoachPage from '@/pages/LiveCoachPage';
+import SessionReviewPage from '@/pages/SessionReviewPage';
 import { PwaUpdater } from '@/components/PwaUpdater';
 import QuestionLogDetailPage from './pages/QuestionLogDetailPage';
 
@@ -87,6 +89,14 @@ const router = createBrowserRouter([
                 )
             },
             {
+                path: 'sessions/:moduleId/:token/review',
+                element: (
+                    <ProtectedRoute>
+                        <SessionReviewPage />
+                    </ProtectedRoute>
+                )
+            },
+            {
                 path: 'create',
                 element: (
                     <ProtectedRoute>
@@ -108,7 +118,7 @@ root.render(
     <React.StrictMode>
         <QueryClientProvider client={queryClient}>
             <ThemeProvider>
-                <AuthProvider>
+                <AuthProvider debug={import.meta.env.DEV}>
                     <ToastProvider>
                         <RouterProvider router={router} />
                         <PwaUpdater />

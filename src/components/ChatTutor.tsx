@@ -1,15 +1,12 @@
-
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { startChat, getFallbackResponse, generateImage } from '@/services/geminiService';
+import { startChat, getFallbackResponse, generateImage, sendMessageWithRetry } from '@/services/geminiService';
 import * as ttsService from '../services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
-import { getChatHistory, saveChatMessage } from '@/services/chatService';
+import { getChatHistory, saveChatMessage, updateMessageFeedback } from '@/services/chatService';
 import { findSimilarInteractions, logTutorInteraction } from '@/services/tutorLogService';
 import type { ChatMessage, ProcessStep } from '@/types';
-import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon, ClockIcon, AlertTriangleIcon } from '@/components/Icons';
+import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon, ClockIcon, AlertTriangleIcon, DatabaseIcon, ThumbsUpIcon, ThumbsDownIcon } from '@/components/Icons';
 import { useToast } from '@/hooks/useToast';
 import type { Chat, Content, GroundingChunk } from '@google/genai';
 
@@ -52,6 +49,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
+    const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
     const [showTimestamps, setShowTimestamps] = useState(true);
     const [submittedSuggestions, setSubmittedSuggestions] = useState<string[]>([]);
     const [flaggedMessageIds, setFlaggedMessageIds] = useState<string[]>([]);
@@ -67,6 +65,25 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: chatHistoryQueryKey });
         }
+    });
+
+    // --- New mutation for handling feedback ---
+    const { mutate: sendFeedback } = useMutation({
+        mutationFn: ({ messageId, feedback }: { messageId: string; feedback: 'good' | 'bad' }) =>
+            updateMessageFeedback(messageId, feedback),
+        onSuccess: (_, variables) => {
+            // Optimistically update the local state for instant UI response
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === variables.messageId ? { ...msg, feedback: variables.feedback } : msg
+                )
+            );
+            addToast('success', 'Feedback Received', 'Thank you for helping improve the AI.');
+        },
+        onError: (err) => {
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            addToast('error', 'Feedback Failed', `Could not save your feedback: ${errorMessage}`);
+        },
     });
 
     useEffect(() => {
@@ -151,28 +168,32 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 persistMessage(finalModelMessage);
             } catch (err) {
                 const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-                setError(errorMessage);
                 addToast('error', 'Image Generation Failed', errorMessage);
-                // Remove the placeholder on failure
-                setMessages(prev => prev.filter(msg => msg.id !== modelPlaceholderId));
+                // Update the placeholder to show an error instead of removing it
+                setMessages(prev => prev.map(msg => msg.id === modelPlaceholderId
+                    ? { ...modelPlaceholder, text: `Failed to generate image: ${errorMessage}`, isLoading: false, isError: true, imageUrl: undefined }
+                    : msg
+                ));
             }
             return;
         }
 
         // --- RAG: Retrieve similar past interactions ---
         let memoryContext = '';
-        try {
-            const similarInteractions = await findSimilarInteractions(moduleId, trimmedInput);
-            if (similarInteractions.length > 0) {
-                memoryContext = "To help you, here are some questions and answers from previous trainees on this topic:\n\n---\n\n";
-                memoryContext += similarInteractions
-                    .map(log => `Question: ${log.user_question}\nAnswer: ${log.tutor_response}`)
-                    .join('\n\n---\n\n');
-                memoryContext += "\n\n--- \n\nNow, regarding your question:\n";
+        if (isMemoryEnabled) {
+            try {
+                const similarInteractions = await findSimilarInteractions(moduleId, trimmedInput);
+                if (similarInteractions.length > 0) {
+                    memoryContext = "To help you, here are some questions and answers from previous trainees on this topic:\n\n---\n\n";
+                    memoryContext += similarInteractions
+                        .map(log => `Question: ${log.user_question}\nAnswer: ${log.tutor_response}`)
+                        .join('\n\n---\n\n');
+                    memoryContext += "\n\n--- \n\nNow, regarding your question:\n";
+                }
+            } catch (e) {
+                console.warn("Could not retrieve collective memory:", e);
+                // Non-fatal, continue without memory context
             }
-        } catch (e) {
-            console.warn("Could not retrieve collective memory:", e);
-            // Non-fatal, continue without memory context
         }
 
 
@@ -193,12 +214,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         let finalModelText = '';
         let finalCitations: ChatMessage['citations'] = [];
         let isFallback = false;
+        let didErrorOccur = false;
 
         try {
             if (!chatRef.current) {
                 throw new Error("Chat not initialized");
             }
-            const stream = await chatRef.current.sendMessageStream({ message: finalPrompt });
+            // Use the new sendMessageWithRetry function for improved reliability.
+            const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
 
             for await (const chunk of stream) {
                 const chunkText = chunk.text;
@@ -245,13 +268,19 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                     ttsService.speak(fallbackText);
                 }
             } catch (fallbackErr) {
+                didErrorOccur = true;
                 const errorMessage = fallbackErr instanceof Error ? fallbackErr.message : 'An unknown error occurred.';
-                setError(errorMessage);
-                setMessages(prev => prev.filter(msg => msg.id !== modelMessageId && msg.id !== userMessage.id));
+                setMessages(prev =>
+                    prev.map(msg =>
+                        msg.id === modelMessageId
+                            ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true }
+                            : msg
+                    )
+                );
             }
         } finally {
             setIsLoading(false);
-            if (finalModelText) {
+            if (finalModelText && !didErrorOccur) {
                 const finalModelMessage: ChatMessage = {
                     id: modelMessageId,
                     role: 'model',
@@ -264,11 +293,11 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 // Log to collective memory (fire and forget)
                 logTutorInteraction(moduleId, currentStepIndex, trimmedInput, finalModelText)
                     .catch(err => console.warn("Failed to log interaction to collective memory:", err));
-            } else {
+            } else if (!finalModelText && !didErrorOccur) {
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
             }
         }
-    }, [isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken, currentStepIndex]);
+    }, [isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken, currentStepIndex, isMemoryEnabled]);
 
     const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -285,10 +314,15 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     }, [initialPrompt, sendMessage]);
 
 
-    const handleSuggestionSubmit = useCallback(async (suggestionText: string) => {
+    const handleSuggestionSubmit = useCallback(async (suggestionText: string, messageId: string) => {
+        if (!suggestionText.trim()) {
+            addToast('error', 'Empty Suggestion', 'Cannot submit a blank suggestion.');
+            return;
+        }
+
         try {
             await submitSuggestion(moduleId, currentStepIndex, suggestionText.trim());
-            setSubmittedSuggestions(prev => [...prev, suggestionText]);
+            setSubmittedSuggestions(prev => [...prev, messageId]);
             addToast('success', 'Suggestion Submitted', 'Thank you for your feedback! The module owner will review it.');
         } catch (err) {
             console.error("Failed to submit suggestion", err);
@@ -337,7 +371,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         const suggestionMatch = text.match(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/);
         if (suggestionMatch) {
             const suggestionText = suggestionMatch[1];
-            const isSubmitted = submittedSuggestions.includes(suggestionText);
+            const isSubmitted = submittedSuggestions.includes(message.id);
 
             return (
                 <div className="bg-indigo-200/50 dark:bg-indigo-900/50 p-3 rounded-md mt-2 border border-indigo-300 dark:border-indigo-700">
@@ -347,7 +381,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                     </div>
                     <p className="text-sm text-indigo-800 dark:text-indigo-100 italic">"{suggestionText.trim()}"</p>
                     <button
-                        onClick={() => handleSuggestionSubmit(suggestionText)}
+                        onClick={() => handleSuggestionSubmit(suggestionText, message.id)}
                         disabled={isSubmitted}
                         className="text-xs w-full text-white font-semibold py-1.5 px-3 rounded-full mt-3 transition-colors flex items-center justify-center gap-2 disabled:bg-green-600 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700"
                     >
@@ -456,6 +490,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 </div>
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={() => setIsMemoryEnabled(prev => !prev)}
+                        className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        aria-label={isMemoryEnabled ? "Disable collective memory" : "Enable collective memory"}
+                        title={isMemoryEnabled ? "Disable collective memory (RAG)" : "Enable collective memory (RAG)"}
+                    >
+                        <DatabaseIcon className={`h-5 w-5 ${isMemoryEnabled ? 'text-indigo-500 dark:text-indigo-400' : ''}`} />
+                    </button>
+                    <button
                         onClick={() => setShowTimestamps(prev => !prev)}
                         className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                         aria-label={showTimestamps ? "Hide timestamps" : "Show timestamps"}
@@ -510,11 +552,21 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                                 )}
                             </div>
                         )}
-                        <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none'}`}>
+                        <div className={`max-w-xs md:max-w-md break-words p-3 rounded-lg ${msg.role === 'user'
+                                ? 'bg-blue-600 text-white rounded-br-none'
+                                : msg.isError
+                                    ? 'bg-red-100 dark:bg-red-900/50 rounded-bl-none'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-bl-none'
+                            }`}>
                             {msg.isLoading ? (
                                 <div className="flex items-center gap-2">
                                     {msg.imageUrl === '' ? <ImageIcon className="h-5 w-5 text-slate-500 animate-pulse" /> : <SparklesIcon className="h-5 w-5 text-slate-500 animate-pulse" />}
                                     <span className="text-slate-600 dark:text-slate-300 italic">{msg.text || 'Thinking...'}</span>
+                                </div>
+                            ) : msg.isError ? (
+                                <div className="flex items-start gap-2 text-red-800 dark:text-red-200">
+                                    <AlertTriangleIcon className="h-5 w-5 flex-shrink-0" />
+                                    <span className="text-base whitespace-pre-wrap">{msg.text}</span>
                                 </div>
                             ) : msg.imageUrl ? (
                                 <img src={msg.imageUrl} alt={msg.text || 'Generated image'} className="rounded-lg max-w-full h-auto" />
@@ -533,6 +585,26 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                                             </a>
                                         ))}
                                     </div>
+                                </div>
+                            )}
+                            {msg.role === 'model' && !msg.isLoading && !msg.isError && (
+                                <div className="flex items-center gap-1 mt-2 -ml-1">
+                                    <button
+                                        onClick={() => sendFeedback({ messageId: msg.id, feedback: 'good' })}
+                                        disabled={!!msg.feedback}
+                                        className={`p-1 text-slate-400 dark:text-slate-500 hover:text-green-500 disabled:cursor-not-allowed ${msg.feedback === 'good' ? 'text-green-600 dark:text-green-500' : ''}`}
+                                        aria-label="Good response"
+                                    >
+                                        <ThumbsUpIcon className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => sendFeedback({ messageId: msg.id, feedback: 'bad' })}
+                                        disabled={!!msg.feedback}
+                                        className={`p-1 text-slate-400 dark:text-slate-500 hover:text-red-500 disabled:cursor-not-allowed ${msg.feedback === 'bad' ? 'text-red-600 dark:text-red-500' : ''}`}
+                                        aria-label="Bad response"
+                                    >
+                                        <ThumbsDownIcon className="h-4 w-4" />
+                                    </button>
                                 </div>
                             )}
                         </div>

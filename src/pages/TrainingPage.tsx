@@ -16,7 +16,7 @@ import { getModule } from '@/services/moduleService';
 import { getChatHistory } from '@/services/chatService';
 import { generatePerformanceSummary, evaluateCheckpointAnswer } from '@/services/geminiService';
 import { submitSuggestion } from '@/services/suggestionsService';
-import { logCheckpointResponse } from '@/services/checkpointService';
+import { logCheckpointResponse, getCheckpointFailureStats } from '@/services/checkpointService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
 import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
@@ -51,6 +51,7 @@ const TrainingPage: React.FC = () => {
   const [instructionSuggestion, setInstructionSuggestion] = useState<string | null>(null);
   const [isSuggestionSubmitted, setIsSuggestionSubmitted] = useState(false);
   const isAdmin = !!user;
+  const [isAdvancing, setIsAdvancing] = useState(false);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -90,6 +91,13 @@ const TrainingPage: React.FC = () => {
     isLoadingSession,
     goBack,
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, steps.length ?? 0);
+
+  const { data: checkpointFailureStats } = useQuery({
+    queryKey: ['checkpointFailureStats', moduleId],
+    queryFn: () => getCheckpointFailureStats(moduleId!),
+    enabled: !!moduleId && isAdmin,
+    staleTime: 1000 * 60 * 5,
+  });
 
   const videoPath = useMemo(() => {
     if (!moduleData?.video_url) return null;
@@ -282,7 +290,6 @@ const TrainingPage: React.FC = () => {
     setCheckpointFeedback(null);
     setInstructionSuggestion(null);
 
-    // Log response in the background
     if (user) {
       logCheckpointResponse({
         module_id: moduleId,
@@ -298,17 +305,22 @@ const TrainingPage: React.FC = () => {
 
     try {
       const evaluation = await evaluateCheckpointAnswer(stepJustAnswered, answer);
-      setCheckpointFeedback(evaluation);
-
-      if (evaluation.suggestedInstructionChange) {
-        setInstructionSuggestion(evaluation.suggestedInstructionChange);
-      }
 
       if (evaluation.isCorrect) {
-        addToast('success', 'Checkpoint Passed!', evaluation.feedback);
-        markStep('done'); // Only advance if correct
+        setCheckpointFeedback({ ...evaluation, feedback: `${evaluation.feedback} Correct! Moving on...` });
+        setIsAdvancing(true);
+        addToast('success', 'Checkpoint Passed!', "Moving to the next step shortly.");
+
+        setTimeout(() => {
+          markStep('done');
+          setIsAdvancing(false);
+        }, 2000);
       } else {
+        setCheckpointFeedback(evaluation);
         addToast('info', 'Checkpoint Answer Noted', evaluation.feedback);
+        if (evaluation.suggestedInstructionChange) {
+          setInstructionSuggestion(evaluation.suggestedInstructionChange);
+        }
       }
     } catch (err) {
       console.error("Error evaluating checkpoint with AI", err);
@@ -462,7 +474,7 @@ const TrainingPage: React.FC = () => {
                   markStep={handleMarkStep}
                   goBack={goBack}
                   onCheckpointAnswer={handleCheckpointAnswer}
-                  isEvaluatingCheckpoint={isEvaluatingCheckpoint}
+                  isEvaluatingCheckpoint={isEvaluatingCheckpoint || isAdvancing}
                   checkpointFeedback={checkpointFeedback}
                   instructionSuggestion={instructionSuggestion}
                   onSuggestionSubmit={handleSuggestionSubmit}
@@ -470,6 +482,7 @@ const TrainingPage: React.FC = () => {
                   isAdmin={isAdmin}
                   moduleId={moduleId}
                   onTutorHelp={handleTutorHelp}
+                  checkpointFailureStats={checkpointFailureStats}
                 />
               )}
 

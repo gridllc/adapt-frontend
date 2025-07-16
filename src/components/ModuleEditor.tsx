@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from 'react'
+
+import React, { useCallback, useState, useRef, useEffect } from 'react'
 import type {
     AlternativeMethod,
     TraineeSuggestion,
@@ -12,7 +13,10 @@ import {
     LightbulbIcon,
     CheckCircleIcon,
     DownloadIcon,
-    SparklesIcon
+    SparklesIcon,
+    ArrowUpIcon,
+    ArrowDownIcon,
+    PlayCircleIcon,
 } from '@/components/Icons'
 import { useToast } from '@/hooks/useToast'
 import { CheckpointDashboard } from './CheckpointDashboard'
@@ -30,6 +34,12 @@ interface ModuleEditorProps {
     onAcceptSuggestion?: (suggestion: TraineeSuggestion) => void
     onRejectSuggestion?: (suggestionId: string) => void
     isAdmin: boolean;
+    /** The current playback time of the associated video, in seconds. */
+    currentTime?: number;
+    /** Callback to seek the video to a specific time. */
+    onSeek?: (time: number) => void;
+    /** The index of a step to scroll to and focus on initial load. */
+    initialFocusStepIndex?: number;
 }
 
 const formatTime = (seconds: number): string => {
@@ -48,14 +58,52 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     checkpointResponses = [],
     onAcceptSuggestion = () => { },
     onRejectSuggestion = () => { },
-    isAdmin
+    isAdmin,
+    currentTime,
+    onSeek,
+    initialFocusStepIndex,
 }) => {
     const { addToast } = useToast()
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [openTranscripts, setOpenTranscripts] = useState<Record<number, boolean>>({});
+    const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     const steps = (module.steps as ProcessStep[]) || [];
     const transcript = (module.transcript as TranscriptLine[]) || [];
+
+    /**
+     * Effect to scroll to a specific step when a suggestion is applied from another page.
+     */
+    useEffect(() => {
+        if (initialFocusStepIndex !== undefined && stepRefs.current[initialFocusStepIndex]) {
+            setTimeout(() => { // Use timeout to ensure it runs after other render effects
+                stepRefs.current[initialFocusStepIndex]?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                });
+            }, 100);
+        }
+    }, [initialFocusStepIndex]);
+
+    /**
+     * Effect to scroll the active step into view during video playback.
+     */
+    useEffect(() => {
+        if (currentTime !== undefined) {
+            const activeIndex = steps.findIndex(step => currentTime >= step.start && currentTime < step.end);
+            if (activeIndex !== -1 && stepRefs.current[activeIndex]) {
+                const rect = stepRefs.current[activeIndex]!.getBoundingClientRect();
+                const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+                if (!isVisible) {
+                    stepRefs.current[activeIndex]?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest',
+                    });
+                }
+            }
+        }
+    }, [currentTime, steps]);
+
 
     const toggleTranscript = useCallback((index: number) => {
         setOpenTranscripts(prev => ({ ...prev, [index]: !prev[index] }));
@@ -100,6 +148,25 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
         addToast('success', 'Download Started', 'Your module draft is downloading.');
 
     }, [module, addToast]);
+
+    /**
+     * Refactoring Note: Added step reordering logic. This allows admins to
+     * change the sequence of steps without needing to manually delete and recreate them.
+     */
+    const moveStep = useCallback((index: number, direction: 'up' | 'down') => {
+        const newSteps = [...steps];
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+
+        if (targetIndex < 0 || targetIndex >= newSteps.length) {
+            return; // Cannot move outside of array bounds
+        }
+
+        // Swap elements
+        [newSteps[index], newSteps[targetIndex]] = [newSteps[targetIndex], newSteps[index]];
+
+        onModuleChange({ ...module, steps: newSteps });
+        addToast('info', 'Step Reordered', `The step has been moved ${direction}. Don't forget to save your changes.`);
+    }, [steps, module, onModuleChange, addToast]);
 
 
     const handleFieldChange = useCallback(
@@ -262,16 +329,28 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
 
                         const stepCheckpointResponses = checkpointResponses.filter(r => r.step_index === idx && r.answer.toLowerCase() === 'no');
 
+                        const isActive = currentTime !== undefined && currentTime >= step.start && currentTime < step.end;
+                        const isInvalidTime = step.end > 0 && step.start > step.end;
+                        const isFocused = initialFocusStepIndex === idx;
+
+
                         return (
                             <div
                                 key={idx}
-                                className="p-4 bg-slate-100 dark:bg-slate-900 rounded-lg space-y-3"
+                                ref={(el) => { stepRefs.current[idx] = el; }}
+                                className={`p-4 bg-slate-100 dark:bg-slate-900 rounded-lg space-y-3 transition-all duration-300 ${isActive || isFocused ? 'ring-2 ring-indigo-500' : ''}`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <h3 className="font-bold">Step {idx + 1}</h3>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-bold">Step {idx + 1}</h3>
+                                        <div className="flex items-center">
+                                            <button onClick={() => moveStep(idx, 'up')} disabled={idx === 0} className="p-1 rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowUpIcon className="h-4 w-4" /></button>
+                                            <button onClick={() => moveStep(idx, 'down')} disabled={idx === steps.length - 1} className="p-1 rounded-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed"><ArrowDownIcon className="h-4 w-4" /></button>
+                                        </div>
+                                    </div>
                                     <button
                                         onClick={() => removeStep(idx)}
-                                        className="text-red-500 hover:text-red-700"
+                                        className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900"
                                     >
                                         <XIcon className="h-5 w-5" />
                                     </button>
@@ -330,37 +409,40 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                         <label className="block text-sm font-medium mb-1">
                                             Start (sec)
                                         </label>
-                                        <input
-                                            type="number"
-                                            className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-1 bg-white dark:bg-slate-900 focus:outline-none"
-                                            value={step.start}
-                                            onChange={(e) =>
-                                                handleStepChange(
-                                                    idx,
-                                                    'start',
-                                                    Number(e.currentTarget.value)
-                                                )
-                                            }
-                                        />
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                className={`w-full border rounded px-3 py-1 bg-white dark:bg-slate-900 focus:outline-none transition-colors ${isInvalidTime ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+                                                value={step.start}
+                                                onChange={(e) =>
+                                                    handleStepChange(idx, 'start', Number(e.currentTarget.value))
+                                                }
+                                            />
+                                            {onSeek && (
+                                                <button onClick={() => onSeek(step.start)} className="text-slate-500 hover:text-indigo-600" title="Preview start time"><PlayCircleIcon className="h-6 w-6" /></button>
+                                            )}
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium mb-1">
                                             End (sec)
                                         </label>
-                                        <input
-                                            type="number"
-                                            className="w-full border border-slate-300 dark:border-slate-600 rounded px-3 py-1 bg-white dark:bg-slate-900 focus:outline-none"
-                                            value={step.end}
-                                            onChange={(e) =>
-                                                handleStepChange(
-                                                    idx,
-                                                    'end',
-                                                    Number(e.currentTarget.value)
-                                                )
-                                            }
-                                        />
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                className={`w-full border rounded px-3 py-1 bg-white dark:bg-slate-900 focus:outline-none transition-colors ${isInvalidTime ? 'border-red-500' : 'border-slate-300 dark:border-slate-600'}`}
+                                                value={step.end}
+                                                onChange={(e) =>
+                                                    handleStepChange(idx, 'end', Number(e.currentTarget.value))
+                                                }
+                                            />
+                                            {onSeek && (
+                                                <button onClick={() => onSeek(step.end)} className="text-slate-500 hover:text-indigo-600" title="Preview end time"><PlayCircleIcon className="h-6 w-6" /></button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
+                                {isInvalidTime && <p className="text-xs text-red-500 text-center">End time cannot be before start time.</p>}
 
                                 <div>
                                     <label className="block text-sm font-medium mb-1">

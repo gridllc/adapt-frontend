@@ -9,10 +9,57 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      ai_feedback_logs: {
+        Row: {
+          ai_response: string | null
+          created_at: string
+          feedback: string
+          fix_embedding: number[] | null
+          id: string
+          module_id: string
+          session_token: string
+          step_index: number
+          user_fix_text: string | null
+          user_prompt: string | null
+        }
+        Insert: {
+          ai_response?: string | null
+          created_at?: string
+          feedback: string
+          fix_embedding?: number[] | null
+          id?: string
+          module_id: string
+          session_token: string
+          step_index: number
+          user_fix_text?: string | null
+          user_prompt?: string | null
+        }
+        Update: {
+          ai_response?: string | null
+          created_at?: string
+          feedback?: string
+          fix_embedding?: number[] | null
+          id?: string
+          module_id?: string
+          session_token?: string
+          step_index?: number
+          user_fix_text?: string | null
+          user_prompt?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_feedback_logs_module_id_fkey"
+            columns: ["module_id"]
+            referencedRelation: "modules"
+            referencedColumns: ["slug"]
+          }
+        ]
+      }
       chat_messages: {
         Row: {
           citations: Json | null
           created_at: string
+          feedback: string | null
           id: string
           imageUrl: string | null
           is_fallback: boolean | null
@@ -25,6 +72,7 @@ export interface Database {
         Insert: {
           citations?: Json | null
           created_at?: string
+          feedback?: string | null
           id: string
           imageUrl?: string | null
           is_fallback?: boolean | null
@@ -37,6 +85,7 @@ export interface Database {
         Update: {
           citations?: Json | null
           created_at?: string
+          feedback?: string | null
           id?: string
           imageUrl?: string | null
           is_fallback?: boolean | null
@@ -108,6 +157,8 @@ export interface Database {
           id: string
           module_id: string
           step_index: number
+          tutor_log_id: string | null
+          tutor_response: string | null
           user_id: string | null
           user_question: string
         }
@@ -117,6 +168,8 @@ export interface Database {
           id?: string
           module_id: string
           step_index: number
+          tutor_log_id?: string | null
+          tutor_response?: string | null
           user_id?: string | null
           user_question: string
         }
@@ -126,6 +179,8 @@ export interface Database {
           id?: string
           module_id?: string
           step_index?: number
+          tutor_log_id?: string | null
+          tutor_response?: string | null
           user_id?: string | null
           user_question?: string
         }
@@ -135,6 +190,12 @@ export interface Database {
             columns: ["module_id"]
             referencedRelation: "modules"
             referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "flagged_questions_tutor_log_id_fkey"
+            columns: ["tutor_log_id"]
+            referencedRelation: "tutor_logs"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "flagged_questions_user_id_fkey"
@@ -281,6 +342,7 @@ export interface Database {
           is_completed: boolean
           live_coach_events: Json | null
           module_id: string
+          score: number | null
           session_token: string
           updated_at: string
           user_actions: Json | null
@@ -292,6 +354,7 @@ export interface Database {
           is_completed?: boolean
           live_coach_events?: Json | null
           module_id: string
+          score?: number | null
           session_token: string
           updated_at?: string
           user_actions?: Json | null
@@ -303,6 +366,7 @@ export interface Database {
           is_completed?: boolean
           live_coach_events?: Json | null
           module_id?: string
+          score?: number | null
           session_token?: string
           updated_at?: string
           user_actions?: Json | null
@@ -355,9 +419,45 @@ export interface Database {
       }
     }
     Views: {
-      [_ in never]: never
+      modules_with_session_stats: {
+        Row: {
+          created_at: string | null
+          is_ai_generated: boolean | null
+          last_used_at: string | null
+          metadata: Json | null
+          session_count: number | null
+          slug: string | null
+          steps: Json | null
+          title: string | null
+          transcript: Json | null
+          user_id: string | null
+          video_url: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modules_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Functions: {
+      match_ai_feedback_fixes: {
+        Args: {
+          query_embedding: number[]
+          p_module_id: string
+          p_step_index: number
+          match_threshold: number
+          match_count: number
+        }
+        Returns: {
+          id: string
+          user_fix_text: string
+          similarity: number
+        }[]
+      }
       match_tutor_logs: {
         Args: {
           query_embedding: number[]

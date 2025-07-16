@@ -15,7 +15,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: ReactNode, debug?: boolean }> = ({ children, debug = false }) => {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -45,6 +45,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             authListener.subscription.unsubscribe();
         };
     }, []);
+
+    // Effect for logging auth state in debug mode
+    useEffect(() => {
+        if (debug) {
+            console.log('[AuthDebug] State changed:', {
+                isAuthenticated: !!user,
+                user,
+                session,
+                isLoading,
+            });
+        }
+    }, [user, session, isLoading, debug]);
 
     const value: AuthContextType = {
         session,

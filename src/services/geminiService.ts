@@ -1,7 +1,7 @@
 
-import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
+import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse } from "@google/genai";
 import type { File as AiFile } from "@google/genai";
-import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine } from "@/types";
+import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine, GeneratedBranchModule } from "@/types";
 
 // --- Custom Return Types for Decoupling ---
 
@@ -138,13 +138,16 @@ export const uploadVideo = async (videoFile: globalThis.File): Promise<AiFile> =
 };
 
 export const getTranscriptWithConfidence = async (uploadedFile: AiFile): Promise<TranscriptAnalysis> => {
+    // DEV-ONLY: Performance logging
+    if (import.meta.env.DEV) console.time('[AI Perf] getTranscriptWithConfidence');
+
     const client = getAiClient();
     console.log("[AI Service] Generating transcript with confidence from video...");
     const videoFilePart = { fileData: { mimeType: uploadedFile.mimeType, fileUri: uploadedFile.uri } };
     const prompt = `You are an expert transcriber with a confidence scoring system. Analyze this video and return a JSON object containing:
 1.  'transcript': A full, clean, line-by-line transcript.
 2.  'overallConfidence': A score from 0.0 to 1.0 indicating how clear the audio was and how confident you are in the transcription.
-3.  'uncertainWords': An array of words or short phrases you were unsure about.
+3.  'uncertainWords': An array of words or short phrases you were unsure about due to mumbling, background noise, or ambiguity.
 The output MUST be a single, valid JSON object adhering to the provided schema.`;
 
     try {
@@ -172,6 +175,8 @@ The output MUST be a single, valid JSON object adhering to the provided schema.`
         console.error("[AI Service] Error generating transcript:", error);
         if (error instanceof SyntaxError) throw new Error("The AI returned invalid JSON for the transcript.");
         throw error;
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] getTranscriptWithConfidence');
     }
 };
 
@@ -181,6 +186,8 @@ export const generateModuleFromContext = async (context: {
     notes?: string;
     confidence: number;
 }): Promise<GeneratedModuleData> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] generateModuleFromContext');
+
     const client = getAiClient();
     console.log("[AI Service] Generating module from context...");
 
@@ -221,6 +228,8 @@ export const generateModuleFromContext = async (context: {
             throw new Error("The AI returned invalid JSON. Please check the model or prompt.");
         }
         throw error;
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateModuleFromContext');
     }
 };
 
@@ -274,7 +283,40 @@ export const startChat = (stepsContext: string, fullTranscript?: string, history
     });
 };
 
+/**
+ * A wrapper for `chat.sendMessageStream` that includes automatic retries on failure.
+ * This helps make the chat feature more resilient to transient network or API errors.
+ * @param {Chat} chat The active chat instance.
+ * @param {string} prompt The user's prompt to send.
+ * @param {number} retries The number of times to retry on failure.
+ * @returns {Promise<AsyncGenerator<GenerateContentResponse>>} A promise that resolves to the stream generator.
+ */
+export async function sendMessageWithRetry(
+    chat: Chat,
+    prompt: string,
+    retries: number = 2
+): Promise<AsyncGenerator<GenerateContentResponse, any, unknown>> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            // The sendMessageStream method returns a promise that resolves to the async generator
+            const stream = await chat.sendMessageStream({ message: prompt });
+            return stream;
+        } catch (err) {
+            console.warn(`[AI Service] sendMessageStream attempt ${attempt} failed.`, err);
+            if (attempt === retries) {
+                console.error("[AI Service] All retry attempts failed for sendMessageStream.");
+                throw err; // Re-throw the error on the final attempt
+            }
+            // Wait for a short period before retrying
+            await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        }
+    }
+    // This line is theoretically unreachable due to the throw in the loop, but required by TypeScript
+    throw new Error("sendMessageWithRetry failed after all attempts.");
+}
+
 export const getFallbackResponse = async (prompt: string, history: ChatMessage[], stepsContext: string, fullTranscript: string): Promise<string> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] getFallbackResponse');
     console.log("[AI Service] Attempting fallback AI provider...");
     const client = getAiClient();
     const systemInstruction = getChatTutorSystemInstruction(stepsContext, fullTranscript);
@@ -288,10 +330,13 @@ export const getFallbackResponse = async (prompt: string, history: ChatMessage[]
     } catch (error) {
         console.error("[AI Service] Fallback AI provider also failed:", error);
         throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] getFallbackResponse');
     }
 };
 
 export const generateImage = async (prompt: string): Promise<string> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] generateImage');
     const client = getAiClient();
     try {
         const response = await client.models.generateImages({
@@ -305,12 +350,15 @@ export const generateImage = async (prompt: string): Promise<string> => {
     } catch (error) {
         console.error("[AI Service] Error generating image:", error);
         throw new Error("Failed to generate the image. The model may be unavailable or the prompt was blocked.");
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateImage');
     }
 }
 
 // --- Evaluation and Refinement Services ---
 
 export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: string): Promise<CheckpointEvaluation> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] evaluateCheckpointAnswer');
     const client = getAiClient();
     const systemInstruction = `You are a helpful and strict training evaluator. Your task is to determine if a user's answer to a checkpoint question is correct based ONLY on the provided step description. You must respond in JSON format.`;
     const prompt = `
@@ -348,10 +396,13 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
     } catch (error) {
         console.error("[AI Service] Error evaluating checkpoint:", error);
         throw new Error("An error occurred during checkpoint evaluation.");
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] evaluateCheckpointAnswer');
     }
 };
 
 export const generateRefinementSuggestion = async (step: ProcessStep, questions: string[]): Promise<RefinementSuggestion> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] generateRefinementSuggestion');
     const client = getAiClient();
     const systemInstruction = `You are an expert instructional designer tasked with improving a training module. You will be given a step and questions trainees have asked. Your job is to rewrite the step's description to be clearer and to proactively answer the questions. If appropriate, also suggest a new 'alternative method'. You MUST respond in valid JSON format.`;
     const prompt = `
@@ -387,10 +438,13 @@ export const generateRefinementSuggestion = async (step: ProcessStep, questions:
     } catch (error) {
         console.error("[AI Service] Error generating refinement suggestion:", error);
         throw new Error("Failed to get AI refinement suggestion.");
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateRefinementSuggestion');
     }
 };
 
 export const generatePerformanceSummary = async (moduleTitle: string, unclearSteps: ProcessStep[], userQuestions: string[]): Promise<{ summary: string }> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] generatePerformanceSummary');
     const client = getAiClient();
     const systemInstruction = "You are a friendly and encouraging AI coach. Your job is to provide positive, summarized feedback to a trainee who has just completed a module. Speak directly to the trainee. Keep the feedback concise (2-3 sentences).";
     let prompt = `The trainee just completed the "${moduleTitle}" module.`;
@@ -416,6 +470,63 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
     } catch (error) {
         console.error("[AI Service] Error generating performance summary:", error);
         return { summary: "Congratulations on completing the training module!" };
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] generatePerformanceSummary');
+    }
+};
+
+/**
+ * Generates a small, remedial submodule to address a specific point of confusion.
+ * @param stepTitle The title of the confusing step.
+ * @param frequentQuestions An array of questions trainees frequently ask about this step.
+ * @returns A promise resolving to the generated branch module data.
+ */
+export const generateBranchModule = async (stepTitle: string, frequentQuestions: string[]): Promise<GeneratedBranchModule> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] generateBranchModule');
+    const client = getAiClient();
+    const systemInstruction = "You are an expert instructional designer. Your task is to create a short, 2-3 step remedial training module to teach a specific concept more clearly. You MUST respond in the requested JSON format.";
+
+    const prompt = `
+        Trainees are struggling with this step:
+        "${stepTitle}"
+
+        They often ask:
+        - ${frequentQuestions.join('\n- ')}
+
+        Please create a short 2-3 step remedial training module to teach this concept more clearly.
+        The title should be helpful and the steps should be simple, clear instructions.`;
+
+    const branchModuleSchema = {
+        type: Type.OBJECT,
+        properties: {
+            title: { type: Type.STRING, description: "A helpful title for the remedial submodule." },
+            steps: {
+                type: Type.ARRAY,
+                description: "An array of 2-3 strings, where each string is a clear, simple instruction for a step.",
+                items: { type: Type.STRING }
+            }
+        },
+        required: ["title", "steps"],
+    };
+
+    try {
+        const result = await client.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { systemInstruction, responseMimeType: "application/json", responseSchema: branchModuleSchema },
+        });
+
+        if (!result.text) {
+            throw new Error("AI returned empty data for the branch module.");
+        }
+
+        return JSON.parse(result.text) as GeneratedBranchModule;
+
+    } catch (error) {
+        console.error("[AI Service] Error generating branch module:", error);
+        throw new Error("Failed to generate the remedial module from the AI.");
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateBranchModule');
     }
 };
 
@@ -427,6 +538,7 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
  * @returns A promise that resolves to an array of numbers representing the embedding.
  */
 export const generateEmbedding = async (text: string): Promise<number[]> => {
+    if (import.meta.env.DEV) console.time('[AI Perf] generateEmbedding');
     const client = getAiClient();
     try {
         const result = await client.models.embedContent({
@@ -437,5 +549,7 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     } catch (error) {
         console.error("[AI Service] Error generating embedding:", error);
         throw new Error("Failed to generate text embedding for memory search.");
+    } finally {
+        if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateEmbedding');
     }
 };

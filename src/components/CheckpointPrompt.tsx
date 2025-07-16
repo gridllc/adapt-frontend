@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   SendIcon,
   HelpCircleIcon
@@ -25,11 +25,30 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
 }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const [comment, setComment] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus the textarea when it appears.
+  useEffect(() => {
+    if (selected?.toLowerCase() === allowTextInputOn?.toLowerCase()) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100); // Small delay to ensure the element is rendered and visible
+    }
+  }, [selected, allowTextInputOn]);
 
   const handleSubmit = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (!selected) return;
     onAnswer(selected, comment.trim() || undefined);
+  };
+
+  // Handle Enter key submission from the textarea
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!selected || isLoading) return;
+      onAnswer(selected, comment.trim() || undefined);
+    }
   };
 
   const handleSelectOption = (e: React.MouseEvent<HTMLButtonElement>, opt: string) => {
@@ -43,6 +62,8 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
       onTutorHelp(question, selected ?? undefined);
     }
   };
+
+  const showCommentBox = selected && selected.toLowerCase() === allowTextInputOn?.toLowerCase();
 
   return (
     <div className="mt-4 p-4 bg-slate-200/50 dark:bg-slate-900/50 rounded-md border border-slate-300 dark:border-slate-700 animate-fade-in-up">
@@ -64,15 +85,17 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
         ))}
       </div>
 
-      {selected && selected.toLowerCase() === allowTextInputOn?.toLowerCase() && (
+      {showCommentBox && (
         <div className="mt-4">
           <label className="block text-sm text-slate-600 dark:text-slate-300 mb-1">
             Want to explain why? (Optional)
           </label>
           <textarea
+            ref={textareaRef}
             value={comment}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setComment(e.target.value)}
+            onKeyDown={handleKeyDown}
             disabled={isLoading}
             className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2 text-sm text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none disabled:opacity-50"
             rows={2}
@@ -81,7 +104,7 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
         </div>
       )}
 
-      {alternativeHelp && selected?.toLowerCase() === 'no' && (
+      {alternativeHelp && showCommentBox && (
         <div className="mt-3 text-sm text-yellow-800 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/30 p-3 rounded-lg border border-yellow-200 dark:border-yellow-800">
           <span className="font-bold">💡 Tip:</span> {alternativeHelp}
         </div>
@@ -101,7 +124,8 @@ export const CheckpointPrompt: React.FC<CheckpointPromptProps> = ({
           <button
             onClick={handleAIHelp}
             disabled={isLoading}
-            className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 disabled:opacity-50"
+            className={`text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 disabled:opacity-50 transition-all ${showCommentBox ? 'animate-pulse' : ''
+              }`}
           >
             <HelpCircleIcon className="h-4 w-4" />
             Ask the AI Tutor

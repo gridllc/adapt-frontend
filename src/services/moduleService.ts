@@ -1,12 +1,14 @@
 
 
 
+
 import { supabase } from '@/services/apiClient';
 import type { Database } from '@/types/supabase';
 import type { ProcessStep, TranscriptLine } from '@/types';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
+type ModuleWithStatsRow = Database['public']['Views']['modules_with_session_stats']['Row'];
 
 export const getModule = async (slug: string): Promise<ModuleRow | undefined> => {
     if (!slug) return undefined;
@@ -41,18 +43,18 @@ export const getModule = async (slug: string): Promise<ModuleRow | undefined> =>
     }
 };
 
-export const getAvailableModules = async (): Promise<ModuleRow[]> => {
+export const getAvailableModules = async (): Promise<ModuleWithStatsRow[]> => {
     const { data, error } = await supabase
-        .from('modules')
+        .from('modules_with_session_stats')
         .select('*');
 
     if (error) {
-        console.error("Error fetching modules:", error);
+        console.error("Error fetching modules with stats:", error);
         throw new Error(error.message);
     }
 
     if (!Array.isArray(data)) {
-        console.error("Data fetched from 'modules' is not an array:", data);
+        console.error("Data fetched from 'modules_with_session_stats' is not an array:", data);
         return [];
     }
 

@@ -1,15 +1,7 @@
 
-import { supabase } from '@/services/apiClient';
-import type { UserAction, LiveCoachEvent } from '@/types';
 
-export interface SessionState {
-    moduleId: string;
-    sessionToken: string;
-    currentStepIndex: number;
-    userActions: UserAction[];
-    isCompleted: boolean;
-    liveCoachEvents: LiveCoachEvent[];
-}
+import { supabase } from '@/services/apiClient';
+import type { UserAction, LiveCoachEvent, SessionState, SessionSummary } from '@/types';
 
 const TABLE_NAME = 'training_sessions';
 
@@ -32,9 +24,10 @@ export const getSession = async (moduleId: string, sessionToken: string): Promis
         moduleId: data.module_id,
         sessionToken: data.session_token,
         currentStepIndex: data.current_step_index,
-        userActions: data.user_actions || [],
+        userActions: (data.user_actions as UserAction[]) || [],
         isCompleted: data.is_completed,
-        liveCoachEvents: data.live_coach_events || [],
+        liveCoachEvents: (data.live_coach_events as LiveCoachEvent[]) || [],
+        score: data.score ?? undefined,
     };
 };
 
@@ -46,6 +39,7 @@ export const saveSession = async (state: Partial<SessionState> & { moduleId: str
         user_actions: state.userActions,
         is_completed: state.isCompleted,
         live_coach_events: state.liveCoachEvents,
+        score: state.score,
         updated_at: new Date().toISOString()
     };
 
@@ -60,4 +54,46 @@ export const saveSession = async (state: Partial<SessionState> & { moduleId: str
         console.error('Error saving session:', error);
         throw error;
     }
+};
+
+
+/**
+ * Fetches a session and calculates derived analytics, such as time spent per step and total duration.
+ * This powers the detailed session review page for administrators.
+ * @param moduleId The ID of the module.
+ * @param sessionToken The unique token for the session.
+ * @returns A promise that resolves to a `SessionSummary` object or null.
+ */
+export const getSessionSummary = async (moduleId: string, sessionToken: string): Promise<SessionSummary | null> => {
+    const session = await getSession(moduleId, sessionToken);
+
+    if (!session) {
+        return null;
+    }
+
+    const durationsPerStep: Record<number, number> = {};
+    const allEvents = (session.liveCoachEvents || []).sort((a, b) => a.timestamp - b.timestamp);
+    const stepAdvanceEvents = allEvents.filter(e => e.eventType === 'step_advance');
+
+    // Calculate duration per step based on 'step_advance' events
+    for (let i = 0; i < stepAdvanceEvents.length - 1; i++) {
+        const currentEvent = stepAdvanceEvents[i];
+        const nextEvent = stepAdvanceEvents[i + 1];
+        const duration = nextEvent.timestamp - currentEvent.timestamp;
+
+        durationsPerStep[currentEvent.stepIndex] = (durationsPerStep[currentEvent.stepIndex] || 0) + duration;
+    }
+
+    // Note: Duration for the final step is not calculated here as it requires an explicit 'session_end' event,
+    // which is not part of the current implementation.
+
+    const startedAt = allEvents.length > 0 ? allEvents[0].timestamp : 0;
+    const endedAt = allEvents.length > 0 ? allEvents[allEvents.length - 1].timestamp : 0;
+
+    return {
+        ...session,
+        startedAt,
+        endedAt,
+        durationsPerStep,
+    };
 };

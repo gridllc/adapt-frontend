@@ -1,4 +1,3 @@
-
 export interface AlternativeMethod {
   title: string;
   description: string;
@@ -31,10 +30,19 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
   text: string;
-  citations?: { uri: string; title: string; }[];
+  citations?: { uri: string; title?: string; }[];
   isFallback?: boolean;
   imageUrl?: string; // For generated images
   isLoading?: boolean; // For showing loading indicators on a specific message
+  isError?: boolean; // For displaying an inline error message
+  feedback?: 'good' | 'bad' | null;
+}
+
+export interface GroundingChunk {
+  web?: {
+    uri: string;
+    title?: string;
+  };
 }
 
 export type StepStatus = 'done' | 'unclear' | 'skipped';
@@ -68,6 +76,18 @@ export interface AiSuggestion {
   createdAt: string;
 }
 
+export interface FlaggedQuestion {
+  id: string;
+  moduleId: string;
+  stepIndex: number;
+  userQuestion: string;
+  comment: string | null;
+  userId: string | null;
+  createdAt: string;
+  tutorLogId: string | null;
+  tutorResponse: string | null;
+}
+
 export interface AnalysisHotspot {
   stepIndex: number;
   stepTitle: string;
@@ -80,6 +100,11 @@ export interface RefinementSuggestion {
   newAlternativeMethod: AlternativeMethod | null;
 }
 
+export interface GeneratedBranchModule {
+  title: string;
+  steps: string[];
+}
+
 export interface PerformanceReportData {
   moduleTitle: string;
   completionDate: string;
@@ -88,7 +113,7 @@ export interface PerformanceReportData {
   userQuestions: string[];
 }
 
-export type CoachEventType = 'hint' | 'correction' | 'tutoring';
+export type CoachEventType = 'hint' | 'correction' | 'tutoring' | 'step_advance';
 
 export interface LiveCoachEvent {
   eventType: CoachEventType;
@@ -103,7 +128,15 @@ export interface SessionState {
   userActions: UserAction[];
   isCompleted: boolean;
   liveCoachEvents?: LiveCoachEvent[]; // Optional for backward compatibility with older session data
+  score?: number;
 }
+
+export interface SessionSummary extends SessionState {
+  startedAt: number;
+  endedAt: number;
+  durationsPerStep: Record<number, number>; // in milliseconds
+}
+
 
 export interface QuestionStats {
   question: string;
@@ -168,4 +201,31 @@ export interface TutorLogRow {
   user_question: string;
   tutor_response: string;
   created_at: string | null;
+}
+
+// This is a minimal definition for the TrainingModule to be used in LiveCoachPage
+// It avoids making assumptions about the full Supabase-generated type.
+export interface TrainingModule {
+  slug: string;
+  title: string;
+  steps: ProcessStep[];
+}
+
+export interface AIFeedbackLog {
+  id: string;
+  sessionToken: string;
+  moduleId: string;
+  stepIndex: number;
+  userPrompt: string;
+  aiResponse: string;
+  feedback: 'good' | 'bad';
+  userFixText?: string;
+  fixEmbedding?: number[];
+  createdAt: string;
+}
+
+export interface SimilarFix {
+  id: string;
+  userFixText: string;
+  similarity: number;
 }
