@@ -6,7 +6,7 @@ import { getModule } from '@/services/moduleService';
 import { getSession, saveSession } from '@/services/sessionService';
 import { startChat } from '@/services/geminiService';
 import { getPastFeedbackForStep, logAiFeedback, updateFeedbackWithFix, findSimilarFixes } from '@/services/feedbackService';
-import { getPromptContextForLiveCoach, getTagline } from '@/utils/promptEngineering';
+import { getPromptContextForLiveCoach, getTagline, getCelebratoryTagline } from '@/utils/promptEngineering';
 import { initializeObjectDetector, detectObjectsInVideo, isObjectPresent } from '@/services/visionService';
 import * as ttsService from '../services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
@@ -333,7 +333,7 @@ const LiveCoachPage: React.FC = () => {
                 clearAllTimers();
                 const branchRule = needs.branchOn?.find(b => detectedForbiddenItem.toLowerCase().includes(b.item.toLowerCase()));
                 if (branchRule) {
-                    handleBranchStart(branchRule.module);
+                    await handleBranchStart(branchRule.module);
                     return;
                 }
 
@@ -397,10 +397,15 @@ const LiveCoachPage: React.FC = () => {
             await updateFeedbackWithFix(activeFeedbackLogId, 'good');
             addToast('success', 'Feedback Received!', 'Glad I could help!');
             setActiveFeedbackLogId(null);
+            // Positive reinforcement
+            if (ttsEnabled) {
+                const celeb = getCelebratoryTagline();
+                await ttsService.speak(celeb, 'coach');
+            }
         } else {
             setShowFixFormFor(activeFeedbackLogId);
         }
-    }, [activeFeedbackLogId, addToast]);
+    }, [activeFeedbackLogId, addToast, ttsEnabled]);
 
     const handleUserFixSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -420,6 +425,7 @@ const LiveCoachPage: React.FC = () => {
             if (activeModule && hasSupport) {
                 try {
                     await initializeObjectDetector();
+                    // Store interval ID in ref for cleanup
                     visionIntervalRef.current = setInterval(() => {
                         if (videoRef.current?.readyState === 4) {
                             const detections = detectObjectsInVideo(videoRef.current);
@@ -434,7 +440,12 @@ const LiveCoachPage: React.FC = () => {
             } else if (activeModule && !hasSupport) { setStatus('idle'); }
         };
         initialize();
-        return () => { if (visionIntervalRef.current) clearInterval(visionIntervalRef.current); };
+        // Cleanup function for the interval
+        return () => {
+            if (visionIntervalRef.current) {
+                clearInterval(visionIntervalRef.current);
+            }
+        };
     }, [activeModule, hasSupport, startListening]);
 
     useEffect(() => {

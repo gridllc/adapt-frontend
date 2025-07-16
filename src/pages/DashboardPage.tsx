@@ -94,6 +94,7 @@ const DashboardPage: React.FC = () => {
     const branchModuleMutation = useMutation({
         mutationFn: async ({ stepTitle, questions }: { stepTitle: string; questions: string[] }) => {
             if (!user) throw new Error("Authentication required.");
+            addToast('info', 'Drafting Module...', 'The AI is creating a new remedial module. This may take a moment.');
             const generatedData = await generateBranchModule(stepTitle, questions);
 
             // Transform the AI output into a savable module structure

@@ -31,6 +31,21 @@ export const getTagline = (): string => {
     return selected;
 };
 
+const CELEBRATORY_TAGLINES = [
+    "Boom! Nailed it. 😎 Thanks for confirming.",
+    "Great! I'll remember that for next time someone runs into this.",
+    "Excellent! My AI circuits are buzzing with joy.",
+    "Perfect! Another problem solved.",
+];
+
+/**
+ * Returns a random celebratory tagline.
+ * @returns A string containing a celebratory tagline.
+ */
+export const getCelebratoryTagline = (): string => {
+    return CELEBRATORY_TAGLINES[Math.floor(Math.random() * CELEBRATORY_TAGLINES.length)];
+}
+
 
 // --- Prompt Construction ---
 
