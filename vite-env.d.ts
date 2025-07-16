@@ -1,30 +1,46 @@
-// This file is used to provide type definitions for Vite's `import.meta.env`.
-// By defining this interface, we get type-safe access to our environment variables.
-// This also resolves errors when the standard `vite/client` types are not found.
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tsconfigPaths from 'vite-tsconfig-paths'
 
-// To fix "Cannot redeclare block-scoped variable" errors and correctly augment
-// global types, all declarations are wrapped in `declare global`. `export {}`
-// makes this file a module, which is necessary for `declare global` to work correctly.
-declare global {
-    interface ImportMetaEnv {
-        readonly VITE_SUPABASE_URL?: string;
-        readonly VITE_SUPABASE_ANON_KEY?: string;
-        readonly PROD: boolean;
-        DEV: boolean;
-    }
+// https://vitejs.dev/config/
+export default defineConfig({
+    base: './',
+    plugins: [react(), tsconfigPaths()],
+    define: {
+        'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
+    },
 
-    interface ImportMeta {
-        readonly env: ImportMetaEnv;
-    }
+    // 1) In dev, don’t pre-bundle fsevents
+    optimizeDeps: {
+        exclude: ['fsevents'],
+    },
 
-    // Per coding guidelines, process.env.API_KEY is expected to be available in the execution context.
-    // We augment the NodeJS.ProcessEnv type to include API_KEY. This avoids redeclaring `process`
-    // and is the standard way to add types for environment variables.
-    namespace NodeJS {
-        interface ProcessEnv {
-            API_KEY?: string;
-        }
-    }
-}
-
-export { };
+    build: {
+        chunkSizeWarningLimit: 1000,
+        rollupOptions: {
+            // 2) In production, treat fsevents as external
+            external: ['fsevents'],
+            output: {
+                // 3) Arrow-fn for manualChunks to avoid parser issues
+                manualChunks: (id) => {
+                    if (id.includes('node_modules')) {
+                        if (
+                            id.includes('react') ||
+                            id.includes('react-dom') ||
+                            id.includes('react-router-dom')
+                        ) {
+                            return 'vendor-react'
+                        }
+                        if (id.includes('@tanstack') || id.includes('@supabase')) {
+                            return 'vendor-data'
+                        }
+                        if (id.includes('@google/genai')) {
+                            return 'vendor-ai'
+                        }
+                        return 'vendor'
+                    }
+                },
+            },
+        },
+    },
+})
