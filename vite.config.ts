@@ -4,7 +4,7 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/',
+  base: './',
   plugins: [react(), tsconfigPaths()],
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
