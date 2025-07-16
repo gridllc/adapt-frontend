@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, Content, Type } from "@google/genai";
 import type { File as AiFile } from "@google/genai";
 import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine } from "@/types";
@@ -415,5 +416,26 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
     } catch (error) {
         console.error("[AI Service] Error generating performance summary:", error);
         return { summary: "Congratulations on completing the training module!" };
+    }
+};
+
+/**
+ * Generates a vector embedding for a given text string.
+ * NOTE: The 'text-embedding-004' model is used here to fulfill the "collective memory"
+ * feature request, which relies on text embeddings for similarity search.
+ * @param text The text to generate an embedding for.
+ * @returns A promise that resolves to an array of numbers representing the embedding.
+ */
+export const generateEmbedding = async (text: string): Promise<number[]> => {
+    const client = getAiClient();
+    try {
+        const result = await client.models.embedContent({
+            model: "text-embedding-004",
+            contents: text,
+        });
+        return result.embeddings[0].values;
+    } catch (error) {
+        console.error("[AI Service] Error generating embedding:", error);
+        throw new Error("Failed to generate text embedding for memory search.");
     }
 };

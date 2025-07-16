@@ -1,15 +1,13 @@
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveModule, deleteModule } from '@/services/moduleService';
-import { getSuggestionsForModule, deleteSuggestion } from '@/services/suggestionsService';
+import { getTraineeSuggestionsForModule, deleteTraineeSuggestion, getAiSuggestionsForModule } from '@/services/suggestionsService';
 import { getCheckpointResponsesForModule } from '@/services/checkpointService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import { VideoPlayer } from '@/components/VideoPlayer';
-import type { AlternativeMethod, Suggestion, ProcessStep } from '@/types';
+import type { AlternativeMethod, TraineeSuggestion, ProcessStep, AiSuggestion } from '@/types';
 import type { Database } from '@/types/supabase';
 import { BookOpenIcon, TrashIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,6 +20,7 @@ type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses'
 const EditPage: React.FC = () => {
     const { moduleId } = useParams<{ moduleId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const queryClient = useQueryClient();
     const { isAuthenticated, user } = useAuth();
     const { addToast } = useToast();
@@ -43,16 +42,22 @@ const EditPage: React.FC = () => {
         retry: false, // Don't retry on not found
     });
 
-    const { data: allSuggestions = [] } = useQuery<Suggestion[]>({
-        queryKey: ['suggestions', moduleId],
-        queryFn: () => getSuggestionsForModule(moduleId!),
-        enabled: !!moduleId,
+    const { data: traineeSuggestions = [] } = useQuery<TraineeSuggestion[]>({
+        queryKey: ['traineeSuggestions', moduleId],
+        queryFn: () => getTraineeSuggestionsForModule(moduleId!),
+        enabled: !!moduleId && isAdmin,
+    });
+
+    const { data: aiSuggestions = [] } = useQuery<AiSuggestion[]>({
+        queryKey: ['aiSuggestions', moduleId],
+        queryFn: () => getAiSuggestionsForModule(moduleId!),
+        enabled: !!moduleId && isAdmin,
     });
 
     const { data: checkpointResponses = [] } = useQuery<CheckpointResponseRow[], Error>({
         queryKey: ['checkpointResponses', moduleId],
         queryFn: () => getCheckpointResponsesForModule(moduleId!),
-        enabled: !!moduleId,
+        enabled: !!moduleId && isAdmin,
     });
 
     // Real-time subscription for new suggestions
@@ -66,7 +71,7 @@ const EditPage: React.FC = () => {
                 { event: 'INSERT', schema: 'public', table: 'suggestions', filter: `module_id=eq.${moduleId}` },
                 (payload) => {
                     console.log('New suggestion received!', payload);
-                    queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
+                    queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
                     addToast('info', 'New Suggestion', 'A trainee has submitted a new suggestion for this module.');
                 }
             )
@@ -77,9 +82,9 @@ const EditPage: React.FC = () => {
         };
     }, [moduleId, queryClient, addToast]);
 
-    const suggestions = useMemo(() => {
-        return allSuggestions.filter((s: Suggestion) => s.status === 'pending');
-    }, [allSuggestions]);
+    const pendingTraineeSuggestions = useMemo(() => {
+        return traineeSuggestions.filter((s: TraineeSuggestion) => s.status === 'pending');
+    }, [traineeSuggestions]);
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -87,11 +92,31 @@ const EditPage: React.FC = () => {
         }
     }, [isAuthenticated, navigate]);
 
+    // This single effect handles both initial load and applying suggestions from navigation state.
     useEffect(() => {
         if (initialModuleData) {
-            setModule(initialModuleData);
+            const moduleToEdit = { ...initialModuleData }; // Make a mutable copy
+            const navigationState = location.state as { suggestion?: string; stepIndex?: number } | null;
+
+            if (navigationState?.suggestion && typeof navigationState.stepIndex === 'number') {
+                const { suggestion, stepIndex } = navigationState;
+                const steps = moduleToEdit.steps as ProcessStep[];
+
+                if (steps && steps[stepIndex]) {
+                    steps[stepIndex] = { ...steps[stepIndex], description: suggestion };
+                    moduleToEdit.steps = steps;
+
+                    addToast('info', 'Suggestion Applied', `AI fix pre-filled for Step ${stepIndex + 1}. Review and save changes.`);
+
+                    // Clear location state to prevent re-application on refresh/re-render
+                    navigate(location.pathname, { replace: true, state: {} });
+                }
+            }
+
+            setModule(moduleToEdit);
         }
-    }, [initialModuleData]);
+    }, [initialModuleData, location.state, location.pathname, navigate, addToast]);
+
 
     useEffect(() => {
         if (!isLoading && (isError || !initialModuleData)) {
@@ -100,7 +125,7 @@ const EditPage: React.FC = () => {
         }
     }, [isLoading, isError, initialModuleData, moduleId, navigate, queryError]);
 
-    const handleSuggestionAccept = async (suggestion: Suggestion) => {
+    const handleSuggestionAccept = async (suggestion: TraineeSuggestion) => {
         if (!module) return;
 
         const newSteps = [...module.steps as any[]];
@@ -108,7 +133,7 @@ const EditPage: React.FC = () => {
 
         if (stepToUpdate) {
             const newAlternativeMethod: AlternativeMethod = {
-                title: "AI-Suggested Improvement",
+                title: "Trainee-Suggested Improvement",
                 description: suggestion.text || ''
             };
             stepToUpdate.alternativeMethods.push(newAlternativeMethod);
@@ -116,14 +141,14 @@ const EditPage: React.FC = () => {
             setModule({ ...module, steps: newSteps });
         }
 
-        await deleteSuggestion(suggestion.id.toString());
-        queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
+        await deleteTraineeSuggestion(suggestion.id.toString());
+        queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
         addToast('success', 'Suggestion Accepted', 'The new method has been added to the step.');
     };
 
     const handleSuggestionReject = async (suggestionId: string) => {
-        await deleteSuggestion(suggestionId);
-        queryClient.invalidateQueries({ queryKey: ['suggestions', moduleId] });
+        await deleteTraineeSuggestion(suggestionId);
+        queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
         addToast('info', 'Suggestion Rejected', 'The suggestion has been removed.');
     };
 
@@ -210,7 +235,8 @@ const EditPage: React.FC = () => {
                         <ModuleEditor
                             module={module}
                             onModuleChange={handleModuleDataChange}
-                            suggestions={suggestions}
+                            traineeSuggestions={pendingTraineeSuggestions}
+                            aiSuggestions={aiSuggestions}
                             checkpointResponses={checkpointResponses}
                             onAcceptSuggestion={handleSuggestionAccept}
                             onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}

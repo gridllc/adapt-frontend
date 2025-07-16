@@ -1,10 +1,13 @@
 
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse, generateImage } from '@/services/geminiService';
 import * as ttsService from '../services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
 import { getChatHistory, saveChatMessage } from '@/services/chatService';
+import { findSimilarInteractions, logTutorInteraction } from '@/services/tutorLogService';
 import type { ChatMessage, ProcessStep } from '@/types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon, ClockIcon, AlertTriangleIcon } from '@/components/Icons';
 import { useToast } from '@/hooks/useToast';
@@ -70,16 +73,32 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         setMessages(initialMessages);
     }, [initialMessages]);
 
+    // This effect runs ONCE when the component mounts to handle cleanup.
     useEffect(() => {
-        // This effect runs when the context changes (e.g., user moves to a new step).
-        // We re-initialize the chat with the new context and existing history.
+        return () => {
+            ttsService.cancel();
+        }
+    }, []);
+
+    // This effect initializes or re-initializes the chat session
+    // ONLY when the core context (steps, transcript, or initial history) changes.
+    // It is critical that this does NOT depend on the mutable `messages` state.
+    useEffect(() => {
         if (!stepsContext) {
             setError('Waiting for training context...');
             return;
         }
+        // Don't initialize if we're still loading the history from the DB.
+        if (isLoadingHistory) {
+            setError('Loading history...');
+            return;
+        }
+
         setError(null);
 
-        const textBasedHistory = messages.filter(msg => msg.text.trim() !== '');
+        // Use the stable 'initialMessages' from useQuery for the initial history.
+        // The chat instance will manage its own history after this point.
+        const textBasedHistory = initialMessages.filter(msg => msg.text.trim() !== '' && !msg.isLoading);
         const geminiHistory: Content[] = textBasedHistory.map(msg => ({
             role: msg.role,
             parts: [{ text: msg.text }]
@@ -93,10 +112,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
             setError(err instanceof Error ? err.message : 'Could not start AI chat.');
         }
 
-        return () => {
-            ttsService.cancel();
-        }
-    }, [stepsContext, fullTranscript, messages]);
+    }, [stepsContext, fullTranscript, initialMessages, isLoadingHistory]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -143,12 +159,30 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
             return;
         }
 
+        // --- RAG: Retrieve similar past interactions ---
+        let memoryContext = '';
+        try {
+            const similarInteractions = await findSimilarInteractions(moduleId, trimmedInput);
+            if (similarInteractions.length > 0) {
+                memoryContext = "To help you, here are some questions and answers from previous trainees on this topic:\n\n---\n\n";
+                memoryContext += similarInteractions
+                    .map(log => `Question: ${log.user_question}\nAnswer: ${log.tutor_response}`)
+                    .join('\n\n---\n\n');
+                memoryContext += "\n\n--- \n\nNow, regarding your question:\n";
+            }
+        } catch (e) {
+            console.warn("Could not retrieve collective memory:", e);
+            // Non-fatal, continue without memory context
+        }
+
+
         // Standard text message handling
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: trimmedInput };
         setMessages(prev => [...prev, userMessage]);
         persistMessage(userMessage);
 
         const enrichedInput = enrichPromptIfNeeded(trimmedInput);
+        const finalPrompt = memoryContext + enrichedInput; // Prepend memory context
         setIsLoading(true);
         setError(null);
 
@@ -164,7 +198,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
             if (!chatRef.current) {
                 throw new Error("Chat not initialized");
             }
-            const stream = await chatRef.current.sendMessageStream({ message: enrichedInput });
+            const stream = await chatRef.current.sendMessageStream({ message: finalPrompt });
 
             for await (const chunk of stream) {
                 const chunkText = chunk.text;
@@ -197,7 +231,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         } catch (err) {
             console.warn("Primary AI provider failed. Attempting fallback.", err);
             try {
-                const fallbackText = await getFallbackResponse(enrichedInput, messages, stepsContext, fullTranscript);
+                const fallbackText = await getFallbackResponse(finalPrompt, messages, stepsContext, fullTranscript);
                 finalModelText = fallbackText;
                 isFallback = true;
                 setMessages(prev =>
@@ -227,11 +261,14 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                     isLoading: false,
                 };
                 persistMessage(finalModelMessage);
+                // Log to collective memory (fire and forget)
+                logTutorInteraction(moduleId, currentStepIndex, trimmedInput, finalModelText)
+                    .catch(err => console.warn("Failed to log interaction to collective memory:", err));
             } else {
                 setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
             }
         }
-    }, [isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken]);
+    }, [isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken, currentStepIndex]);
 
     const handleFormSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();

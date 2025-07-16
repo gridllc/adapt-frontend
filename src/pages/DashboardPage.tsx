@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAvailableModules, saveModule } from '@/services/moduleService';
+import { getAvailableModules } from '@/services/moduleService';
 import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
 import { generateRefinementSuggestion } from '@/services/geminiService';
+import { saveAiSuggestion } from '@/services/suggestionsService';
 import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon } from '@/components/Icons';
 import { RefinementModal } from '@/components/RefinementModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -60,10 +61,24 @@ const DashboardPage: React.FC = () => {
     const hotspot: AnalysisHotspot | null = analysisData?.hotspot ?? null;
 
     const refinementMutation = useMutation({
-        mutationFn: ({ step, questions }: { step: ProcessStep; questions: string[] }) => generateRefinementSuggestion(step, questions),
+        mutationFn: async ({ step, questions }: { step: ProcessStep; questions: string[] }) => {
+            const suggestion = await generateRefinementSuggestion(step, questions);
+            // After generating, immediately save it to the new persistent table.
+            if (selectedModule?.slug && user?.id) {
+                await saveAiSuggestion({
+                    moduleId: selectedModule.slug,
+                    stepIndex: hotspot!.stepIndex,
+                    originalInstruction: step.description,
+                    suggestion: suggestion.newDescription,
+                    sourceQuestions: questions,
+                });
+            }
+            return suggestion;
+        },
         onSuccess: (data) => {
             setRefinement(data);
-            addToast('success', 'Suggestion Ready', 'The AI has generated a refinement suggestion.');
+            addToast('success', 'Suggestion Ready', 'The AI has generated and saved a refinement suggestion.');
+            queryClient.invalidateQueries({ queryKey: ['aiSuggestions', selectedModule?.slug] });
         },
         onError: (error) => {
             addToast('error', 'Suggestion Failed', error.message);
@@ -85,42 +100,19 @@ const DashboardPage: React.FC = () => {
     };
 
     const handleApplyRefinement = useCallback(async () => {
-        if (!selectedModule || !hotspot || !refinement || !user) {
-            const reason = !user ? 'You must be logged in.' : 'Missing required data.';
-            addToast('error', 'Cannot Apply', `Could not apply refinement. ${reason}`);
+        if (!selectedModule || !hotspot || !refinement) {
+            addToast('error', 'Cannot Apply', `Could not apply refinement. Missing required data.`);
             return;
         }
 
-        const updatedModule = { ...selectedModule };
-        const newSteps = [...(updatedModule.steps as ProcessStep[])];
-        const stepToUpdate: ProcessStep = { ...newSteps[hotspot.stepIndex] };
-
-        // Apply changes
-        stepToUpdate.description = refinement.newDescription;
-        if (refinement.newAlternativeMethod) {
-            stepToUpdate.alternativeMethods = [
-                ...stepToUpdate.alternativeMethods,
-                refinement.newAlternativeMethod
-            ];
-        }
-
-        newSteps[hotspot.stepIndex] = stepToUpdate;
-        updatedModule.steps = newSteps;
-
-        // Save the updated module and navigate to the editor for final review
-        try {
-            const savedModule = await saveModule({ moduleData: updatedModule });
-            await queryClient.invalidateQueries({ queryKey: ['modules'] });
-            addToast('success', 'Changes Applied', 'Redirecting to the editor for your final review.');
-            navigate(`/modules/${savedModule.slug}/edit`);
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Please try again.';
-            addToast('error', 'Save Failed', `Failed to apply changes. ${errorMessage}`);
-        }
+        // This function now only navigates. The suggestion is already saved.
+        // The editor will pick it up from the database.
+        addToast('info', 'Applying Suggestion', 'Redirecting to the editor to apply the fix.');
+        navigate(`/modules/${selectedModule.slug}/edit`);
 
         setIsModalOpen(false);
 
-    }, [selectedModule, hotspot, refinement, user, navigate, addToast, queryClient]);
+    }, [selectedModule, hotspot, refinement, navigate, addToast]);
 
     return (
         <div className="max-w-4xl mx-auto p-8">
@@ -170,7 +162,7 @@ const DashboardPage: React.FC = () => {
                         <div className="flex items-center gap-3 mb-4">
                             <LightbulbIcon className="h-8 w-8 text-yellow-500 dark:text-yellow-400 flex-shrink-0" />
                             <div>
-                                <h3 className="text-lg font-bold text-yellow-700 dark:text-yellow-300">AI Refinement Opportunity</h3>
+                                <h3 className="text-lg font-bold text-yellow-700 dark:text-yellow-300">Top Confusion Hotspot</h3>
                                 <p className="text-sm text-indigo-800 dark:text-indigo-200">The AI found a point of confusion and can suggest an improvement.</p>
                             </div>
                         </div>
@@ -212,14 +204,24 @@ const DashboardPage: React.FC = () => {
                 )}
 
                 {/* Question Frequency Section */}
-                <h3 className="text-lg font-bold text-indigo-500 dark:text-indigo-400 mb-4">All Common Questions</h3>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-indigo-500 dark:text-indigo-400">Common Questions</h3>
+                    <Link to="/dashboard/questions" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline font-semibold">
+                        View Full Log &rarr;
+                    </Link>
+                </div>
+
                 {questionStats.length > 0 ? (
                     <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
                         {questionStats.map((stat, index) => (
-                            <div key={index} className="bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg flex items-center justify-between">
+                            <Link
+                                key={index}
+                                to={`/dashboard/questions/${selectedModule?.slug}/${stat.stepIndex}/${encodeURIComponent(stat.question)}`}
+                                className="block bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg flex items-center justify-between hover:ring-2 hover:ring-indigo-500 transition-all"
+                            >
                                 <p className="text-slate-800 dark:text-slate-200 italic">"{stat.question}"</p>
                                 <span className="bg-indigo-600 text-white text-xs font-bold rounded-full px-3 py-1 flex-shrink-0 ml-4">{stat.count} {stat.count > 1 ? 'times' : 'time'}</span>
-                            </div>
+                            </Link>
                         ))}
                     </div>
                 ) : (

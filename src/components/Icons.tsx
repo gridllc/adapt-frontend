@@ -24,6 +24,7 @@ export {
   Mic as MicIcon,
   Moon as MoonIcon,
   Pencil as PencilIcon,
+  RefreshCw as RefreshCwIcon,
   Search as SearchIcon,
   Send as SendIcon,
   Share2 as Share2Icon,

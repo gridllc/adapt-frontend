@@ -11,6 +11,7 @@ import CreatePage from '@/pages/CreatePage';
 import EditPage from '@/pages/EditPage';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
+import FaqPage from '@/pages/FaqPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { ToastProvider } from '@/hooks/useToast';
@@ -19,6 +20,7 @@ import { AuthProvider } from '@/hooks/useAuth';
 import './index.css';
 import LiveCoachPage from '@/pages/LiveCoachPage';
 import { PwaUpdater } from '@/components/PwaUpdater';
+import QuestionLogDetailPage from './pages/QuestionLogDetailPage';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -47,6 +49,22 @@ const router = createBrowserRouter([
                         <DashboardPage />
                     </ProtectedRoute>
                 ),
+            },
+            {
+                path: 'dashboard/questions',
+                element: (
+                    <ProtectedRoute>
+                        <FaqPage />
+                    </ProtectedRoute>
+                )
+            },
+            {
+                path: 'dashboard/questions/:moduleId/:stepIndex/:encodedQuestion',
+                element: (
+                    <ProtectedRoute>
+                        <QuestionLogDetailPage />
+                    </ProtectedRoute>
+                )
             },
             {
                 path: 'modules/:moduleId',

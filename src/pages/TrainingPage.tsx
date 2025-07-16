@@ -1,15 +1,12 @@
 
 
-
-
-
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
-import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon } from '@/components/Icons';
+import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon, VideoIcon, AlertTriangleIcon, SparklesIcon, RefreshCwIcon } from '@/components/Icons';
 import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus, CheckpointEvaluation } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
@@ -22,23 +19,9 @@ import { submitSuggestion } from '@/services/suggestionsService';
 import { logCheckpointResponse } from '@/services/checkpointService';
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
+import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
-
-const findActiveStepIndex = (time: number, steps: ProcessStep[]) => {
-  let foundIndex = -1;
-  // This allows finding the step even if the video overshoots the last step's end time.
-  if (steps.length > 0 && time >= steps[steps.length - 1].start) {
-    return steps.length - 1;
-  }
-
-  for (let i = 0; i < steps.length; i++) {
-    if (time >= steps[i].start && time < steps[i].end) {
-      return i;
-    }
-  }
-  return -1;
-};
 
 const generateToken = () => Math.random().toString(36).substring(2, 10);
 
@@ -62,21 +45,19 @@ const TrainingPage: React.FC = () => {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [initialChatPrompt, setInitialChatPrompt] = useState<string | undefined>();
 
-  // State for Checkpoint evaluation
+  // State for checkpoint UI
   const [isEvaluatingCheckpoint, setIsEvaluatingCheckpoint] = useState(false);
   const [checkpointFeedback, setCheckpointFeedback] = useState<CheckpointEvaluation | null>(null);
   const [instructionSuggestion, setInstructionSuggestion] = useState<string | null>(null);
   const [isSuggestionSubmitted, setIsSuggestionSubmitted] = useState(false);
+  const isAdmin = !!user;
 
-
-  // Effect to manage session token in URL
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     let token = searchParams.get('token');
 
     if (!token) {
       token = generateToken();
-      // Replace the current history entry with the one that has the token
       navigate(`${location.pathname}?token=${token}`, { replace: true });
     }
 
@@ -110,16 +91,34 @@ const TrainingPage: React.FC = () => {
     goBack,
   } = useTrainingSession(moduleId ?? 'unknown', sessionToken, steps.length ?? 0);
 
+  const videoPath = useMemo(() => {
+    if (!moduleData?.video_url) return null;
+    try {
+      const url = new URL(moduleData.video_url);
+      const BUCKET_NAME = 'training-videos';
+      const pathParts = url.pathname.split(`/${BUCKET_NAME}/`);
+      return pathParts[1] || null;
+    } catch (e) {
+      console.error("Could not parse video URL to get path:", moduleData.video_url);
+      return null;
+    }
+  }, [moduleData?.video_url]);
+
+  const {
+    videoUrl: publicVideoUrl,
+    isLoading: isLoadingVideo,
+    isError: isVideoError,
+    retry: retryVideoUrl,
+  } = useSafeVideoUrl(videoPath);
+
 
   useEffect(() => {
-    // Only navigate to not-found if the query has errored AND we never had any data to display.
     if (isError && !moduleData) {
       console.error(`Module with slug "${moduleId}" not found or failed to load.`, error);
       navigate('/not-found');
     }
   }, [isError, moduleData, moduleId, navigate, error]);
 
-  // Generate focused AI contexts based on the current step and transcript
   useEffect(() => {
     if (!moduleData || currentStepIndex < 0 || isCompleted) {
       setStepsContext('');
@@ -129,7 +128,6 @@ const TrainingPage: React.FC = () => {
 
     const { title } = moduleData;
 
-    // 1. Create context from the process steps (previous, current, next)
     const prevStep = steps[currentStepIndex - 1];
     const currentStep = steps[currentStepIndex];
     const nextStep = steps[currentStepIndex + 1];
@@ -151,7 +149,6 @@ const TrainingPage: React.FC = () => {
 
     setStepsContext(stepCtx.trim());
 
-    // 2. Create context from the full video transcript
     if (transcript && transcript.length > 0) {
       const transcriptText = transcript.map(line => `[${line.start.toFixed(2)}] ${line.text}`).join('\n');
       setFullTranscript(transcriptText);
@@ -161,7 +158,6 @@ const TrainingPage: React.FC = () => {
 
   }, [currentStepIndex, moduleData, isCompleted, steps, transcript]);
 
-  // Effect to generate performance report upon completion
   useEffect(() => {
     if (isCompleted && moduleData && !performanceReport && !isGeneratingReport) {
       const generateReport = async () => {
@@ -191,7 +187,6 @@ const TrainingPage: React.FC = () => {
 
         } catch (error) {
           console.error("Failed to generate performance report:", error);
-          // Set a fallback report if AI fails
           setPerformanceReport({
             moduleTitle: moduleData.title,
             completionDate: new Date().toLocaleDateString(),
@@ -217,11 +212,9 @@ const TrainingPage: React.FC = () => {
     }
   }, []);
 
-  // When currentStepIndex changes, seek video to the start of the new step.
   useEffect(() => {
     const step = steps?.[currentStepIndex];
     if (step && videoRef.current) {
-      // Add a small tolerance to avoid seeking if already very close.
       if (Math.abs(videoRef.current.currentTime - step.start) > 0.5) {
         handleSeekTo(step.start);
       }
@@ -242,7 +235,6 @@ const TrainingPage: React.FC = () => {
     if (isCompleted) return;
     setCurrentTime(time);
 
-    // Automatically advance the step based on video time, but only if the user isn't on a checkpoint.
     const currentStep = steps[currentStepIndex];
     if (currentStep && !currentStep.checkpoint && time > currentStep.end && currentStep.end > 0) {
       if (currentStepIndex < steps.length - 1) {
@@ -257,6 +249,7 @@ const TrainingPage: React.FC = () => {
   }, [handleSeekTo, setCurrentStepIndex]);
 
   useEffect(() => {
+    // Clear checkpoint-specific feedback when the step changes
     setCheckpointFeedback(null);
     setInstructionSuggestion(null);
     setIsSuggestionSubmitted(false);
@@ -282,55 +275,60 @@ const TrainingPage: React.FC = () => {
   }
 
   const handleCheckpointAnswer = useCallback(async (answer: string, comment?: string) => {
-    const step = steps[currentStepIndex];
-    if (!step?.checkpoint || !moduleId) return;
+    const stepJustAnswered = steps[currentStepIndex];
+    if (!stepJustAnswered?.checkpoint || !moduleId) return;
 
+    setIsEvaluatingCheckpoint(true);
+    setCheckpointFeedback(null);
+    setInstructionSuggestion(null);
+
+    // Log response in the background
     if (user) {
       logCheckpointResponse({
         module_id: moduleId,
         user_id: user.id,
         step_index: currentStepIndex,
-        checkpoint_text: step.checkpoint,
+        checkpoint_text: stepJustAnswered.checkpoint,
         answer: answer,
         comment: comment,
-      }).catch(err => console.error("Non-blocking error: Failed to log checkpoint response.", err));
+      }).catch(err => {
+        console.error("Non-blocking error: Failed to log checkpoint response.", err);
+      });
     }
 
-    setIsEvaluatingCheckpoint(true);
     try {
-      const evaluation = await evaluateCheckpointAnswer(step, answer);
+      const evaluation = await evaluateCheckpointAnswer(stepJustAnswered, answer);
       setCheckpointFeedback(evaluation);
-      setInstructionSuggestion(evaluation.suggestedInstructionChange ?? null);
+
+      if (evaluation.suggestedInstructionChange) {
+        setInstructionSuggestion(evaluation.suggestedInstructionChange);
+      }
 
       if (evaluation.isCorrect) {
-        addToast('success', 'Checkpoint Passed', 'Great! Moving to the next step.');
-        setTimeout(() => markStep('done'), 1500);
+        addToast('success', 'Checkpoint Passed!', evaluation.feedback);
+        markStep('done'); // Only advance if correct
       } else {
-        addToast('info', 'Noted. Moving on.', 'Let\'s proceed to the next step.');
-        // Advance to the next step regardless of the answer. The "no" is logged for analytics.
-        setTimeout(() => markStep('done'), 1500);
+        addToast('info', 'Checkpoint Answer Noted', evaluation.feedback);
       }
     } catch (err) {
       console.error("Error evaluating checkpoint with AI", err);
-      addToast('error', 'Evaluation Error', 'Could not get AI feedback. Moving on.');
-      // If AI evaluation fails, just advance to the next step to not block the user.
-      markStep('done');
+      addToast('error', 'Evaluation Error', 'Could not get AI feedback.');
     } finally {
       setIsEvaluatingCheckpoint(false);
     }
   }, [currentStepIndex, steps, addToast, markStep, user, moduleId]);
 
-  const handleSuggestionSubmit = async () => {
-    if (!moduleId || !instructionSuggestion) return;
-
+  const handleSuggestionSubmit = useCallback(async () => {
+    if (!instructionSuggestion || !moduleId) return;
     try {
       await submitSuggestion(moduleId, currentStepIndex, instructionSuggestion);
-      addToast('success', 'Suggestion Submitted!', 'Thank you for helping improve this training.');
+      addToast('success', 'Suggestion Submitted', 'Thank you! The module owner will review it.');
       setIsSuggestionSubmitted(true);
     } catch (err) {
-      addToast('error', 'Submission Failed', 'Could not send the suggestion.');
+      addToast('error', 'Submission Failed', 'Could not submit suggestion.');
     }
-  };
+  }, [instructionSuggestion, moduleId, currentStepIndex, addToast]);
+
 
   const handleTutorHelp = useCallback((question: string, userAnswer?: string) => {
     const step = steps[currentStepIndex];
@@ -338,26 +336,23 @@ const TrainingPage: React.FC = () => {
 
     let prompt: string;
 
-    // If a checkpoint was just failed, create a more contextual prompt.
-    if (userAnswer && userAnswer.toLowerCase() === 'no' && checkpointFeedback && !checkpointFeedback.isCorrect) {
+    if (userAnswer && userAnswer.toLowerCase() === 'no' && step.checkpoint) {
       let contextForAi = `I'm on the step: "${step.title}".\n`;
       contextForAi += `The instruction is: "${step.description}".\n`;
-      if (step.checkpoint) {
-        contextForAi += `I was asked the checkpoint question: "${step.checkpoint}" and I answered "${userAnswer}".\n`;
-      }
+      contextForAi += `I was asked the checkpoint question: "${step.checkpoint}" and I answered "${userAnswer}".\n`;
+
       if (step.alternativeMethods && step.alternativeMethods.length > 0 && step.alternativeMethods[0].description) {
         contextForAi += `I see a hint that says: "${step.alternativeMethods[0].description}".\n`;
       }
       contextForAi += "I'm still stuck. What should I do next?";
       prompt = contextForAi;
     } else {
-      // Default prompt if not a failed checkpoint scenario
       prompt = question;
     }
 
     setInitialChatPrompt(prompt);
     setIsChatOpen(true);
-  }, [steps, currentStepIndex, checkpointFeedback]);
+  }, [steps, currentStepIndex]);
 
 
   if (isLoadingModule || isLoadingSession || !sessionToken) {
@@ -396,12 +391,35 @@ const TrainingPage: React.FC = () => {
       </header>
 
       <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-7xl mx-auto">
-        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden">
-          <VideoPlayer
-            ref={videoRef}
-            video_url={moduleData.video_url}
-            onTimeUpdate={handleTimeUpdate}
-          />
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-lg shadow-xl overflow-hidden min-h-[400px]">
+          {!moduleData?.video_url ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900">
+              <VideoIcon className="h-16 w-16 text-slate-400 dark:text-slate-600" />
+              <p className="mt-4 text-slate-500">No video provided for this module.</p>
+            </div>
+          ) : isLoadingVideo ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
+              <SparklesIcon className="h-12 w-12 text-indigo-400 animate-pulse" />
+              <p className="mt-4 text-slate-500">Verifying video...</p>
+            </div>
+          ) : isVideoError ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
+              <AlertTriangleIcon className="h-12 w-12 text-red-500 mb-4" />
+              <p className="text-red-500 text-center">Could not load the video. The path might be missing or incorrect.</p>
+              <button
+                onClick={retryVideoUrl}
+                className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg flex items-center gap-2"
+              >
+                <RefreshCwIcon className="h-5 w-5" /> Try Again
+              </button>
+            </div>
+          ) : publicVideoUrl ? (
+            <VideoPlayer
+              ref={videoRef}
+              video_url={publicVideoUrl}
+              onTimeUpdate={handleTimeUpdate}
+            />
+          ) : null}
         </div>
         <div className={`lg:col-span-1 h-[75vh] bg-white dark:bg-slate-800 rounded-lg shadow-xl flex flex-col ${isCompleted ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
@@ -449,7 +467,7 @@ const TrainingPage: React.FC = () => {
                   instructionSuggestion={instructionSuggestion}
                   onSuggestionSubmit={handleSuggestionSubmit}
                   isSuggestionSubmitted={isSuggestionSubmitted}
-                  isAdmin={!!user}
+                  isAdmin={isAdmin}
                   moduleId={moduleId}
                   onTutorHelp={handleTutorHelp}
                 />

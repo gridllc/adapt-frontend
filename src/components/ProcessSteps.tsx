@@ -6,8 +6,6 @@ import {
   LightbulbIcon,
   HelpCircleIcon,
   XCircleIcon,
-  SendIcon,
-  SparklesIcon,
   ArrowLeftIcon,
   AlertTriangleIcon,
   PencilIcon
@@ -28,7 +26,7 @@ interface ProcessStepsProps {
   isSuggestionSubmitted: boolean;
   isAdmin: boolean;
   moduleId?: string;
-  onTutorHelp: (question: string) => void;
+  onTutorHelp: (question: string, userAnswer?: string) => void;
 }
 
 export const ProcessSteps: React.FC<ProcessStepsProps> = ({
@@ -71,10 +69,10 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
             ref={isActive ? activeStepRef : null}
             onClick={() => onStepSelect(step.start, index)}
             className={`cursor-pointer p-4 rounded-lg transition-all duration-300 border-l-4 ${isActive
-              ? 'bg-indigo-100 dark:bg-indigo-600/30 border-indigo-500 shadow-lg'
-              : isCompleted
-                ? 'bg-slate-100/60 dark:bg-slate-700/40 border-green-500 opacity-70'
-                : 'bg-slate-100 dark:bg-slate-700/80 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700'
+                ? 'bg-indigo-100 dark:bg-indigo-600/30 border-indigo-500 shadow-lg'
+                : isCompleted
+                  ? 'bg-slate-100/60 dark:bg-slate-700/40 border-green-500 opacity-70'
+                  : 'bg-slate-100 dark:bg-slate-700/80 border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
           >
             <div className="flex justify-between items-center">
@@ -101,37 +99,40 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
             {/* Active Step Interaction */}
             {isActive && (
               <div className="mt-4 pt-3 border-t border-slate-300 dark:border-slate-600/70 space-y-4">
-
                 {step.checkpoint ? (
                   <>
                     {/* Checkpoint Prompt */}
                     <CheckpointPrompt
                       question={step.checkpoint}
-                      options={['yes', 'no']}
-                      allowTextInputOn="no"
+                      options={['Yes', 'No']}
+                      allowTextInputOn="No"
                       alternativeHelp={step.alternativeMethods?.[0]?.description}
                       onAnswer={(ans, comment) => onCheckpointAnswer(ans, comment)}
                       onTutorHelp={onTutorHelp}
                       isLoading={isEvaluatingCheckpoint}
                     />
 
-                    {/* Feedback */}
+                    {/* Checkpoint Feedback */}
                     {checkpointFeedback && (
-                      <div className={`flex items-start gap-2 p-3 rounded-lg text-sm animate-fade-in-up ${checkpointFeedback.isCorrect
-                          ? 'bg-green-100/80 dark:bg-green-900/50 text-green-800 dark:text-green-200'
-                          : 'bg-red-100/80 dark:bg-red-900/50 text-red-800 dark:text-red-200'
-                        }`}>
-                        {checkpointFeedback.isCorrect
-                          ? <CheckCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                          : <XCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                        }
+                      <div
+                        className={`flex items-start gap-2 p-3 rounded-lg text-sm animate-fade-in-up ${checkpointFeedback.isCorrect
+                            ? 'bg-green-100/80 dark:bg-green-900/50 text-green-800 dark:text-green-200'
+                            : 'bg-red-100/80 dark:bg-red-900/50 text-red-800 dark:text-red-200'
+                          }`}
+                      >
+                        {checkpointFeedback.isCorrect ? (
+                          <CheckCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <XCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                        )}
                         <span>{checkpointFeedback.feedback}</span>
                       </div>
                     )}
 
-                    {/* Suggestion Flow */}
+                    {/* AI-Generated Instruction Suggestion */}
                     {!checkpointFeedback?.isCorrect && instructionSuggestion && (
                       isAdmin ? (
+                        // Admin sees edit button
                         <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/50 rounded-lg text-sm animate-fade-in-up space-y-2 border border-red-300 dark:border-red-700">
                           <div className="flex items-center gap-2 font-bold text-red-800 dark:text-red-200">
                             <AlertTriangleIcon className="h-5 w-5" />
@@ -144,7 +145,7 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                             "{instructionSuggestion}"
                           </p>
                           <button
-                            onClick={() => moduleId && navigate(`/modules/${moduleId}/edit`)}
+                            onClick={() => moduleId && navigate(`/modules/${moduleId}/edit`, { state: { suggestion: instructionSuggestion, stepIndex: index } })}
                             className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             <PencilIcon className="h-4 w-4" />
@@ -152,6 +153,7 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                           </button>
                         </div>
                       ) : (
+                        // Trainee sees suggestion & submit button
                         <div className="mt-3 p-3 bg-yellow-100/80 dark:bg-yellow-900/50 rounded-lg text-sm animate-fade-in-up space-y-2 border border-yellow-300 dark:border-yellow-700">
                           <div className="flex items-center gap-2 font-bold text-yellow-800 dark:text-yellow-200">
                             <LightbulbIcon className="h-5 w-5" />
@@ -166,15 +168,20 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                           <button
                             onClick={onSuggestionSubmit}
                             disabled={isSuggestionSubmitted}
-                            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:bg-green-600"
+                            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:bg-green-600 disabled:cursor-not-allowed"
                           >
-                            {isSuggestionSubmitted ? '✔︎ Submitted' : 'Submit Fix to Owner'}
+                            {isSuggestionSubmitted ? (
+                              <><CheckCircleIcon className="h-4 w-4" /> Submitted</>
+                            ) : (
+                              'Submit Fix to Owner'
+                            )}
                           </button>
                         </div>
                       )
                     )}
                   </>
                 ) : (
+                  // No checkpoint: show Back / Done / Unsure buttons
                   <div className="flex items-center justify-center gap-3">
                     {currentStepIndex > 0 && (
                       <button

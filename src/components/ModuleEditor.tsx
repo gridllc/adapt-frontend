@@ -1,11 +1,8 @@
-
-
-
-
 import React, { useCallback, useState } from 'react'
 import type {
     AlternativeMethod,
-    Suggestion,
+    TraineeSuggestion,
+    AiSuggestion,
     TranscriptLine,
     ProcessStep,
 } from '@/types'
@@ -14,7 +11,8 @@ import {
     XIcon,
     LightbulbIcon,
     CheckCircleIcon,
-    DownloadIcon
+    DownloadIcon,
+    SparklesIcon
 } from '@/components/Icons'
 import { useToast } from '@/hooks/useToast'
 import { CheckpointDashboard } from './CheckpointDashboard'
@@ -26,9 +24,10 @@ type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses'
 interface ModuleEditorProps {
     module: ModuleRow | ModuleInsert
     onModuleChange: (module: ModuleRow | ModuleInsert) => void
-    suggestions?: Suggestion[]
+    traineeSuggestions?: TraineeSuggestion[]
+    aiSuggestions?: AiSuggestion[];
     checkpointResponses?: CheckpointResponseRow[];
-    onAcceptSuggestion?: (suggestion: Suggestion) => void
+    onAcceptSuggestion?: (suggestion: TraineeSuggestion) => void
     onRejectSuggestion?: (suggestionId: string) => void
     isAdmin: boolean;
 }
@@ -44,7 +43,8 @@ const formatTime = (seconds: number): string => {
 export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     module,
     onModuleChange,
-    suggestions = [],
+    traineeSuggestions = [],
+    aiSuggestions = [],
     checkpointResponses = [],
     onAcceptSuggestion = () => { },
     onRejectSuggestion = () => { },
@@ -234,7 +234,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
             <div>
                 <div className="flex justify-between items-center mb-3">
                     <h2 className="font-semibold text-lg">Process Steps</h2>
-                    {suggestions.length > 0 && (
+                    {traineeSuggestions.length > 0 && (
                         <div className="flex items-center gap-2">
                             <input
                                 type="checkbox"
@@ -251,9 +251,10 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                 </div>
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto p-1">
                     {steps.map((step, idx) => {
-                        const stepSuggestions = suggestions.filter(
+                        const stepTraineeSuggestions = traineeSuggestions.filter(
                             (s) => s.stepIndex === idx
                         );
+                        const stepAiSuggestion = aiSuggestions?.find(s => s.stepIndex === idx);
 
                         const stepTranscriptLines = transcript
                             .map((line, index) => ({ ...line, originalIndex: index }))
@@ -307,6 +308,22 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                         />
                                     </div>
                                 </div>
+
+                                {stepAiSuggestion && (
+                                    <div className="bg-yellow-100 dark:bg-yellow-900/30 p-3 rounded-lg border border-yellow-200 dark:border-yellow-700 animate-fade-in-up">
+                                        <h4 className="flex items-center gap-2 font-bold text-yellow-800 dark:text-yellow-300 mb-2">
+                                            <SparklesIcon className="h-5 w-5" />
+                                            AI-Suggested Fix
+                                        </h4>
+                                        <p className="text-yellow-800 dark:text-yellow-200 italic mb-2">"{stepAiSuggestion.suggestion}"</p>
+                                        <button
+                                            onClick={() => handleStepChange(idx, 'description', stepAiSuggestion.suggestion)}
+                                            className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 text-xs font-semibold flex items-center gap-1.5"
+                                        >
+                                            <CheckCircleIcon className="h-4 w-4" /> Apply to Step
+                                        </button>
+                                    </div>
+                                )}
 
                                 <div className="grid gap-4 grid-cols-2">
                                     <div>
@@ -451,10 +468,10 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                     </div>
                                 )}
 
-                                {showSuggestions && stepSuggestions.length > 0 && (
+                                {showSuggestions && stepTraineeSuggestions.length > 0 && (
                                     <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                                         <h4 className="font-semibold mb-2">Trainee Suggestions</h4>
-                                        {stepSuggestions.map((sug) => (
+                                        {stepTraineeSuggestions.map((sug) => (
                                             <div
                                                 key={sug.id}
                                                 className="flex justify-between items-center mb-2"

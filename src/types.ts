@@ -1,7 +1,4 @@
 
-
-
-
 export interface AlternativeMethod {
   title: string;
   description: string;
@@ -53,12 +50,22 @@ export interface VideoAnalysisResult {
   transcript: TranscriptLine[];
 }
 
-export interface Suggestion {
+export interface TraineeSuggestion {
   id: string;
   moduleId: string;
   stepIndex: number;
   text: string;
   status: 'pending' | 'approved' | 'rejected';
+}
+
+export interface AiSuggestion {
+  id: string;
+  moduleId: string;
+  stepIndex: number;
+  originalInstruction: string;
+  suggestion: string;
+  sourceQuestions: string[];
+  createdAt: string;
 }
 
 export interface AnalysisHotspot {
@@ -146,3 +153,19 @@ export interface StepNeeds {
 }
 
 export type ModuleNeeds = Record<string, Record<number, StepNeeds>>;
+
+export interface TutorLog {
+  id: string;
+  user_question: string;
+  tutor_response: string;
+  similarity?: number;
+}
+
+export interface TutorLogRow {
+  id: string;
+  module_id: string;
+  step_index: number | null;
+  user_question: string;
+  tutor_response: string;
+  created_at: string | null;
+}

@@ -101,40 +101,43 @@ export interface Database {
           }
         ]
       }
-      flagged_checkpoints: {
+      flagged_questions: {
         Row: {
-          ai_response: string
-          checkpoint_text: string | null
-          flagged_at: string
+          comment: string | null
+          created_at: string
           id: string
           module_id: string
+          step_index: number
           user_id: string | null
+          user_question: string
         }
         Insert: {
-          ai_response: string
-          checkpoint_text?: string | null
-          flagged_at: string
+          comment?: string | null
+          created_at?: string
           id?: string
           module_id: string
+          step_index: number
           user_id?: string | null
+          user_question: string
         }
         Update: {
-          ai_response?: string
-          checkpoint_text?: string | null
-          flagged_at?: string
+          comment?: string | null
+          created_at?: string
           id?: string
           module_id?: string
+          step_index?: number
           user_id?: string | null
+          user_question?: string
         }
         Relationships: [
           {
-            foreignKeyName: "flagged_checkpoints_module_id_fkey"
+            foreignKeyName: "flagged_questions_module_id_fkey"
             columns: ["module_id"]
             referencedRelation: "modules"
             referencedColumns: ["slug"]
           },
           {
-            foreignKeyName: "flagged_checkpoints_user_id_fkey"
+            foreignKeyName: "flagged_questions_user_id_fkey"
             columns: ["user_id"]
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -181,6 +184,52 @@ export interface Database {
           }
         ]
       }
+      suggested_fixes: {
+        Row: {
+          created_at: string
+          id: string
+          module_id: string
+          original_instruction: string | null
+          source_questions: string[] | null
+          step_index: number
+          suggestion: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          module_id: string
+          original_instruction?: string | null
+          source_questions?: string[] | null
+          step_index: number
+          suggestion?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          module_id?: string
+          original_instruction?: string | null
+          source_questions?: string[] | null
+          step_index?: number
+          suggestion?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suggested_fixes_module_id_fkey"
+            columns: ["module_id"]
+            referencedRelation: "modules"
+            referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "suggested_fixes_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       suggestions: {
         Row: {
           created_at: string
@@ -189,6 +238,7 @@ export interface Database {
           status: string
           step_index: number
           text: string | null
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -197,6 +247,7 @@ export interface Database {
           status?: string
           step_index: number
           text?: string | null
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -205,6 +256,7 @@ export interface Database {
           status?: string
           step_index?: number
           text?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -212,6 +264,12 @@ export interface Database {
             columns: ["module_id"]
             referencedRelation: "modules"
             referencedColumns: ["slug"]
+          },
+          {
+            foreignKeyName: "suggestions_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           }
         ]
       }
@@ -258,12 +316,62 @@ export interface Database {
           }
         ]
       }
+      tutor_logs: {
+        Row: {
+          created_at: string | null
+          id: string
+          module_id: string
+          question_embedding: number[] | null
+          step_index: number | null
+          tutor_response: string
+          user_question: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          module_id: string
+          question_embedding?: number[] | null
+          step_index?: number | null
+          tutor_response: string
+          user_question: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          module_id?: string
+          question_embedding?: number[] | null
+          step_index?: number | null
+          tutor_response?: string
+          user_question?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tutor_logs_module_id_fkey"
+            columns: ["module_id"]
+            referencedRelation: "modules"
+            referencedColumns: ["slug"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      match_tutor_logs: {
+        Args: {
+          query_embedding: number[]
+          p_module_id: string
+          match_threshold: number
+          match_count: number
+        }
+        Returns: {
+          id: string
+          user_question: string
+          tutor_response: string
+          similarity: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

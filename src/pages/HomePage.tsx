@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveModule, deleteModule } from '@/services/moduleService';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon, HelpCircleIcon } from '@/components/Icons';
 import type { ProcessStep } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -164,7 +164,7 @@ const HomePage: React.FC = () => {
             {isAuthenticated && (
                 <div className="mb-12 animate-fade-in-up">
                     <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-6 text-center">Admin Tools</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-100 dark:bg-slate-800/50 p-6 rounded-2xl border border-indigo-200 dark:border-indigo-500/30">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-100 dark:bg-slate-800/50 p-6 rounded-2xl border border-indigo-200 dark:border-indigo-500/30">
                         <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col">
                             <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Create with AI</h3>
                             <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
@@ -175,13 +175,21 @@ const HomePage: React.FC = () => {
                         </div>
                         <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col">
                             <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Analytics Dashboard</h3>
-                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">View trainee insights and see the most common questions.</p>
+                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">View trainee insights and see where they get stuck.</p>
                             <Link to="/dashboard" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
                                 <BarChartIcon className="h-6 w-6" />
                                 <span>View Dashboard</span>
                             </Link>
                         </div>
-                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col md:col-span-2">
+                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col">
+                            <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Question Log</h3>
+                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">Review every question trainees have asked the AI tutor.</p>
+                            <Link to="/dashboard/questions" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
+                                <HelpCircleIcon className="h-6 w-6" />
+                                <span>Browse Log</span>
+                            </Link>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col md:col-span-3">
                             <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Upload a Module</h3>
                             <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
 
