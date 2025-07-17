@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useReducer } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
@@ -8,14 +8,14 @@ import { startChat, sendMessageWithRetry } from '@/services/geminiService';
 import { getPastFeedbackForStep, logAiFeedback, updateFeedbackWithFix, findSimilarFixes } from '@/services/feedbackService';
 import { getPromptContextForLiveCoach, getTagline, getCelebratoryTagline } from '@/utils/promptEngineering';
 import { initializeObjectDetector, detectObjectsInVideo, isObjectPresent } from '@/services/visionService';
-import * as ttsService from '../services/ttsService';
+import * as ttsService from '@/services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { coachReducer, initialCoachState } from '@/reducers/coachReducer';
 import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon, LightbulbIcon, GitBranchIcon, SpeakerOffIcon, TrophyIcon, ThumbsUpIcon, ThumbsDownIcon, CheckCircleIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
-import type { DetectedObject, ModuleNeeds, StepNeeds, LiveCoachEvent, CoachEventType, TrainingModule, SessionState, AIFeedbackLog } from '@/types';
-
-type CoachStatus = 'initializing' | 'idle' | 'listening' | 'thinking' | 'speaking' | 'hinting' | 'correcting' | 'tutoring' | 'branching';
+import type { DetectedObject, ModuleNeeds, StepNeeds, LiveCoachEvent, CoachEventType, TrainingModule, SessionState } from '@/types';
+import type { CoachStatus } from '@/reducers/coachReducer';
 
 const generateToken = () => Math.random().toString(36).substring(2, 10);
 
@@ -26,36 +26,36 @@ const LiveCoachPage: React.FC = () => {
     const queryClient = useQueryClient();
     const { addToast } = useToast();
 
-    // --- Core State ---
+    // --- State Management ---
+    const [coachState, dispatch] = useReducer(coachReducer, initialCoachState);
+    const { status, aiResponse, currentStepIndex, sessionScore, activeModule, mainModuleState } = coachState;
+
+    // State not managed by the reducer
     const [sessionToken, setSessionToken] = useState('');
-    const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [sessionEvents, setSessionEvents] = useState<LiveCoachEvent[]>([]);
-    const [status, setStatus] = useState<CoachStatus>('initializing');
-    const [aiResponse, setAiResponse] = useState('');
     const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
-
-    // --- Module & Branching State ---
     const [moduleNeeds, setModuleNeeds] = useState<ModuleNeeds | null>(null);
-    const [activeModule, setActiveModule] = useState<TrainingModule | null>(null);
-    const [mainModuleState, setMainModuleState] = useState<{ module: TrainingModule; stepIndex: number } | null>(null);
-
-    // --- Enhancement & Feedback State ---
     const [ttsEnabled, setTtsEnabled] = useState(true);
-    const [sessionScore, setSessionScore] = useState(100);
     const [lastEventType, setLastEventType] = useState<'good' | 'hint' | 'correction'>('good');
     const [activeFeedbackLogId, setActiveFeedbackLogId] = useState<string | null>(null);
     const [showFixFormFor, setShowFixFormFor] = useState<string | null>(null);
     const [userFixText, setUserFixText] = useState('');
 
-    // --- Refs ---
+    // Control flags
+    const [isInitialized, setIsInitialized] = useState(false);
+    const [visionInitialized, setVisionInitialized] = useState(false);
+    const [chatInitialized, setChatInitialized] = useState(false);
+
+    // Refs
     const chatRef = useRef<Chat | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const hintTimerRef = useRef<NodeJS.Timeout | null>(null);
     const stepCompletionTimerRef = useRef<NodeJS.Timeout | null>(null);
     const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isInterjectingRef = useRef(false);
+    const mountedRef = useRef(true);
 
-    // --- Session Management ---
+    // --- Session & Data Fetching ---
     useEffect(() => {
         const searchParams = new URLSearchParams(location.search);
         let sessionKey = searchParams.get('session_key');
@@ -66,7 +66,7 @@ const LiveCoachPage: React.FC = () => {
         setSessionToken(sessionKey);
     }, [location.search, location.pathname, navigate]);
 
-    const sessionQueryKey = ['liveCoachSession', moduleId, sessionToken];
+    const sessionQueryKey = useMemo(() => ['liveCoachSession', moduleId, sessionToken], [moduleId, sessionToken]);
 
     const { data: sessionData, isLoading: isLoadingSession } = useQuery<SessionState | null>({
         queryKey: sessionQueryKey,
@@ -74,290 +74,283 @@ const LiveCoachPage: React.FC = () => {
         enabled: !!moduleId && !!sessionToken,
     });
 
-    useEffect(() => {
-        if (sessionData) {
-            setCurrentStepIndex(sessionData.currentStepIndex);
-            setSessionEvents(sessionData.liveCoachEvents || []);
-        }
-    }, [sessionData]);
-
-    const { mutate: persistSession } = useMutation({
-        mutationFn: (newState: Partial<SessionState>) =>
-            saveSession({ moduleId, sessionToken, ...newState }),
-        onSuccess: (_data, variables) => {
-            queryClient.setQueryData(sessionQueryKey, (old: SessionState | null) => ({ ...(old || {} as SessionState), ...variables, moduleId, sessionToken }));
-        },
-    });
-
-    // --- Module Data and Needs ---
     const { data: moduleData, isLoading: isLoadingModule, isError } = useQuery<TrainingModule | undefined, Error>({
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId),
         enabled: !!moduleId,
         staleTime: 1000 * 60 * 5,
-        retry: false,
+        retry: 3,
+        retryDelay: 1000,
+    });
+
+    // Initialize coach state from fetched data
+    useEffect(() => {
+        if (sessionData && !isLoadingSession && moduleData && !isLoadingModule) {
+            dispatch({
+                type: 'INITIALIZE_SESSION', payload: {
+                    stepIndex: sessionData.currentStepIndex,
+                    score: sessionData.score,
+                    module: moduleData,
+                }
+            });
+            setSessionEvents(sessionData.liveCoachEvents || []);
+        }
+    }, [sessionData, isLoadingSession, moduleData, isLoadingModule]);
+
+
+    const { mutate: persistSession } = useMutation({
+        mutationFn: (newState: Partial<SessionState>) =>
+            saveSession({ moduleId, sessionToken, ...newState }),
+        onSuccess: (_data, variables) => {
+            queryClient.setQueryData(sessionQueryKey, (old: SessionState | null) => ({
+                ...(old || {} as SessionState),
+                ...variables,
+                moduleId,
+                sessionToken
+            }));
+        },
     });
 
     useEffect(() => {
-        if (moduleData) setActiveModule(moduleData);
-    }, [moduleData]);
-
-    useEffect(() => {
+        if (moduleNeeds) return;
         const fetchNeeds = async () => {
             try {
                 const response = await fetch('/needs.json');
+                if (!response.ok) { console.warn('Module needs not available.'); return; }
                 const data: ModuleNeeds = await response.json();
-                setModuleNeeds(data);
-            } catch (error) {
-                console.error("Could not fetch module needs:", error);
-            }
+                if (mountedRef.current) setModuleNeeds(data);
+            } catch (error) { console.warn("Could not fetch module needs:", error); }
         };
         fetchNeeds();
+    }, [moduleNeeds]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
     }, []);
 
-    // --- Timer Management Utility ---
     const clearAllTimers = useCallback(() => {
-        if (hintTimerRef.current) {
-            clearTimeout(hintTimerRef.current);
-            hintTimerRef.current = null;
-        }
-        if (stepCompletionTimerRef.current) {
-            clearTimeout(stepCompletionTimerRef.current);
-            stepCompletionTimerRef.current = null;
-        }
+        if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+        if (stepCompletionTimerRef.current) clearTimeout(stepCompletionTimerRef.current);
+        if (visionIntervalRef.current) clearInterval(visionIntervalRef.current);
     }, []);
+
+    useEffect(() => {
+        return () => clearAllTimers();
+    }, [clearAllTimers]);
 
     const handleBranchEnd = useCallback(async () => {
         if (!mainModuleState) return;
+        const { module: nextModule, stepIndex: nextStepIndex } = mainModuleState;
 
-        const nextStepModule = mainModuleState.module;
-        const nextStepIndex = mainModuleState.stepIndex;
+        dispatch({ type: 'END_BRANCH' });
 
-        setActiveModule(nextStepModule);
-        setCurrentStepIndex(nextStepIndex);
-        setMainModuleState(null);
-
-        const returnText = `Great, now let's get back to the main task. The next step is: ${nextStepModule.steps[nextStepIndex].title}`;
+        const returnText = `Great, now let's get back to the main task. The next step is: ${nextModule.steps[nextStepIndex].title}`;
         addToast('success', 'Back on Track!', 'Returning to the main training.');
-        if (ttsEnabled) await ttsService.speak(returnText, 'system');
-
+        if (ttsEnabled) {
+            try { await ttsService.speak(returnText, 'system'); }
+            catch (error) { console.warn('TTS failed:', error); }
+        }
     }, [mainModuleState, addToast, ttsEnabled]);
 
-    // --- Step Advancement & Branching ---
     const handleStepAdvance = useCallback(async () => {
         if (!activeModule) return;
         clearAllTimers();
 
-        const newIndex = currentStepIndex + 1;
-
-        if (mainModuleState && newIndex >= activeModule.steps.length) {
-            await ttsService.speak("Nice work. Let's get back to it.", 'system');
+        if (mainModuleState && currentStepIndex + 1 >= activeModule.steps.length) {
+            try { await ttsService.speak("Nice work. Let's get back to it.", 'system'); }
+            catch (error) { console.warn('TTS failed:', error); }
             handleBranchEnd();
             return;
         }
 
+        dispatch({ type: 'ADVANCE_STEP' });
+        const newIndex = currentStepIndex + 1;
         const newEvent: LiveCoachEvent = { eventType: 'step_advance', stepIndex: newIndex, timestamp: Date.now() };
         const updatedEvents = [...sessionEvents, newEvent];
         setSessionEvents(updatedEvents);
 
         if (newIndex >= activeModule.steps.length) {
             addToast('success', 'Module Complete!', 'You have finished all the steps.');
-            persistSession({ isCompleted: true, score: sessionScore, currentStepIndex, liveCoachEvents: updatedEvents });
-            navigate(`/modules/${moduleId}`);
+            persistSession({ isCompleted: true, score: sessionScore, currentStepIndex: newIndex, liveCoachEvents: updatedEvents });
+            navigate(`/sessions/${moduleId}/${sessionToken}/review`);
         } else {
-            setCurrentStepIndex(newIndex);
             if (!mainModuleState) {
-                persistSession({ currentStepIndex: newIndex, liveCoachEvents: updatedEvents });
+                persistSession({ currentStepIndex: newIndex, liveCoachEvents: updatedEvents, score: sessionScore });
             }
             if (ttsEnabled) {
-                if (newIndex < activeModule.steps.length) {
+                try {
                     await ttsService.speak(`Okay, next up: ${activeModule.steps[newIndex].title}`, 'system');
+                } catch (error) {
+                    console.warn('TTS failed:', error);
                 }
             }
         }
         setLastEventType('good');
         setActiveFeedbackLogId(null);
         setShowFixFormFor(null);
-    }, [activeModule, currentStepIndex, mainModuleState, persistSession, ttsEnabled, addToast, navigate, moduleId, sessionEvents, sessionScore, handleBranchEnd, clearAllTimers]);
+    }, [activeModule, currentStepIndex, mainModuleState, persistSession, ttsEnabled, addToast, navigate, moduleId, sessionToken, sessionEvents, sessionScore, handleBranchEnd, clearAllTimers]);
 
     const handleBranchStart = useCallback(async (subModuleSlug: string) => {
         if (!activeModule) return;
-
         isInterjectingRef.current = true;
         ttsService.cancel();
-        setStatus('branching');
-        setSessionScore(prev => Math.max(0, prev - 15));
+        dispatch({ type: 'DECREMENT_SCORE', payload: 15 });
 
         try {
             const subModule = await getModule(subModuleSlug);
             if (!subModule) throw new Error(`Sub-module "${subModuleSlug}" not found.`);
 
-            setMainModuleState({ module: activeModule, stepIndex: currentStepIndex });
-            setActiveModule(subModule);
-            setCurrentStepIndex(0);
+            dispatch({ type: 'START_BRANCH', payload: { subModule, mainModule: activeModule, mainStepIndex: currentStepIndex } });
 
             addToast('info', 'Taking a Detour', `Let's quickly review: ${subModule.title}`);
             const introText = `I noticed you might need some help with that. Let's take a quick look at how to do this correctly. First: ${subModule.steps[0].title}`;
             if (ttsEnabled) {
-                await ttsService.speak(introText, 'coach');
+                try { await ttsService.speak(introText, 'coach'); }
+                catch (error) { console.warn('TTS failed:', error); }
             }
-            setStatus('listening');
-            isInterjectingRef.current = false;
-
+            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
         } catch (error) {
             console.error("Failed to start branch:", error);
             addToast('error', 'Branching Failed', 'Could not load the sub-lesson.');
-            setStatus('listening');
+            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
+        } finally {
             isInterjectingRef.current = false;
         }
     }, [activeModule, currentStepIndex, addToast, ttsEnabled]);
 
-    // --- AI Interaction Logic ---
     const logAndSaveEvent = useCallback((eventType: CoachEventType) => {
         if (mainModuleState) return;
         setLastEventType(eventType === 'hint' ? 'hint' : 'correction');
         const newEvent: LiveCoachEvent = { eventType, stepIndex: currentStepIndex, timestamp: Date.now() };
         const updatedEvents = [...sessionEvents, newEvent];
         setSessionEvents(updatedEvents);
-        persistSession({ liveCoachEvents: updatedEvents });
-    }, [currentStepIndex, sessionEvents, persistSession, mainModuleState]);
+        persistSession({ liveCoachEvents: updatedEvents, score: sessionScore });
+    }, [currentStepIndex, sessionEvents, persistSession, mainModuleState, sessionScore]);
 
     const processAiInterjection = useCallback(async (basePrompt: string, type: 'hint' | 'correction') => {
         if (!chatRef.current || !activeModule) return;
         if (isInterjectingRef.current) return;
-
         isInterjectingRef.current = true;
         ttsService.cancel();
-        setAiResponse('');
+        dispatch({ type: 'RESET_AI_RESPONSE' });
         setActiveFeedbackLogId(null);
 
         const newStatus: CoachStatus = type === 'hint' ? 'hinting' : 'correcting';
-        setStatus(newStatus);
+        dispatch({ type: 'SET_STATUS', payload: newStatus });
         logAndSaveEvent(newStatus);
-        setSessionScore(prev => Math.max(0, prev - 5));
+        dispatch({ type: 'DECREMENT_SCORE', payload: 5 });
 
         try {
-            // Collective Intelligence: Find similar past fixes before generating prompt
             const similarFixes = await findSimilarFixes(moduleId, currentStepIndex, basePrompt);
             const pastFeedback = await getPastFeedbackForStep(moduleId, currentStepIndex);
             const requiredItems = moduleNeeds?.[activeModule.slug]?.[currentStepIndex]?.required || [];
             let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex].title, requiredItems, type, pastFeedback, similarFixes, basePrompt);
-
-            finalPrompt += `\n\nYour response should proactively ask the user for feedback (e.g., "Let me know if that helped"). End your response with this exact tagline: "${getTagline()}"`;
+            finalPrompt += `\n\nYour response should proactively ask the user for feedback. End your response with this exact tagline: "${getTagline()}"`;
 
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
-                setAiResponse(prev => prev + chunk.text);
+                if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
             }
 
-            if (fullText) {
+            if (fullText && mountedRef.current) {
                 const logId = await logAiFeedback({ sessionToken, moduleId, stepIndex: currentStepIndex, userPrompt: basePrompt, aiResponse: fullText, feedback: 'bad' });
                 setActiveFeedbackLogId(logId);
-
-                setStatus('speaking');
+                dispatch({ type: 'SET_STATUS', payload: 'speaking' });
                 if (ttsEnabled) {
-                    await ttsService.speak(fullText, 'coach');
+                    try { await ttsService.speak(fullText, 'coach'); }
+                    catch (error) { console.warn('TTS failed:', error); }
                 }
             }
-            setStatus('listening');
+            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
         } catch (e) {
             console.error(e);
-            addToast('error', 'AI Coach Error', 'The AI is having trouble. Proactive coaching is paused.');
-            setStatus('idle');
+            addToast('error', 'AI Coach Error', 'The AI is having trouble. Coaching is paused.');
+            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'idle' });
         } finally {
             isInterjectingRef.current = false;
         }
-
-    }, [chatRef, activeModule, currentStepIndex, logAndSaveEvent, ttsEnabled, moduleId, sessionToken, moduleNeeds, addToast]);
+    }, [activeModule, currentStepIndex, logAndSaveEvent, ttsEnabled, moduleId, sessionToken, moduleNeeds, addToast]);
 
     const processAiQuery = useCallback(async (query: string) => {
         if (!chatRef.current || !activeModule) return;
         clearAllTimers();
-
         if (isInterjectingRef.current) {
             ttsService.cancel();
             isInterjectingRef.current = false;
         }
-        setStatus('thinking');
-        setAiResponse('');
+        dispatch({ type: 'SET_STATUS', payload: 'thinking' });
+        dispatch({ type: 'RESET_AI_RESPONSE' });
         setActiveFeedbackLogId(null);
 
         const objectLabels = detectedObjects.length > 0 ? detectedObjects.map(obj => obj.label).join(', ') : 'nothing in particular';
 
-        // Collective Intelligence: Find similar fixes before generating prompt
-        const similarFixes = await findSimilarFixes(moduleId, currentStepIndex, query);
-        const pastFeedback = await getPastFeedbackForStep(moduleId, currentStepIndex);
-        const requiredItems = moduleNeeds?.[activeModule.slug]?.[currentStepIndex]?.required || [];
-
-        let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex].title, requiredItems, 'query', pastFeedback, similarFixes, `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`);
-        finalPrompt += `\n\nYour response should proactively ask the user for feedback (e.g., "Let me know if that helped"). End your response with this exact tagline: "${getTagline()}"`;
-
         try {
+            const similarFixes = await findSimilarFixes(moduleId, currentStepIndex, query);
+            const pastFeedback = await getPastFeedbackForStep(moduleId, currentStepIndex);
+            const requiredItems = moduleNeeds?.[activeModule.slug]?.[currentStepIndex]?.required || [];
+            let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex].title, requiredItems, 'query', pastFeedback, similarFixes, `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`);
+            finalPrompt += `\n\nYour response should proactively ask the user for feedback. End your response with this exact tagline: "${getTagline()}"`;
+
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
-                setAiResponse(prev => prev + chunk.text);
+                if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
             }
-            if (fullText) {
+
+            if (fullText && mountedRef.current) {
                 const logId = await logAiFeedback({ sessionToken, moduleId, stepIndex: currentStepIndex, userPrompt: query, aiResponse: fullText, feedback: 'bad' });
                 setActiveFeedbackLogId(logId);
-
-                setStatus('speaking');
-                if (ttsEnabled) await ttsService.speak(fullText, 'coach');
+                dispatch({ type: 'SET_STATUS', payload: 'speaking' });
+                if (ttsEnabled) {
+                    try { await ttsService.speak(fullText, 'coach'); }
+                    catch (error) { console.warn('TTS failed:', error); }
+                }
             }
-            setStatus('listening');
+            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
         } catch (error) {
             console.error("Error sending message to AI:", error);
             const errorMessage = "Sorry, I couldn't process that. The AI tutor is paused.";
-            setAiResponse(errorMessage);
-            setStatus('speaking');
-            if (ttsEnabled) await ttsService.speak(errorMessage, 'coach');
-            setStatus('idle');
+            if (mountedRef.current) {
+                dispatch({ type: 'SET_AI_RESPONSE', payload: errorMessage });
+                dispatch({ type: 'SET_STATUS', payload: 'speaking' });
+                if (ttsEnabled) {
+                    try { await ttsService.speak(errorMessage, 'coach'); }
+                    catch (error) { console.warn('TTS failed:', error); }
+                }
+                dispatch({ type: 'SET_STATUS', payload: 'idle' });
+            }
         }
-    }, [chatRef, activeModule, detectedObjects, ttsEnabled, clearAllTimers, sessionToken, moduleId, currentStepIndex, moduleNeeds]);
+    }, [activeModule, detectedObjects, ttsEnabled, clearAllTimers, sessionToken, moduleId, currentStepIndex, moduleNeeds]);
 
-    // --- Proactive Checks (Hints, Corrections, Auto-Advance) ---
     useEffect(() => {
+        if (!isInitialized || !visionInitialized || !chatInitialized) return;
         const proactiveCheck = async () => {
             if (status !== 'listening' || !moduleNeeds || !moduleId || !activeModule || mainModuleState) return;
-
+            if (isInterjectingRef.current) return;
             const needs: StepNeeds | undefined = moduleNeeds[activeModule.slug]?.[currentStepIndex];
-            if (!needs) {
-                clearAllTimers();
-                return;
-            }
+            if (!needs) { clearAllTimers(); return; }
 
-            const detectedForbiddenItem = (needs.forbidden || []).find(forbidden => isObjectPresent(detectedObjects, forbidden));
+            const detectedForbiddenItem = (needs.forbidden || []).find(f => isObjectPresent(detectedObjects, f));
             if (detectedForbiddenItem) {
                 clearAllTimers();
                 const branchRule = needs.branchOn?.find(b => detectedForbiddenItem.toLowerCase().includes(b.item.toLowerCase()));
-                if (branchRule) {
-                    await handleBranchStart(branchRule.module);
-                    return;
-                }
-
+                if (branchRule) { await handleBranchStart(branchRule.module); return; }
                 processAiInterjection(`The user is using a forbidden item: a "${detectedForbiddenItem}".`, 'correction');
                 return;
             }
 
             const requiredObjects = needs.required || [];
-            if (requiredObjects.length === 0) {
-                clearAllTimers();
-                return;
-            }
+            if (requiredObjects.length === 0) { clearAllTimers(); return; }
 
-            const hasAllRequiredObjects = requiredObjects.every(req => isObjectPresent(detectedObjects, req));
-            if (hasAllRequiredObjects) {
+            if (requiredObjects.every(req => isObjectPresent(detectedObjects, req))) {
                 clearAllTimers();
-                if (!stepCompletionTimerRef.current) {
-                    stepCompletionTimerRef.current = setTimeout(handleStepAdvance, 3000);
-                }
+                if (!stepCompletionTimerRef.current) stepCompletionTimerRef.current = setTimeout(handleStepAdvance, 3000);
             } else {
-                if (stepCompletionTimerRef.current) clearTimeout(stepCompletionTimerRef.current);
-                stepCompletionTimerRef.current = null;
+                if (stepCompletionTimerRef.current) { clearTimeout(stepCompletionTimerRef.current); stepCompletionTimerRef.current = null; }
                 if (!hintTimerRef.current && !isInterjectingRef.current) {
                     hintTimerRef.current = setTimeout(() => {
                         processAiInterjection(`The user seems stuck and does not have the required item.`, 'hint');
@@ -365,44 +358,33 @@ const LiveCoachPage: React.FC = () => {
                 }
             }
         };
-
         proactiveCheck();
-    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, activeModule, processAiInterjection, handleBranchStart, mainModuleState, handleStepAdvance, clearAllTimers]);
+    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, activeModule, processAiInterjection, handleBranchStart, mainModuleState, handleStepAdvance, clearAllTimers, isInitialized, visionInitialized, chatInitialized]);
 
-
-    // --- Speech Recognition ---
     const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
         if (!isFinal || status === 'thinking' || status === 'speaking' || isInterjectingRef.current) return;
-
         const command = transcript.toLowerCase().trim();
-        const nextRegex = /^(done|next|okay next|finished|all set|what's next)$/i;
-        if (nextRegex.test(command)) {
+        if (/^(done|next|okay next|finished|all set|what's next)$/i.test(command)) {
             handleStepAdvance();
             return;
         }
-
         if (command.startsWith("hey adapt")) {
             const query = transcript.substring(9).trim();
-            if (query) {
-                processAiQuery(query);
-            }
+            if (query) processAiQuery(query);
         }
     }, [processAiQuery, status, handleStepAdvance]);
 
     const { startListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
 
-    // --- Feedback Handlers ---
     const handleFeedbackClick = useCallback(async (feedback: 'good' | 'bad') => {
         if (!activeFeedbackLogId) return;
-
         if (feedback === 'good') {
             await updateFeedbackWithFix(activeFeedbackLogId, 'good');
             addToast('success', 'Feedback Received!', 'Glad I could help!');
             setActiveFeedbackLogId(null);
-            // Positive reinforcement
             if (ttsEnabled) {
-                const celeb = getCelebratoryTagline();
-                await ttsService.speak(celeb, 'coach');
+                try { await ttsService.speak(getCelebratoryTagline(), 'coach'); }
+                catch (error) { console.warn('TTS failed:', error); }
             }
         } else {
             setShowFixFormFor(activeFeedbackLogId);
@@ -412,54 +394,70 @@ const LiveCoachPage: React.FC = () => {
     const handleUserFixSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!showFixFormFor || !userFixText.trim()) return;
-
         await updateFeedbackWithFix(showFixFormFor, userFixText.trim());
         addToast('success', 'Thank You!', 'Your feedback will make the AI smarter.');
-
         setShowFixFormFor(null);
         setUserFixText('');
         setActiveFeedbackLogId(null);
     };
 
-    // --- Initialization ---
     useEffect(() => {
+        if (!activeModule || !hasSupport || isInitialized) return;
         const initialize = async () => {
-            if (activeModule && hasSupport) {
+            if (!mountedRef.current) return;
+            dispatch({ type: 'SET_STATUS', payload: 'initializing' });
+
+            if (!visionInitialized) {
                 try {
                     await initializeObjectDetector();
-                    // Store interval ID in ref for cleanup
+                    if (mountedRef.current) setVisionInitialized(true);
                     visionIntervalRef.current = setInterval(() => {
-                        if (videoRef.current?.readyState === 4) {
-                            const detections = detectObjectsInVideo(videoRef.current);
-                            setDetectedObjects(detections);
+                        if (videoRef.current?.readyState === 4 && mountedRef.current) {
+                            try { setDetectedObjects(detectObjectsInVideo(videoRef.current)); }
+                            catch (error) { console.warn('Vision detection failed:', error); }
                         }
                     }, 500);
+                } catch (err) {
+                    console.warn('Vision initialization failed:', err);
+                    if (mountedRef.current) setVisionInitialized(true);
+                }
+            }
+
+            if (!chatInitialized) {
+                try {
                     const context = activeModule.steps.map((s, i) => `Step ${i + 1}: ${s.title}\n${s.description}`).join('\n\n');
                     chatRef.current = startChat(context);
-                    startListening();
-                    setStatus('listening');
-                } catch (err) { setStatus('idle'); }
-            } else if (activeModule && !hasSupport) { setStatus('idle'); }
-        };
-        initialize();
-        // Cleanup function for the interval
-        return () => {
-            if (visionIntervalRef.current) {
-                clearInterval(visionIntervalRef.current);
+                    if (mountedRef.current) setChatInitialized(true);
+                } catch (err) {
+                    console.error('Chat initialization failed:', err);
+                    if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'idle' });
+                    return;
+                }
+            }
+
+            startListening();
+            if (mountedRef.current) {
+                dispatch({ type: 'SET_STATUS', payload: 'listening' });
+                setIsInitialized(true);
             }
         };
-    }, [activeModule, hasSupport, startListening]);
+        initialize();
+    }, [activeModule, hasSupport, isInitialized, visionInitialized, chatInitialized, startListening]);
 
     useEffect(() => {
-        if (activeModule && currentStepIndex === 0 && sessionEvents.filter(e => e.eventType === 'step_advance').length === 0) {
+        if (!activeModule || !isInitialized || currentStepIndex !== 0) return;
+        if (!sessionEvents.some(e => e.eventType === 'step_advance' && e.stepIndex === 0)) {
             const initialEvent: LiveCoachEvent = { eventType: 'step_advance', stepIndex: 0, timestamp: Date.now() };
             setSessionEvents([initialEvent]);
-            persistSession({ liveCoachEvents: [initialEvent], currentStepIndex: 0 });
+            persistSession({ liveCoachEvents: [initialEvent], currentStepIndex: 0, score: sessionScore });
         }
-    }, [activeModule, currentStepIndex, sessionEvents, persistSession]);
+    }, [activeModule, isInitialized, currentStepIndex, sessionEvents, persistSession, sessionScore]);
 
     useEffect(() => {
-        if (!isLoadingModule && isError) navigate('/not-found');
+        if (!isLoadingModule && isError) {
+            console.error('Module loading failed');
+            navigate('/not-found');
+        }
     }, [isLoadingModule, isError, navigate]);
 
     const getStatusIndicator = () => {
@@ -489,7 +487,11 @@ const LiveCoachPage: React.FC = () => {
     }, [lastEventType]);
 
     if (isLoadingModule || isLoadingSession || !activeModule) {
-        return <div className="flex items-center justify-center h-screen bg-slate-900"><p className="text-xl text-slate-300">Loading Live Coach...</p></div>;
+        return (
+            <div className="flex items-center justify-center h-screen bg-slate-900">
+                <p className="text-xl text-slate-300">Loading Live Coach...</p>
+            </div>
+        );
     }
 
     const currentInstruction = activeModule.steps[currentStepIndex]?.title ?? "Module Complete!";
