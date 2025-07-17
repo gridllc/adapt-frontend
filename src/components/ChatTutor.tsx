@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse, generateImage, sendMessageWithRetry } from '@/services/geminiService';
@@ -249,7 +250,11 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 );
             }
             if (isAutoSpeakEnabled && finalModelText) {
-                ttsService.speak(finalModelText.replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, 'I have a suggestion. $1'));
+                try {
+                    await ttsService.speak(finalModelText.replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, 'I have a suggestion. $1'));
+                } catch (ttsErr) {
+                    console.warn("TTS failed after primary AI response:", ttsErr);
+                }
             }
         } catch (err) {
             console.warn("Primary AI provider failed. Attempting fallback.", err);
@@ -265,7 +270,11 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                     )
                 );
                 if (isAutoSpeakEnabled && fallbackText) {
-                    ttsService.speak(fallbackText);
+                    try {
+                        await ttsService.speak(fallbackText);
+                    } catch (ttsErr) {
+                        console.warn("TTS failed for fallback response:", ttsErr);
+                    }
                 }
             } catch (fallbackErr) {
                 didErrorOccur = true;
