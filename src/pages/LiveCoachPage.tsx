@@ -264,9 +264,8 @@ const LiveCoachPage: React.FC = () => {
             setStatus('listening');
         } catch (e) {
             console.error(e);
-            addToast('error', 'AI Coach Error', 'The AI is having trouble. Pausing for a moment.');
+            addToast('error', 'AI Coach Error', 'The AI is having trouble. Proactive coaching is paused.');
             setStatus('idle');
-            setTimeout(() => setStatus('listening'), 10000); // 10s cooldown
         } finally {
             isInterjectingRef.current = false;
         }
@@ -312,11 +311,11 @@ const LiveCoachPage: React.FC = () => {
             setStatus('listening');
         } catch (error) {
             console.error("Error sending message to AI:", error);
-            const errorMessage = "Sorry, I couldn't process that.";
+            const errorMessage = "Sorry, I couldn't process that. The AI tutor is paused.";
             setAiResponse(errorMessage);
             setStatus('speaking');
             if (ttsEnabled) await ttsService.speak(errorMessage, 'coach');
-            setStatus('listening');
+            setStatus('idle');
         }
     }, [chatRef, activeModule, detectedObjects, ttsEnabled, clearAllTimers, sessionToken, moduleId, currentStepIndex, moduleNeeds]);
 
@@ -467,7 +466,7 @@ const LiveCoachPage: React.FC = () => {
         if (status === 'speaking') return <div className="flex flex-col items-center gap-2"><p>{aiResponse}</p></div>;
         if (status === 'correcting') return <><AlertTriangleIcon className="h-6 w-6 text-red-400 animate-pulse" />Correcting mistake...</>;
         if (status === 'hinting') return <><LightbulbIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Offering a hint...</>;
-        if (status === 'tutoring') return <><LightbulbIcon className="h-6 w-6 text-yellow-400 animate-pulse" />Let me explain that differently...</>;
+        if (status === 'tutoring') return <><LightbulbIcon className="h-6 w-6 text-orange-400 animate-pulse" />Let me explain that differently...</>;
         if (status === 'branching') return <><GitBranchIcon className="h-6 w-6 text-cyan-400 animate-pulse" />Taking a short detour...</>;
         if (detectedObjects.length > 0 && ['listening', 'idle'].includes(status)) return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
         switch (status) {
