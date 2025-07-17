@@ -58,12 +58,12 @@ const LiveCoachPage: React.FC = () => {
     // --- Session Management ---
     useEffect(() => {
         const searchParams = new URLSearchParams(location.search);
-        let token = searchParams.get('token');
-        if (!token) {
-            token = generateToken();
-            navigate(`${location.pathname}?token=${token}`, { replace: true });
+        let sessionKey = searchParams.get('session_key');
+        if (!sessionKey) {
+            sessionKey = generateToken();
+            navigate(`${location.pathname}?session_key=${sessionKey}`, { replace: true });
         }
-        setSessionToken(token);
+        setSessionToken(sessionKey);
     }, [location.search, location.pathname, navigate]);
 
     const sessionQueryKey = ['liveCoachSession', moduleId, sessionToken];

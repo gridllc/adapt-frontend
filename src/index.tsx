@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
@@ -23,6 +24,12 @@ import LiveCoachPage from '@/pages/LiveCoachPage';
 import SessionReviewPage from '@/pages/SessionReviewPage';
 import { PwaUpdater } from '@/components/PwaUpdater';
 import QuestionLogDetailPage from './pages/QuestionLogDetailPage';
+import { supabase } from '@/services/apiClient';
+
+// Expose Supabase client for debugging in development mode
+if (import.meta.env.DEV) {
+    (window as any).supabase = supabase;
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -89,7 +96,7 @@ const router = createBrowserRouter([
                 )
             },
             {
-                path: 'sessions/:moduleId/:token/review',
+                path: 'sessions/:moduleId/:session_key/review',
                 element: (
                     <ProtectedRoute>
                         <SessionReviewPage />

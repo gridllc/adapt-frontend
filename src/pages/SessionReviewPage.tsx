@@ -43,7 +43,7 @@ const formatDuration = (ms: number): string => {
  * It provides administrators with a detailed timeline of events and performance metrics.
  */
 const SessionReviewPage: React.FC = () => {
-    const { moduleId, token } = useParams<{ moduleId: string, token: string }>();
+    const { moduleId, session_key } = useParams<{ moduleId: string, session_key: string }>();
 
     // Fetch the core module data (title, steps, etc.)
     const { data: moduleData, isLoading: isLoadingModule } = useQuery<TrainingModule | undefined>({
@@ -54,13 +54,13 @@ const SessionReviewPage: React.FC = () => {
 
     // Fetch the detailed session summary, which includes events and calculated stats
     const { data: sessionSummary, isLoading: isLoadingSession } = useQuery<SessionSummary | null>({
-        queryKey: ['liveCoachSessionSummary', moduleId, token],
-        queryFn: () => getSessionSummary(moduleId!, token!),
-        enabled: !!moduleId && !!token,
+        queryKey: ['liveCoachSessionSummary', moduleId, session_key],
+        queryFn: () => getSessionSummary(moduleId!, session_key!),
+        enabled: !!moduleId && !!session_key,
     });
-    
+
     const isLoading = isLoadingModule || isLoadingSession;
-    
+
     if (isLoading) {
         return <div className="text-center p-8 text-slate-500 dark:text-slate-400">Loading session review...</div>;
     }
@@ -83,47 +83,47 @@ const SessionReviewPage: React.FC = () => {
                     <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Session Review</h1>
                     <p className="text-indigo-500 dark:text-indigo-400">{moduleData.title}</p>
                 </div>
-                <span className="w-40 text-right text-xs text-slate-500 truncate" title={token}>Token: {token}</span>
+                <span className="w-40 text-right text-xs text-slate-500 truncate" title={session_key}>Token: {session_key}</span>
             </header>
 
             <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 space-y-8">
                 {/* --- Key Metrics Summary Card --- */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">
                     <div className="bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg">
                         <h2 className="text-lg font-bold text-indigo-500 dark:text-indigo-400">Final Score</h2>
                         <div className="flex items-center justify-center gap-2 text-4xl font-bold mt-2">
-                            <TrophyIcon className="h-10 w-10 text-yellow-400"/>
+                            <TrophyIcon className="h-10 w-10 text-yellow-400" />
                             <span className="text-slate-800 dark:text-white">{sessionSummary.score ?? 'N/A'}%</span>
                         </div>
                     </div>
-                     <div className="bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg">
+                    <div className="bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg">
                         <h2 className="text-lg font-bold text-indigo-500 dark:text-indigo-400">Total Duration</h2>
                         <div className="flex items-center justify-center gap-2 text-4xl font-bold mt-2">
-                            <ClockIcon className="h-10 w-10 text-slate-500 dark:text-slate-400"/>
+                            <ClockIcon className="h-10 w-10 text-slate-500 dark:text-slate-400" />
                             <span className="text-slate-800 dark:text-white">{formatDuration(totalDuration)}</span>
                         </div>
                     </div>
                 </div>
 
                 {/* --- Time per Step Breakdown --- */}
-                 <div>
+                <div>
                     <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Time per Step</h2>
-                     {Object.keys(sessionSummary.durationsPerStep).length > 0 ? (
-                         <div className="space-y-2">
-                             {Object.entries(sessionSummary.durationsPerStep).map(([stepIndex, duration]) => (
-                                 <div key={stepIndex} className="flex justify-between items-center bg-white dark:bg-slate-700/50 p-3 rounded-md text-sm">
-                                     <span className="font-semibold text-slate-800 dark:text-slate-200">Step {Number(stepIndex) + 1}: {moduleData.steps[Number(stepIndex)]?.title}</span>
-                                     <span className="text-slate-600 dark:text-slate-300 font-mono">{formatDuration(Number(duration))}</span>
-                                 </div>
-                             ))}
-                         </div>
-                     ) : (
+                    {Object.keys(sessionSummary.durationsPerStep).length > 0 ? (
+                        <div className="space-y-2">
+                            {Object.entries(sessionSummary.durationsPerStep).map(([stepIndex, duration]) => (
+                                <div key={stepIndex} className="flex justify-between items-center bg-white dark:bg-slate-700/50 p-3 rounded-md text-sm">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200">Step {Number(stepIndex) + 1}: {moduleData.steps[Number(stepIndex)]?.title}</span>
+                                    <span className="text-slate-600 dark:text-slate-300 font-mono">{formatDuration(Number(duration))}</span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
                         <p className="text-center text-sm text-slate-500 py-4">No step duration data was recorded.</p>
-                     )}
-                 </div>
+                    )}
+                </div>
 
                 {/* --- Full Event Timeline --- */}
-                 <div>
+                <div>
                     <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-6">Event Timeline</h2>
                     {events.length > 0 ? (
                         <div className="flow-root">
@@ -131,28 +131,28 @@ const SessionReviewPage: React.FC = () => {
                                 {events.map((event, eventIdx) => (
                                     <li key={eventIdx}>
                                         <div className="relative pb-8">
-                                        {eventIdx !== events.length - 1 ? (
-                                            <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
-                                        ) : null}
-                                        <div className="relative flex space-x-3">
-                                            <div>
-                                                <span className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center ring-4 ring-slate-100 dark:ring-slate-800">
-                                                    <EventIcon type={event.eventType} />
-                                                </span>
-                                            </div>
-                                            <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                                            {eventIdx !== events.length - 1 ? (
+                                                <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-200 dark:bg-slate-700" aria-hidden="true" />
+                                            ) : null}
+                                            <div className="relative flex space-x-3">
                                                 <div>
-                                                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                                                        <span className="font-bold capitalize">{event.eventType.replace('_', ' ')}</span> on step {event.stepIndex + 1}: <span className="italic">"{moduleData.steps[event.stepIndex]?.title}"</span>
-                                                    </p>
+                                                    <span className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center ring-4 ring-slate-100 dark:ring-slate-800">
+                                                        <EventIcon type={event.eventType} />
+                                                    </span>
                                                 </div>
-                                                <div className="text-right text-sm whitespace-nowrap text-slate-500">
-                                                    <time dateTime={new Date(event.timestamp).toISOString()}>
-                                                        {new Date(event.timestamp).toLocaleTimeString()}
-                                                    </time>
+                                                <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                                                    <div>
+                                                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                                                            <span className="font-bold capitalize">{event.eventType.replace('_', ' ')}</span> on step {event.stepIndex + 1}: <span className="italic">"{moduleData.steps[event.stepIndex]?.title}"</span>
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right text-sm whitespace-nowrap text-slate-500">
+                                                        <time dateTime={new Date(event.timestamp).toISOString()}>
+                                                            {new Date(event.timestamp).toLocaleTimeString()}
+                                                        </time>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
                                         </div>
                                     </li>
                                 ))}
@@ -163,7 +163,7 @@ const SessionReviewPage: React.FC = () => {
                             No coaching events were recorded for this session. The trainee completed it without assistance.
                         </div>
                     )}
-                 </div>
+                </div>
             </div>
         </div>
     );
