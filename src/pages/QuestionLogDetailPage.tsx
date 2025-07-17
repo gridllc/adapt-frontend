@@ -1,14 +1,14 @@
 
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getQuestionLogsByQuestion } from '@/services/analyticsService';
 import { getLatestAiSuggestionForStep } from '@/services/suggestionsService';
 import { flagQuestion, getFlaggedQuestions } from '@/services/flaggingService';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import { BookOpenIcon, HelpCircleIcon, AlertTriangleIcon, SparklesIcon, CheckCircleIcon } from '@/components/Icons';
+import { HelpCircleIcon, AlertTriangleIcon, SparklesIcon, CheckCircleIcon } from '@/components/Icons';
 
 const QuestionLogDetailPage: React.FC = () => {
     const { moduleId = '', stepIndex = '0', encodedQuestion = '' } = useParams();
@@ -93,20 +93,13 @@ const QuestionLogDetailPage: React.FC = () => {
     }, [navigate, moduleId, stepIndex, addToast]);
 
     return (
-        <div className="max-w-4xl mx-auto p-8">
-            <header className="flex justify-between items-center mb-8">
-                <Link to="/dashboard" className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span>Back to Dashboard</span>
-                </Link>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center flex items-center gap-3">
-                    <HelpCircleIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
-                    Question Log
-                </h1>
-                <span className="w-40"></span>
-            </header>
+        <div className="p-8">
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center mb-8 flex items-center gap-3 justify-center">
+                <HelpCircleIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
+                Question Log
+            </h1>
 
-            <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800/50 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
                 <div className="mb-6">
                     <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-200">History for question:</h2>
                     <p className="text-lg italic text-indigo-600 dark:text-indigo-300">"{userQuestion}"</p>

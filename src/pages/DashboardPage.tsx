@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveModule } from '@/services/moduleService';
 import { getQuestionFrequency, findHotspots } from '@/services/analyticsService';
-import { generateRefinementSuggestion, generateBranchModule } from '@/services/geminiService';
-import { saveAiSuggestion, getLatestAiSuggestionForStep } from '@/services/suggestionsService';
-import { BarChartIcon, BookOpenIcon, LightbulbIcon, SparklesIcon, GitBranchIcon } from '@/components/Icons';
+import { generateBranchModule } from '@/services/geminiService';
+import { getLatestAiSuggestionForStep } from '@/services/suggestionsService';
+import { supabase } from '@/services/apiClient';
+import { BarChartIcon, LightbulbIcon, SparklesIcon, GitBranchIcon } from '@/components/Icons';
 import { RefinementModal } from '@/components/RefinementModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -17,10 +19,10 @@ type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 
 const DashboardPage: React.FC = () => {
-    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { user } = useAuth();
     const { addToast } = useToast();
+    const navigate = useNavigate();
     const [modules, setModules] = useState<ModuleRow[]>([]);
     const [selectedModule, setSelectedModule] = useState<ModuleRow | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,22 +69,33 @@ const DashboardPage: React.FC = () => {
     });
 
     const refinementMutation = useMutation({
-        mutationFn: async ({ step, questions }: { step: ProcessStep; questions: string[] }) => {
-            const suggestion = await generateRefinementSuggestion(step, questions);
-            if (selectedModule?.slug && user?.id && hotspot) {
-                await saveAiSuggestion({
+        mutationFn: async () => {
+            if (!selectedModule || hotspot?.stepIndex === undefined) {
+                throw new Error("A module and a hotspot step must be selected to generate a suggestion.");
+            }
+
+            const { data, error } = await supabase.functions.invoke('refine-step', {
+                body: {
                     moduleId: selectedModule.slug,
                     stepIndex: hotspot.stepIndex,
-                    originalInstruction: step.description,
-                    suggestion: suggestion.newDescription,
-                    sourceQuestions: questions,
-                });
+                },
+            });
+
+            if (error) {
+                throw new Error(`Edge function failed: ${error.message}`);
             }
-            return suggestion;
+            if (data.error) { // Handle application-level error from function
+                throw new Error(`Suggestion generation failed: ${data.error}`);
+            }
+
+            return data.suggestion;
         },
         onSuccess: (data) => {
+            if (!data) {
+                addToast('info', 'No Suggestion', 'The AI did not find any questions for this step to generate a suggestion.');
+                return;
+            }
             addToast('success', 'Suggestion Ready', 'The AI has generated and saved a refinement suggestion.');
-            // Invalidate the query for existing suggestions so it shows up next time
             queryClient.invalidateQueries({ queryKey: ['aiSuggestion', selectedModule?.slug, hotspot?.stepIndex] });
         },
         onError: (error) => {
@@ -130,13 +143,7 @@ const DashboardPage: React.FC = () => {
 
     const handleGenerateSuggestion = () => {
         if (!hotspot || !selectedModule) return;
-
-        const stepToRefine = (selectedModule.steps as ProcessStep[])?.[hotspot.stepIndex];
-        if (stepToRefine) {
-            refinementMutation.mutate({ step: stepToRefine, questions: hotspot.questions });
-        } else {
-            addToast('error', 'Data Inconsistency', 'Could not find the step to refine in the module data.');
-        }
+        refinementMutation.mutate();
     };
 
     const handleGenerateBranchModule = () => {
@@ -175,20 +182,13 @@ const DashboardPage: React.FC = () => {
     const newAiSuggestion = refinementMutation.data;
 
     return (
-        <div className="max-w-4xl mx-auto p-8">
-            <header className="flex justify-between items-center mb-8">
-                <button onClick={() => navigate('/')} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span>Back to Home</span>
-                </button>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center flex items-center gap-3">
-                    <BarChartIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
-                    Analytics Dashboard
-                </h1>
-                <span className="w-40"></span>
-            </header>
+        <div className="p-8">
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-8 text-center flex items-center gap-3 justify-center">
+                <BarChartIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
+                Analytics Dashboard
+            </h1>
 
-            <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800/50 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
                 <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Module Performance</h2>
                 <p className="text-slate-500 dark:text-slate-400 mb-6">Select a module to see trainee question patterns and AI-driven suggestions for improvement.</p>
 

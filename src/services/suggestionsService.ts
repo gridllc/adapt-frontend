@@ -1,4 +1,5 @@
 
+
 import { supabase } from '@/services/apiClient';
 import type { TraineeSuggestion, AiSuggestion } from '@/types';
 
@@ -10,21 +11,49 @@ const AI_TABLE_NAME = 'suggested_fixes';
  * @param {string} moduleId The ID of the module.
  * @param {number} stepIndex The index of the step the suggestion applies to.
  * @param {string} suggestionText The text content of the suggestion.
+ * @returns {Promise<TraineeSuggestion>} The created suggestion object.
  */
-export const submitSuggestion = async (moduleId: string, stepIndex: number, suggestionText: string): Promise<void> => {
-    const newSuggestion = {
+export const submitSuggestion = async (moduleId: string, stepIndex: number, suggestionText: string): Promise<TraineeSuggestion> => {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // The `user_id` is optional on the table, so we only include it if the user is logged in.
+    const newSuggestionData = {
         module_id: moduleId,
         step_index: stepIndex,
         text: suggestionText,
         status: 'pending' as const,
+        user_id: user?.id,
     };
 
-    const { error } = await supabase.from(TRAINEE_TABLE_NAME).insert(newSuggestion);
+    const { data, error } = await supabase
+        .from(TRAINEE_TABLE_NAME)
+        .insert(newSuggestionData)
+        .select()
+        .single();
 
     if (error) {
         console.error("Error submitting trainee suggestion:", error);
-        throw error;
+        if (error.code === '42501') { // Row-level security policy violation
+            throw new Error("You do not have permission to submit suggestions. Please log in or check database policies.");
+        }
+        if (error.message.includes('rate limit')) {
+            throw new Error("You are submitting suggestions too quickly. Please wait a moment.");
+        }
+        throw new Error(`Failed to submit suggestion: ${error.message}`);
     }
+
+    if (!data) {
+        throw new Error("Failed to create suggestion: no data was returned from the server.");
+    }
+
+    // Map from snake_case (db) to camelCase (ts type) for consistency
+    return {
+        id: data.id.toString(),
+        moduleId: data.module_id,
+        stepIndex: data.step_index,
+        text: data.text || '',
+        status: data.status as TraineeSuggestion['status'],
+    };
 };
 
 /**

@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, saveModule, deleteModule } from '@/services/moduleService';
-import { UploadCloudIcon, BookOpenIcon, LightbulbIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon, HelpCircleIcon } from '@/components/Icons';
+import { UploadCloudIcon, BookOpenIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon, DownloadIcon, SparklesIcon, ClockIcon } from '@/components/Icons';
 import type { ProcessStep } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/useToast';
 import { useTheme } from '@/hooks/useTheme';
 import { ModuleCardSkeleton } from '@/components/ModuleCardSkeleton';
 
-type ModuleRow = Database['public']['Tables']['modules']['Row'];
+type ModuleWithStatsRow = Database['public']['Views']['modules_with_session_stats']['Row'];
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 const HomePage: React.FC = () => {
@@ -22,18 +22,31 @@ const HomePage: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
     const [searchTerm, setSearchTerm] = useState('');
 
-    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<ModuleRow[], Error>({
+    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<ModuleWithStatsRow[], Error>({
         queryKey: ['modules'],
         queryFn: getAvailableModules
     });
 
     const filteredModules = useMemo(() => {
         if (!availableModules) return [];
-        if (!searchTerm.trim()) return availableModules;
+        const lowercasedTerm = searchTerm.toLowerCase();
         return availableModules.filter(module =>
-            module.title.toLowerCase().includes(searchTerm.toLowerCase())
+            module.title?.toLowerCase().includes(lowercasedTerm)
         );
     }, [availableModules, searchTerm]);
+
+    // --- Keyboard shortcut for search ---
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === '/' && (e.target as HTMLElement)?.tagName !== 'INPUT' && (e.target as HTMLElement)?.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                document.getElementById('module-search')?.focus();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     const handleFileUpload = useCallback(async (file: File) => {
         if (!user) {
@@ -101,9 +114,10 @@ const HomePage: React.FC = () => {
         setIsDragging(false);
     };
 
-    const handleDeleteModule = useCallback(async (e: React.MouseEvent, slug: string) => {
+    const handleDeleteModule = useCallback(async (e: React.MouseEvent, slug: string | null) => {
         e.preventDefault();
         e.stopPropagation();
+        if (!slug) return;
 
         const confirmation = window.confirm(
             'Are you sure you want to delete this module? This will also remove ALL associated training progress and chat histories from the database. This action cannot be undone.'
@@ -122,6 +136,31 @@ const HomePage: React.FC = () => {
         }
     }, [queryClient, addToast]);
 
+    const handleDownloadModule = useCallback((e: React.MouseEvent, module: ModuleWithStatsRow) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Create a clean version of the module data without the session stats for export
+        const cleanModule = {
+            slug: module.slug,
+            title: module.title,
+            steps: module.steps,
+            video_url: module.video_url,
+            transcript: module.transcript,
+            metadata: module.metadata,
+        };
+
+        const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
+            JSON.stringify(cleanModule, null, 2)
+        )}`;
+        const link = document.createElement("a");
+        link.href = jsonString;
+        link.download = `${module.slug}.json`;
+        link.click();
+
+        addToast('success', 'Download Started', 'Module JSON file is being downloaded.');
+    }, [addToast]);
+
 
     return (
         <div className="max-w-4xl mx-auto p-8">
@@ -137,7 +176,10 @@ const HomePage: React.FC = () => {
                     </button>
                     {isAuthenticated && user ? (
                         <>
-                            <span className="text-sm text-slate-500 dark:text-slate-400 hidden sm:inline" title={user.email}>{user.email}</span>
+                            <Link to="/dashboard" className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded-full transition-colors">
+                                <BarChartIcon className="h-5 w-5" />
+                                <span>Go to Dashboard</span>
+                            </Link>
                             <button
                                 onClick={signOut}
                                 className="flex items-center gap-2 bg-slate-200 dark:bg-slate-700 hover:bg-red-500/20 dark:hover:bg-red-500/80 text-slate-700 dark:text-white text-sm font-semibold py-2 px-4 rounded-full transition-colors"
@@ -161,59 +203,6 @@ const HomePage: React.FC = () => {
                 <p className="mt-4 text-lg text-slate-500 dark:text-slate-400">Your interactive AI-powered training assistant.</p>
             </header>
 
-            {isAuthenticated && (
-                <div className="mb-12 animate-fade-in-up">
-                    <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-6 text-center">Admin Tools</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-100 dark:bg-slate-800/50 p-6 rounded-2xl border border-indigo-200 dark:border-indigo-500/30">
-                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col">
-                            <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Create with AI</h3>
-                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">Describe your process and let our AI build the training module for you.</p>
-                            <Link to="/create" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
-                                <LightbulbIcon className="h-6 w-6" />
-                                <span>Start Creating</span>
-                            </Link>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col">
-                            <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Analytics Dashboard</h3>
-                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">View trainee insights and see where they get stuck.</p>
-                            <Link to="/dashboard" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
-                                <BarChartIcon className="h-6 w-6" />
-                                <span>View Dashboard</span>
-                            </Link>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col">
-                            <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Question Log</h3>
-                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">Review every question trainees have asked the AI tutor.</p>
-                            <Link to="/dashboard/questions" className="mt-auto w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
-                                <HelpCircleIcon className="h-6 w-6" />
-                                <span>Browse Log</span>
-                            </Link>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-lg flex flex-col md:col-span-3">
-                            <h3 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">Upload a Module</h3>
-                            <p className="text-slate-600 dark:text-slate-300 mb-6 flex-grow">Have a pre-made training module? Upload the JSON file here.</p>
-
-                            <label
-                                onDrop={handleDrop}
-                                onDragOver={handleDragOver}
-                                onDragEnter={handleDragEnter}
-                                onDragLeave={handleDragLeave}
-                                className={`flex justify-center w-full h-24 px-4 transition bg-slate-50 dark:bg-slate-900/50 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-300 dark:border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}
-                            >
-                                <span className="flex items-center space-x-2">
-                                    <UploadCloudIcon className={`w-8 h-8 ${isDragging ? 'text-indigo-400' : 'text-slate-400 dark:text-slate-500'}`} />
-                                    <span className="font-medium text-slate-500 dark:text-slate-400">
-                                        Drop file or
-                                        <span className="text-indigo-500 dark:text-indigo-400 underline ml-1">browse</span>
-                                    </span>
-                                </span>
-                                <input type="file" name="file_upload" className="hidden" accept=".json" onChange={handleFileChange} />
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             <div className="mt-12">
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 text-center">Available Training Modules</h2>
                 <div className="mb-6 max-w-lg mx-auto">
@@ -223,7 +212,8 @@ const HomePage: React.FC = () => {
                         </div>
                         <input
                             type="text"
-                            placeholder="Search for a module..."
+                            id="module-search"
+                            placeholder="Search for a module (or press /)"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-700 rounded-full bg-slate-100 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -249,13 +239,27 @@ const HomePage: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {filteredModules.map(module => (
                             <div key={module.slug} className="block p-6 bg-white dark:bg-slate-800 rounded-xl hover:ring-2 hover:ring-indigo-500 transition-all duration-300 transform hover:-translate-y-1 shadow-md dark:shadow-lg relative group">
-                                <div className="flex items-center gap-4 mb-4">
-                                    <div className="bg-indigo-100 dark:bg-indigo-600/30 p-3 rounded-lg">
-                                        <BookOpenIcon className="h-6 w-6 text-indigo-600 dark:text-indigo-300" />
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-indigo-100 dark:bg-indigo-600/30 p-3 rounded-lg">
+                                            <BookOpenIcon className="h-6 w-6 text-indigo-600 dark:text-indigo-300" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                                {module.title}
+                                                {module.is_ai_generated && <SparklesIcon className="h-5 w-5 text-yellow-500" title="AI Generated" />}
+                                            </h3>
+                                            <p className="text-slate-500 dark:text-slate-400">{((module.steps as ProcessStep[]) || []).length} steps</p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{module.title}</h3>
-                                        <p className="text-slate-500 dark:text-slate-400">{((module.steps as ProcessStep[]) || []).length} steps</p>
+                                    <div className="flex-shrink-0" title={module.last_used_at ? `Last used on ${new Date(module.last_used_at).toLocaleDateString()}` : undefined}>
+                                        {(module.session_count ?? 0) > 0 ? (
+                                            <span className="flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-800/50 px-2 py-1 rounded-full">
+                                                <ClockIcon className="h-4 w-4" /> In Use
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-1 rounded-full">Not Started</span>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
@@ -268,13 +272,24 @@ const HomePage: React.FC = () => {
                                     </Link>
                                 </div>
                                 {isAuthenticated && (
-                                    <button
-                                        onClick={(e) => handleDeleteModule(e, module.slug)}
-                                        className="absolute top-4 right-4 p-2 bg-slate-200/50 dark:bg-slate-700/50 rounded-full text-slate-500 dark:text-slate-400 hover:bg-red-500/80 hover:text-white transition-all opacity-0 group-hover:opacity-100"
-                                        aria-label="Delete module"
-                                    >
-                                        <TrashIcon className="h-5 w-5" />
-                                    </button>
+                                    <div className="absolute top-4 right-4 flex flex-col gap-2 items-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={(e) => handleDownloadModule(e, module)}
+                                            className="p-2 bg-slate-200/50 dark:bg-slate-700/50 rounded-full text-slate-500 dark:text-slate-400 hover:bg-blue-500/80 hover:text-white transition-all"
+                                            aria-label="Download module JSON"
+                                            title="Download module JSON"
+                                        >
+                                            <DownloadIcon className="h-5 w-5" />
+                                        </button>
+                                        <button
+                                            onClick={(e) => handleDeleteModule(e, module.slug)}
+                                            className="p-2 bg-slate-200/50 dark:bg-slate-700/50 rounded-full text-slate-500 dark:text-slate-400 hover:bg-red-500/80 hover:text-white transition-all"
+                                            aria-label="Delete module"
+                                            title="Delete module"
+                                        >
+                                            <TrashIcon className="h-5 w-5" />
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         ))}

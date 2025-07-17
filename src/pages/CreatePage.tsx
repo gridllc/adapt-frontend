@@ -14,7 +14,7 @@ import { saveModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import type { TranscriptLine, VideoMetadata } from '@/types';
 import type { Database } from '@/types/supabase';
-import { BookOpenIcon, UploadCloudIcon, XIcon, SparklesIcon, VideoIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons';
+import { UploadCloudIcon, XIcon, SparklesIcon, VideoIcon, LightbulbIcon, CheckCircleIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import type { File as AiFile } from '@google/genai';
@@ -109,7 +109,9 @@ const CreatePage: React.FC = () => {
     const [generatedModule, setGeneratedModule] = useState<ModuleInsert | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Use a ref to hold the blob URL to prevent re-renders
+    // --- Refs and state for video player integration ---
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [currentTime, setCurrentTime] = useState(0);
     const videoBlobUrlRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -305,6 +307,13 @@ const CreatePage: React.FC = () => {
         }
     }, [analysisResult, addToast]);
 
+    const handleSeek = useCallback((time: number) => {
+        if (videoRef.current) {
+            videoRef.current.currentTime = time;
+            videoRef.current.play().catch(console.error);
+        }
+    }, []);
+
 
     const renderInitialStep = () => (
         <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up">
@@ -448,11 +457,11 @@ const CreatePage: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
                 <div className="lg:sticky top-6">
                     <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">3. Video Preview</h2>
-                    {videoUrl && <VideoPlayer video_url={videoUrl} onTimeUpdate={() => { }} />}
+                    {videoUrl && <VideoPlayer ref={videoRef} video_url={videoUrl} onTimeUpdate={setCurrentTime} />}
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">4. Refine Final Draft</h2>
-                    {generatedModule && <ModuleEditor module={generatedModule} onModuleChange={setGeneratedModule} />}
+                    {generatedModule && <ModuleEditor module={generatedModule} onModuleChange={setGeneratedModule} isAdmin={true} currentTime={currentTime} onSeek={handleSeek} />}
                 </div>
             </div>
             <div className="mt-8 flex justify-center gap-4">
@@ -484,17 +493,13 @@ const CreatePage: React.FC = () => {
     }
 
     return (
-        <div className="max-w-7xl mx-auto p-6">
-            <header className="flex justify-between items-center mb-6">
-                <button onClick={() => navigate('/')} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span>Back to Home</span>
-                </button>
+        <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center">Create with AI</h1>
                 <span className="w-40 text-right">
                     {flowStep !== 'initial' && <button onClick={resetForm} className="text-sm text-slate-500 hover:text-red-500">Start Over</button>}
                 </span>
-            </header>
+            </div>
 
             {renderContent()}
         </div>

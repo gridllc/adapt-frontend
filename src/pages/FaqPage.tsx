@@ -1,19 +1,16 @@
 
+
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getAvailableModules } from '@/services/moduleService';
 import { getTutorLogs } from '@/services/analyticsService';
-import { BookOpenIcon, HelpCircleIcon } from '@/components/Icons';
-import { useAuth } from '@/hooks/useAuth';
+import { HelpCircleIcon } from '@/components/Icons';
 import type { TutorLogRow } from '@/types';
 import type { Database } from '@/types/supabase';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const FaqPage: React.FC = () => {
-    const navigate = useNavigate();
-    const { user } = useAuth();
     const [selectedModule, setSelectedModule] = useState<ModuleRow | null>(null);
 
     const { data: availableModules = [], isLoading: isLoadingModules } = useQuery<ModuleRow[], Error>({
@@ -40,20 +37,13 @@ const FaqPage: React.FC = () => {
     };
 
     return (
-        <div className="max-w-6xl mx-auto p-8">
-            <header className="flex justify-between items-center mb-8">
-                <button onClick={() => navigate('/dashboard')} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span>Back to Dashboard</span>
-                </button>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center flex items-center gap-3">
-                    <HelpCircleIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
-                    Tutor Question Log
-                </h1>
-                <span className="w-40"></span>
-            </header>
+        <div className="p-8">
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center mb-8 flex items-center gap-3 justify-center">
+                <HelpCircleIcon className="h-8 w-8 text-indigo-500 dark:text-indigo-400" />
+                Tutor Question Log
+            </h1>
 
-            <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800/50 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
                 <div className="mb-6">
                     <label htmlFor="module-select" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Module to View Logs</label>
                     <select
@@ -67,10 +57,10 @@ const FaqPage: React.FC = () => {
                         {!isLoadingModules && availableModules.map(module => (
                             <option key={module.slug} value={module.slug}>{module.title}</option>
                         ))}
-                         {!isLoadingModules && availableModules.length === 0 && <option>No modules available</option>}
+                        {!isLoadingModules && availableModules.length === 0 && <option>No modules available</option>}
                     </select>
                 </div>
-                
+
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                         <thead className="bg-slate-50 dark:bg-slate-700">
@@ -81,7 +71,7 @@ const FaqPage: React.FC = () => {
                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-300 uppercase tracking-wider">Timestamp</th>
                             </tr>
                         </thead>
-                         <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+                        <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
                             {isLoadingLogs ? (
                                 <tr>
                                     <td colSpan={4} className="text-center p-6 text-slate-500 dark:text-slate-400">Loading logs...</td>
@@ -97,7 +87,7 @@ const FaqPage: React.FC = () => {
                                 ))
                             ) : (
                                 <tr>
-                                     <td colSpan={4} className="text-center p-6 text-slate-500 dark:text-slate-400">No questions have been logged for this module yet.</td>
+                                    <td colSpan={4} className="text-center p-6 text-slate-500 dark:text-slate-400">No questions have been logged for this module yet.</td>
                                 </tr>
                             )}
                         </tbody>

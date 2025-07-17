@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef, useMemo, useReducer } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,7 +9,7 @@ import { startChat, sendMessageWithRetry } from '@/services/geminiService';
 import { getPastFeedbackForStep, logAiFeedback, updateFeedbackWithFix, findSimilarFixes } from '@/services/feedbackService';
 import { getPromptContextForLiveCoach, getTagline, getCelebratoryTagline } from '@/utils/promptEngineering';
 import { initializeObjectDetector, detectObjectsInVideo, isObjectPresent } from '@/services/visionService';
-import * as ttsService from '@/services/ttsService';
+import * as ttsService from '../services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { coachReducer, initialCoachState } from '@/reducers/coachReducer';
@@ -54,6 +55,9 @@ const LiveCoachPage: React.FC = () => {
     const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isInterjectingRef = useRef(false);
     const mountedRef = useRef(true);
+    const isProcessingActionRef = useRef(false); // Ref to prevent action overlaps
+    const cooldownRef = useRef<NodeJS.Timeout | null>(null); // Ref for action cooldown
+    const speechHandlerRef = useRef<(transcript: string, isFinal: boolean) => void | undefined>(undefined);
 
     // --- Session & Data Fetching ---
     useEffect(() => {
@@ -133,67 +137,100 @@ const LiveCoachPage: React.FC = () => {
         if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
         if (stepCompletionTimerRef.current) clearTimeout(stepCompletionTimerRef.current);
         if (visionIntervalRef.current) clearInterval(visionIntervalRef.current);
+        if (cooldownRef.current) clearTimeout(cooldownRef.current);
     }, []);
 
     useEffect(() => {
         return () => clearAllTimers();
     }, [clearAllTimers]);
 
+    // This stable callback calls the latest logic from the ref.
+    const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
+        speechHandlerRef.current?.(transcript, isFinal);
+    }, []);
+
+    const { startListening, stopListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
+
+
     const handleBranchEnd = useCallback(async () => {
-        if (!mainModuleState) return;
-        const { module: nextModule, stepIndex: nextStepIndex } = mainModuleState;
+        if (!mainModuleState || isProcessingActionRef.current) return;
+        isProcessingActionRef.current = true;
+        stopListening();
 
-        dispatch({ type: 'END_BRANCH' });
+        try {
+            const { module: nextModule, stepIndex: nextStepIndex } = mainModuleState;
 
-        const returnText = `Great, now let's get back to the main task. The next step is: ${nextModule.steps[nextStepIndex].title}`;
-        addToast('success', 'Back on Track!', 'Returning to the main training.');
-        if (ttsEnabled) {
-            try { await ttsService.speak(returnText, 'system'); }
-            catch (error) { console.warn('TTS failed:', error); }
+            dispatch({ type: 'END_BRANCH' });
+
+            const returnText = `Great, now let's get back to the main task. The next step is: ${nextModule.steps[nextStepIndex].title}`;
+            addToast('success', 'Back on Track!', 'Returning to the main training.');
+            if (ttsEnabled) {
+                try { await ttsService.speak(returnText, 'system'); }
+                catch (error) { console.warn('TTS failed:', error); }
+            }
+        } finally {
+            isProcessingActionRef.current = false;
+            startListening();
         }
-    }, [mainModuleState, addToast, ttsEnabled]);
+    }, [mainModuleState, addToast, ttsEnabled, startListening, stopListening]);
 
     const handleStepAdvance = useCallback(async () => {
-        if (!activeModule) return;
-        clearAllTimers();
+        if (!activeModule || isProcessingActionRef.current || cooldownRef.current) return;
+        isProcessingActionRef.current = true;
+        stopListening();
 
-        if (mainModuleState && currentStepIndex + 1 >= activeModule.steps.length) {
-            try { await ttsService.speak("Nice work. Let's get back to it.", 'system'); }
-            catch (error) { console.warn('TTS failed:', error); }
-            handleBranchEnd();
-            return;
-        }
+        try {
+            clearAllTimers();
 
-        dispatch({ type: 'ADVANCE_STEP' });
-        const newIndex = currentStepIndex + 1;
-        const newEvent: LiveCoachEvent = { eventType: 'step_advance', stepIndex: newIndex, timestamp: Date.now() };
-        const updatedEvents = [...sessionEvents, newEvent];
-        setSessionEvents(updatedEvents);
-
-        if (newIndex >= activeModule.steps.length) {
-            addToast('success', 'Module Complete!', 'You have finished all the steps.');
-            persistSession({ isCompleted: true, score: sessionScore, currentStepIndex: newIndex, liveCoachEvents: updatedEvents });
-            navigate(`/sessions/${moduleId}/${sessionToken}/review`);
-        } else {
-            if (!mainModuleState) {
-                persistSession({ currentStepIndex: newIndex, liveCoachEvents: updatedEvents, score: sessionScore });
+            if (mainModuleState && currentStepIndex + 1 >= activeModule.steps.length) {
+                try { await ttsService.speak("Nice work. Let's get back to it.", 'system'); }
+                catch (error) { console.warn('TTS failed:', error); }
+                handleBranchEnd(); // This will handle its own locking and speech
+                return; // Exit early, handleBranchEnd will manage state
             }
-            if (ttsEnabled) {
-                try {
-                    await ttsService.speak(`Okay, next up: ${activeModule.steps[newIndex].title}`, 'system');
-                } catch (error) {
-                    console.warn('TTS failed:', error);
+
+            const newIndex = currentStepIndex + 1;
+            dispatch({ type: 'ADVANCE_STEP' });
+
+            const newEvent: LiveCoachEvent = { eventType: 'step_advance', stepIndex: newIndex, timestamp: Date.now() };
+            const updatedEvents = [...sessionEvents, newEvent];
+            setSessionEvents(updatedEvents);
+
+            if (newIndex >= activeModule.steps.length) {
+                addToast('success', 'Module Complete!', 'You have finished all the steps.');
+                persistSession({ isCompleted: true, score: sessionScore, currentStepIndex: newIndex, liveCoachEvents: updatedEvents });
+                navigate(`/sessions/${moduleId}/${sessionToken}/review`);
+            } else {
+                if (!mainModuleState) {
+                    persistSession({ currentStepIndex: newIndex, liveCoachEvents: updatedEvents, score: sessionScore });
+                }
+                if (ttsEnabled) {
+                    try {
+                        await ttsService.speak(`Okay, next up: ${activeModule.steps[newIndex].title}`, 'system');
+                    } catch (error) {
+                        console.warn('TTS failed:', error);
+                    }
                 }
             }
+            setLastEventType('good');
+            setActiveFeedbackLogId(null);
+            setShowFixFormFor(null);
+        } finally {
+            isProcessingActionRef.current = false;
+            cooldownRef.current = setTimeout(() => {
+                cooldownRef.current = null;
+            }, 2000); // 2-second cooldown
+            if (mountedRef.current) {
+                startListening();
+            }
         }
-        setLastEventType('good');
-        setActiveFeedbackLogId(null);
-        setShowFixFormFor(null);
-    }, [activeModule, currentStepIndex, mainModuleState, persistSession, ttsEnabled, addToast, navigate, moduleId, sessionToken, sessionEvents, sessionScore, handleBranchEnd, clearAllTimers]);
+    }, [activeModule, currentStepIndex, mainModuleState, persistSession, ttsEnabled, addToast, navigate, moduleId, sessionToken, sessionEvents, sessionScore, handleBranchEnd, clearAllTimers, startListening, stopListening]);
 
     const handleBranchStart = useCallback(async (subModuleSlug: string) => {
-        if (!activeModule) return;
+        if (!activeModule || isProcessingActionRef.current || cooldownRef.current) return;
+        isProcessingActionRef.current = true;
         isInterjectingRef.current = true;
+        stopListening();
         ttsService.cancel();
         dispatch({ type: 'DECREMENT_SCORE', payload: 15 });
 
@@ -215,9 +252,13 @@ const LiveCoachPage: React.FC = () => {
             addToast('error', 'Branching Failed', 'Could not load the sub-lesson.');
             if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
         } finally {
+            isProcessingActionRef.current = false;
             isInterjectingRef.current = false;
+            if (mountedRef.current) {
+                startListening();
+            }
         }
-    }, [activeModule, currentStepIndex, addToast, ttsEnabled]);
+    }, [activeModule, currentStepIndex, addToast, ttsEnabled, startListening, stopListening]);
 
     const logAndSaveEvent = useCallback((eventType: CoachEventType) => {
         if (mainModuleState) return;
@@ -229,9 +270,10 @@ const LiveCoachPage: React.FC = () => {
     }, [currentStepIndex, sessionEvents, persistSession, mainModuleState, sessionScore]);
 
     const processAiInterjection = useCallback(async (basePrompt: string, type: 'hint' | 'correction') => {
-        if (!chatRef.current || !activeModule) return;
-        if (isInterjectingRef.current) return;
+        if (!chatRef.current || !activeModule || isProcessingActionRef.current || cooldownRef.current) return;
+        isProcessingActionRef.current = true;
         isInterjectingRef.current = true;
+        stopListening();
         ttsService.cancel();
         dispatch({ type: 'RESET_AI_RESPONSE' });
         setActiveFeedbackLogId(null);
@@ -250,9 +292,17 @@ const LiveCoachPage: React.FC = () => {
 
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
             let fullText = '';
-            for await (const chunk of stream) {
-                fullText += chunk.text;
-                if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
+
+            try {
+                for await (const chunk of stream) {
+                    fullText += chunk.text;
+                    if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
+                }
+            } catch (streamError) {
+                console.error("AI stream failed:", streamError);
+                addToast('error', 'AI Connection Lost', 'The connection to the AI was interrupted.');
+                // Bail out but ensure we unlock and start listening again in finally
+                return;
             }
 
             if (fullText && mountedRef.current) {
@@ -264,18 +314,24 @@ const LiveCoachPage: React.FC = () => {
                     catch (error) { console.warn('TTS failed:', error); }
                 }
             }
-            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
         } catch (e) {
             console.error(e);
             addToast('error', 'AI Coach Error', 'The AI is having trouble. Coaching is paused.');
-            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'idle' });
         } finally {
+            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
+            isProcessingActionRef.current = false;
+            cooldownRef.current = setTimeout(() => {
+                cooldownRef.current = null;
+            }, 2000); // 2-second cooldown
             isInterjectingRef.current = false;
+            startListening();
         }
-    }, [activeModule, currentStepIndex, logAndSaveEvent, ttsEnabled, moduleId, sessionToken, moduleNeeds, addToast]);
+    }, [activeModule, currentStepIndex, logAndSaveEvent, ttsEnabled, moduleId, sessionToken, moduleNeeds, addToast, startListening, stopListening]);
 
     const processAiQuery = useCallback(async (query: string) => {
-        if (!chatRef.current || !activeModule) return;
+        if (!chatRef.current || !activeModule || isProcessingActionRef.current || cooldownRef.current) return;
+        isProcessingActionRef.current = true;
+        stopListening();
         clearAllTimers();
         if (isInterjectingRef.current) {
             ttsService.cancel();
@@ -296,9 +352,16 @@ const LiveCoachPage: React.FC = () => {
 
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
             let fullText = '';
-            for await (const chunk of stream) {
-                fullText += chunk.text;
-                if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
+
+            try {
+                for await (const chunk of stream) {
+                    fullText += chunk.text;
+                    if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
+                }
+            } catch (streamError) {
+                console.error("AI query stream failed:", streamError);
+                addToast('error', 'AI Connection Lost', 'The connection to the AI was interrupted.');
+                return; // Bail out, finally will handle cleanup
             }
 
             if (fullText && mountedRef.current) {
@@ -310,27 +373,32 @@ const LiveCoachPage: React.FC = () => {
                     catch (error) { console.warn('TTS failed:', error); }
                 }
             }
-            if (mountedRef.current) dispatch({ type: 'SET_STATUS', payload: 'listening' });
         } catch (error) {
             console.error("Error sending message to AI:", error);
             const errorMessage = "Sorry, I couldn't process that. The AI tutor is paused.";
-            if (mountedRef.current) {
-                dispatch({ type: 'SET_AI_RESPONSE', payload: errorMessage });
-                dispatch({ type: 'SET_STATUS', payload: 'speaking' });
-                if (ttsEnabled) {
-                    try { await ttsService.speak(errorMessage, 'coach'); }
-                    catch (error) { console.warn('TTS failed:', error); }
-                }
-                dispatch({ type: 'SET_STATUS', payload: 'idle' });
+            dispatch({ type: 'SET_AI_RESPONSE', payload: errorMessage });
+            dispatch({ type: 'SET_STATUS', payload: 'speaking' });
+            if (ttsEnabled) {
+                try { await ttsService.speak(errorMessage, 'coach'); }
+                catch (e) { console.warn('TTS failed:', e); }
             }
+        } finally {
+            if (mountedRef.current) {
+                dispatch({ type: 'SET_STATUS', payload: 'listening' });
+                startListening();
+            }
+            isProcessingActionRef.current = false;
+            cooldownRef.current = setTimeout(() => {
+                cooldownRef.current = null;
+            }, 2000); // 2-second cooldown
         }
-    }, [activeModule, detectedObjects, ttsEnabled, clearAllTimers, sessionToken, moduleId, currentStepIndex, moduleNeeds]);
+    }, [activeModule, detectedObjects, ttsEnabled, clearAllTimers, sessionToken, moduleId, currentStepIndex, moduleNeeds, startListening, stopListening, addToast]);
 
     useEffect(() => {
         if (!isInitialized || !visionInitialized || !chatInitialized) return;
         const proactiveCheck = async () => {
             if (status !== 'listening' || !moduleNeeds || !moduleId || !activeModule || mainModuleState) return;
-            if (isInterjectingRef.current) return;
+            if (isInterjectingRef.current || isProcessingActionRef.current || cooldownRef.current) return;
             const needs: StepNeeds | undefined = moduleNeeds[activeModule.slug]?.[currentStepIndex];
             if (!needs) { clearAllTimers(); return; }
 
@@ -351,45 +419,59 @@ const LiveCoachPage: React.FC = () => {
                 if (!stepCompletionTimerRef.current) stepCompletionTimerRef.current = setTimeout(handleStepAdvance, 3000);
             } else {
                 if (stepCompletionTimerRef.current) { clearTimeout(stepCompletionTimerRef.current); stepCompletionTimerRef.current = null; }
-                if (!hintTimerRef.current && !isInterjectingRef.current) {
+
+                if (lastEventType === 'good' && !hintTimerRef.current && !isInterjectingRef.current) {
                     hintTimerRef.current = setTimeout(() => {
-                        processAiInterjection(`The user seems stuck and does not have the required item.`, 'hint');
+                        if (mountedRef.current) {
+                            processAiInterjection(`The user seems stuck and does not have the required item.`, 'hint');
+                        }
                     }, 7000);
                 }
             }
         };
         proactiveCheck();
-    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, activeModule, processAiInterjection, handleBranchStart, mainModuleState, handleStepAdvance, clearAllTimers, isInitialized, visionInitialized, chatInitialized]);
+    }, [detectedObjects, status, moduleNeeds, moduleId, currentStepIndex, activeModule, processAiInterjection, handleBranchStart, mainModuleState, handleStepAdvance, clearAllTimers, isInitialized, visionInitialized, chatInitialized, lastEventType]);
 
-    const handleSpeechResult = useCallback((transcript: string, isFinal: boolean) => {
-        if (!isFinal || status === 'thinking' || status === 'speaking' || isInterjectingRef.current) return;
-        const command = transcript.toLowerCase().trim();
-        if (/^(done|next|okay next|finished|all set|what's next)$/i.test(command)) {
-            handleStepAdvance();
-            return;
-        }
-        if (command.startsWith("hey adapt")) {
-            const query = transcript.substring(9).trim();
-            if (query) processAiQuery(query);
-        }
-    }, [processAiQuery, status, handleStepAdvance]);
+    // This effect updates the speech handler ref with the latest callbacks and state.
+    // This breaks the dependency cycle between useSpeechRecognition and its consumers.
+    useEffect(() => {
+        speechHandlerRef.current = (transcript: string, isFinal: boolean) => {
+            if (!isFinal || !transcript.trim() || status === 'thinking' || status === 'speaking' || isInterjectingRef.current || isProcessingActionRef.current || cooldownRef.current) return;
 
-    const { startListening, hasSupport } = useSpeechRecognition(handleSpeechResult);
+            const command = transcript.toLowerCase().trim();
+            if (/^(done|next|okay next|finished|all set|what's next)$/i.test(command)) {
+                handleStepAdvance();
+                return;
+            }
+            if (command.startsWith("hey adapt")) {
+                const query = transcript.substring(9).trim();
+                if (query) processAiQuery(query);
+            }
+        };
+    }, [status, handleStepAdvance, processAiQuery]);
 
     const handleFeedbackClick = useCallback(async (feedback: 'good' | 'bad') => {
-        if (!activeFeedbackLogId) return;
+        if (!activeFeedbackLogId || isProcessingActionRef.current) return;
+
         if (feedback === 'good') {
-            await updateFeedbackWithFix(activeFeedbackLogId, 'good');
-            addToast('success', 'Feedback Received!', 'Glad I could help!');
-            setActiveFeedbackLogId(null);
-            if (ttsEnabled) {
-                try { await ttsService.speak(getCelebratoryTagline(), 'coach'); }
-                catch (error) { console.warn('TTS failed:', error); }
+            isProcessingActionRef.current = true;
+            stopListening();
+            try {
+                await updateFeedbackWithFix(activeFeedbackLogId, 'good');
+                addToast('success', 'Feedback Received!', 'Glad I could help!');
+                setActiveFeedbackLogId(null);
+                if (ttsEnabled) {
+                    try { await ttsService.speak(getCelebratoryTagline(), 'coach'); }
+                    catch (error) { console.warn('TTS failed:', error); }
+                }
+            } finally {
+                isProcessingActionRef.current = false;
+                startListening();
             }
         } else {
             setShowFixFormFor(activeFeedbackLogId);
         }
-    }, [activeFeedbackLogId, addToast, ttsEnabled]);
+    }, [activeFeedbackLogId, addToast, ttsEnabled, startListening, stopListening]);
 
     const handleUserFixSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

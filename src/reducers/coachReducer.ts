@@ -77,32 +77,32 @@ export function coachReducer(state: CoachState, action: CoachAction): CoachState
     case 'SET_AI_RESPONSE':
       return { ...state, aiResponse: action.payload };
     case 'RESET_AI_RESPONSE':
-        return { ...state, aiResponse: '' };
+      return { ...state, aiResponse: '' };
     case 'APPEND_AI_RESPONSE':
       return { ...state, aiResponse: state.aiResponse + action.payload };
     case 'ADVANCE_STEP':
-        if (!state.activeModule) return state;
-        return { ...state, currentStepIndex: state.currentStepIndex + 1 };
+      if (!state.activeModule) return state;
+      return { ...state, currentStepIndex: state.currentStepIndex + 1 };
     case 'SET_STEP_INDEX':
-        return { ...state, currentStepIndex: action.payload };
+      return { ...state, currentStepIndex: action.payload };
     case 'DECREMENT_SCORE':
       return { ...state, sessionScore: Math.max(0, state.sessionScore - action.payload) };
     case 'START_BRANCH':
-        return {
-            ...state,
-            status: 'branching',
-            mainModuleState: { module: action.payload.mainModule, stepIndex: action.payload.mainStepIndex },
-            activeModule: action.payload.subModule,
-            currentStepIndex: 0,
-        };
+      return {
+        ...state,
+        status: 'branching',
+        mainModuleState: { module: action.payload.mainModule, stepIndex: action.payload.mainStepIndex },
+        activeModule: action.payload.subModule,
+        currentStepIndex: 0,
+      };
     case 'END_BRANCH':
-        if (!state.mainModuleState) return state;
-        return {
-            ...state,
-            activeModule: state.mainModuleState.module,
-            currentStepIndex: state.mainModuleState.stepIndex,
-            mainModuleState: null,
-        }
+      if (!state.mainModuleState) return state;
+      return {
+        ...state,
+        activeModule: state.mainModuleState.module,
+        currentStepIndex: state.mainModuleState.stepIndex,
+        mainModuleState: null,
+      }
     default:
       return state;
   }

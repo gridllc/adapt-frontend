@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveModule, deleteModule } from '@/services/moduleService';
 import { getTraineeSuggestionsForModule, deleteTraineeSuggestion, getAiSuggestionsForModule } from '@/services/suggestionsService';
@@ -10,7 +11,7 @@ import { ModuleEditor } from '@/components/ModuleEditor';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import type { AlternativeMethod, TraineeSuggestion, ProcessStep, AiSuggestion } from '@/types';
 import type { Database } from '@/types/supabase';
-import { BookOpenIcon, TrashIcon, VideoIcon, AlertTriangleIcon, RefreshCwIcon, SparklesIcon } from '@/components/Icons';
+import { TrashIcon, VideoIcon, AlertTriangleIcon, RefreshCwIcon, SparklesIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
@@ -260,15 +261,14 @@ const EditPage: React.FC = () => {
     }
 
     return (
-        <div className="max-w-7xl mx-auto p-6">
-            <header className="flex justify-between items-center mb-6">
-                <button onClick={() => navigate(`/modules/${module.slug}`)} className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span>Back to Training</span>
-                </button>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center">Edit Module</h1>
-                <span className="w-40"></span>
-            </header>
+        <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center">Edit: {module.title}</h1>
+                <Link to={`/modules/${module.slug}`} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                    Back to Training
+                </Link>
+            </div>
+
 
             <div className="animate-fade-in-up">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">

@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useReducer } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse, generateImage, sendMessageWithRetry } from '@/services/geminiService';
 import * as ttsService from '../services/ttsService';
 import { submitSuggestion } from '@/services/suggestionsService';
 import { getChatHistory, saveChatMessage, updateMessageFeedback } from '@/services/chatService';
 import { findSimilarInteractions, logTutorInteraction } from '@/services/tutorLogService';
+import { chatReducer, initialChatState } from '@/reducers/chatReducer';
 import type { ChatMessage, ProcessStep } from '@/types';
 import { SendIcon, BotIcon, UserIcon, LinkIcon, SpeakerOnIcon, SpeakerOffIcon, LightbulbIcon, DownloadIcon, MessageSquareIcon, XIcon, CheckCircleIcon, ImageIcon, SparklesIcon, ClockIcon, AlertTriangleIcon, DatabaseIcon, ThumbsUpIcon, ThumbsDownIcon } from '@/components/Icons';
 import { useToast } from '@/hooks/useToast';
@@ -39,16 +40,15 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     const chatHistoryQueryKey = ['chatHistory', moduleId, sessionToken];
     const { addToast } = useToast();
 
+    const [state, dispatch] = useReducer(chatReducer, initialChatState);
+    const { messages, input, isLoading, error } = state;
+
     const { data: initialMessages = [], isLoading: isLoadingHistory } = useQuery<ChatMessage[]>({
         queryKey: chatHistoryQueryKey,
         queryFn: () => getChatHistory(moduleId, sessionToken),
         enabled: !!moduleId && !!sessionToken,
     });
 
-    const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-    const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
     const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
     const [showTimestamps, setShowTimestamps] = useState(true);
@@ -61,24 +61,22 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         mutationFn: (message: ChatMessage) => saveChatMessage(moduleId, sessionToken, message),
         onError: (err) => {
             console.error("Failed to save message:", err);
-            setError("Failed to save message. Your conversation may not be persisted.");
+            addToast('error', 'Sync Failed', 'Failed to save message. Your conversation may not be persisted.');
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: chatHistoryQueryKey });
         }
     });
 
-    // --- New mutation for handling feedback ---
     const { mutate: sendFeedback } = useMutation({
         mutationFn: ({ messageId, feedback }: { messageId: string; feedback: 'good' | 'bad' }) =>
             updateMessageFeedback(messageId, feedback),
         onSuccess: (_, variables) => {
             // Optimistically update the local state for instant UI response
-            setMessages((prev) =>
-                prev.map((msg) =>
-                    msg.id === variables.messageId ? { ...msg, feedback: variables.feedback } : msg
-                )
+            const updatedMessages = messages.map((msg) =>
+                msg.id === variables.messageId ? { ...msg, feedback: variables.feedback } : msg
             );
+            dispatch({ type: 'SET_MESSAGES', payload: updatedMessages });
             addToast('success', 'Feedback Received', 'Thank you for helping improve the AI.');
         },
         onError: (err) => {
@@ -88,34 +86,16 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
     });
 
     useEffect(() => {
-        setMessages(initialMessages);
+        dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
     }, [initialMessages]);
 
-    // This effect runs ONCE when the component mounts to handle cleanup.
     useEffect(() => {
-        return () => {
-            ttsService.cancel();
-        }
+        return () => ttsService.cancel();
     }, []);
 
-    // This effect initializes or re-initializes the chat session
-    // ONLY when the core context (steps, transcript, or initial history) changes.
-    // It is critical that this does NOT depend on the mutable `messages` state.
     useEffect(() => {
-        if (!stepsContext) {
-            setError('Waiting for training context...');
-            return;
-        }
-        // Don't initialize if we're still loading the history from the DB.
-        if (isLoadingHistory) {
-            setError('Loading history...');
-            return;
-        }
+        if (!stepsContext || isLoadingHistory) return;
 
-        setError(null);
-
-        // Use the stable 'initialMessages' from useQuery for the initial history.
-        // The chat instance will manage its own history after this point.
         const textBasedHistory = initialMessages.filter(msg => msg.text.trim() !== '' && !msg.isLoading);
         const geminiHistory: Content[] = textBasedHistory.map(msg => ({
             role: msg.role,
@@ -123,14 +103,13 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         }));
 
         try {
-            // Pass both the step instructions and the full transcript to the AI.
             chatRef.current = startChat(stepsContext, fullTranscript, geminiHistory);
         } catch (err) {
-            console.error("Failed to initialize chat:", err);
-            setError(err instanceof Error ? err.message : 'Could not start AI chat.');
+            const errorMessage = err instanceof Error ? err.message : 'Could not start AI chat.';
+            addToast('error', 'Initialization Failed', errorMessage);
         }
 
-    }, [stepsContext, fullTranscript, initialMessages, isLoadingHistory]);
+    }, [stepsContext, fullTranscript, initialMessages, isLoadingHistory, addToast]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -159,22 +138,18 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
             const modelPlaceholderId = (Date.now() + 1).toString();
             const modelPlaceholder: ChatMessage = { id: modelPlaceholderId, role: 'model', text: 'Generating image...', isLoading: true, imageUrl: '' };
 
-            setMessages(prev => [...prev, userMessage, modelPlaceholder]);
+            dispatch({ type: 'ADD_MESSAGES', payload: [userMessage, modelPlaceholder] });
             persistMessage(userMessage);
 
             try {
                 const imageUrl = await generateImage(imagePrompt);
                 const finalModelMessage: ChatMessage = { ...modelPlaceholder, text: '', isLoading: false, imageUrl };
-                setMessages(prev => prev.map(msg => msg.id === modelPlaceholderId ? finalModelMessage : msg));
+                dispatch({ type: 'MESSAGE_COMPLETE', payload: { messageId: modelPlaceholderId, finalMessage: finalModelMessage } });
                 persistMessage(finalModelMessage);
             } catch (err) {
                 const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
                 addToast('error', 'Image Generation Failed', errorMessage);
-                // Update the placeholder to show an error instead of removing it
-                setMessages(prev => prev.map(msg => msg.id === modelPlaceholderId
-                    ? { ...modelPlaceholder, text: `Failed to generate image: ${errorMessage}`, isLoading: false, isError: true, imageUrl: undefined }
-                    : msg
-                ));
+                dispatch({ type: 'SET_ERROR', payload: { messageId: modelPlaceholderId, error: errorMessage } });
             }
             return;
         }
@@ -191,26 +166,21 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                         .join('\n\n---\n\n');
                     memoryContext += "\n\n--- \n\nNow, regarding your question:\n";
                 }
-            } catch (e) {
-                console.warn("Could not retrieve collective memory:", e);
-                // Non-fatal, continue without memory context
-            }
+            } catch (e) { console.warn("Could not retrieve collective memory:", e); }
         }
 
 
         // Standard text message handling
         const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', text: trimmedInput };
-        setMessages(prev => [...prev, userMessage]);
+        const modelMessageId = (Date.now() + 1).toString();
+        const modelPlaceholder: ChatMessage = { id: modelMessageId, role: 'model', text: '', isLoading: true };
+
+        dispatch({ type: 'ADD_MESSAGES', payload: [userMessage, modelPlaceholder] });
         persistMessage(userMessage);
 
         const enrichedInput = enrichPromptIfNeeded(trimmedInput);
-        const finalPrompt = memoryContext + enrichedInput; // Prepend memory context
-        setIsLoading(true);
-        setError(null);
-
-        const modelMessageId = (Date.now() + 1).toString();
-        // Add a temporary loading message for text response
-        setMessages(prev => [...prev, { id: modelMessageId, role: 'model', text: '', isLoading: true }]);
+        const finalPrompt = memoryContext + enrichedInput;
+        dispatch({ type: 'START_MESSAGE' });
 
         let finalModelText = '';
         let finalCitations: ChatMessage['citations'] = [];
@@ -218,43 +188,25 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         let didErrorOccur = false;
 
         try {
-            if (!chatRef.current) {
-                throw new Error("Chat not initialized");
-            }
-            // Use the new sendMessageWithRetry function for improved reliability.
+            if (!chatRef.current) throw new Error("Chat not initialized");
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
 
             for await (const chunk of stream) {
                 const chunkText = chunk.text;
                 finalModelText += chunkText;
                 const groundingChunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
-
-                setMessages(prev =>
-                    prev.map(msg => {
-                        if (msg.id !== modelMessageId) return msg;
-                        const updatedMsg: ChatMessage = { ...msg, text: finalModelText, isLoading: false }; // Set loading to false as soon as first chunk arrives
-                        if (groundingChunks && groundingChunks.length > 0) {
-                            const newCitations = groundingChunks
-                                .map((c: GroundingChunk) => c.web)
-                                .filter((c): c is { uri: string; title?: string; } => !!c?.uri)
-                                .map(c => ({ uri: c.uri, title: c.title || c.uri }));
-                            if (newCitations.length > 0) {
-                                const currentCitations = msg.citations || [];
-                                const combined = [...currentCitations, ...newCitations];
-                                updatedMsg.citations = combined.filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i);
-                                finalCitations = updatedMsg.citations;
-                            }
-                        }
-                        return updatedMsg;
-                    })
-                );
-            }
-            if (isAutoSpeakEnabled && finalModelText) {
-                try {
-                    await ttsService.speak(finalModelText.replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, 'I have a suggestion. $1'));
-                } catch (ttsErr) {
-                    console.warn("TTS failed after primary AI response:", ttsErr);
+                let newCitations: ChatMessage['citations'] | undefined;
+                if (groundingChunks && groundingChunks.length > 0) {
+                    newCitations = groundingChunks
+                        .map((c: GroundingChunk) => c.web)
+                        .filter((c): c is { uri: string; title?: string; } => !!c?.uri);
                 }
+                dispatch({ type: 'STREAM_MESSAGE_CHUNK', payload: { messageId: modelMessageId, chunk: chunkText, citations: newCitations } });
+            }
+
+            if (isAutoSpeakEnabled && finalModelText) {
+                try { await ttsService.speak(finalModelText.replace(/\[SUGGESTION\]([\s\S]*?)\[\/SUGGESTION\]/g, 'I have a suggestion. $1')); }
+                catch (ttsErr) { console.warn("TTS failed after primary AI response:", ttsErr); }
             }
         } catch (err) {
             console.warn("Primary AI provider failed. Attempting fallback.", err);
@@ -262,33 +214,16 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                 const fallbackText = await getFallbackResponse(finalPrompt, messages, stepsContext, fullTranscript);
                 finalModelText = fallbackText;
                 isFallback = true;
-                setMessages(prev =>
-                    prev.map(msg =>
-                        msg.id === modelMessageId
-                            ? { ...msg, text: fallbackText, isFallback: true, isLoading: false }
-                            : msg
-                    )
-                );
                 if (isAutoSpeakEnabled && fallbackText) {
-                    try {
-                        await ttsService.speak(fallbackText);
-                    } catch (ttsErr) {
-                        console.warn("TTS failed for fallback response:", ttsErr);
-                    }
+                    try { await ttsService.speak(fallbackText); }
+                    catch (ttsErr) { console.warn("TTS failed for fallback response:", ttsErr); }
                 }
             } catch (fallbackErr) {
                 didErrorOccur = true;
                 const errorMessage = fallbackErr instanceof Error ? fallbackErr.message : 'An unknown error occurred.';
-                setMessages(prev =>
-                    prev.map(msg =>
-                        msg.id === modelMessageId
-                            ? { ...msg, text: `Error: ${errorMessage}`, isLoading: false, isError: true }
-                            : msg
-                    )
-                );
+                dispatch({ type: 'SET_ERROR', payload: { messageId: modelMessageId, error: errorMessage } });
             }
         } finally {
-            setIsLoading(false);
             if (finalModelText && !didErrorOccur) {
                 const finalModelMessage: ChatMessage = {
                     id: modelMessageId,
@@ -298,12 +233,12 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                     isFallback,
                     isLoading: false,
                 };
+                dispatch({ type: 'MESSAGE_COMPLETE', payload: { messageId: modelMessageId, finalMessage: finalModelMessage } });
                 persistMessage(finalModelMessage);
-                // Log to collective memory (fire and forget)
                 logTutorInteraction(moduleId, currentStepIndex, trimmedInput, finalModelText)
                     .catch(err => console.warn("Failed to log interaction to collective memory:", err));
             } else if (!finalModelText && !didErrorOccur) {
-                setMessages(prev => prev.filter(msg => msg.id !== modelMessageId));
+                dispatch({ type: 'REMOVE_MESSAGE', payload: { messageId: modelMessageId } });
             }
         }
     }, [isLoading, isAutoSpeakEnabled, enrichPromptIfNeeded, stepsContext, fullTranscript, messages, persistMessage, addToast, moduleId, sessionToken, currentStepIndex, isMemoryEnabled]);
@@ -312,7 +247,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         e.preventDefault();
         const textToSend = input.trim();
         if (!textToSend) return;
-        setInput(''); // Clear input after grabbing value
+        dispatch({ type: 'SET_INPUT', payload: '' });
         await sendMessage(textToSend);
     }, [input, sendMessage]);
 
@@ -647,7 +582,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
                     <input
                         type="text"
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={(e) => dispatch({ type: 'SET_INPUT', payload: e.target.value })}
                         placeholder={error ? "AI Tutor is unavailable" : "Ask or type /draw..."}
                         className="flex-1 bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white disabled:opacity-50"
                         disabled={isLoading || !!error || isLoadingHistory}
@@ -664,4 +599,3 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
         </div>
     );
 };
-s

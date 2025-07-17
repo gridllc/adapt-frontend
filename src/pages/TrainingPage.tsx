@@ -1,13 +1,14 @@
 
 
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+
+import React, { useState, useRef, useCallback, useEffect, useMemo, useReducer } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon, VideoIcon, AlertTriangleIcon, SparklesIcon, RefreshCwIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus, CheckpointEvaluation } from '@/types';
+import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,15 +21,13 @@ import { logCheckpointResponse, getCheckpointFailureStats } from '@/services/che
 import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
 import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
+import { trainingPageReducer, initialTrainingPageState } from '@/reducers/trainingPageReducer';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const generateToken = () => Math.random().toString(36).substring(2, 10);
 
-type ActiveTab = 'steps' | 'transcript';
-
 const TrainingPage: React.FC = () => {
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { moduleId } = useParams<{ moduleId: string }>();
   const navigate = useNavigate();
@@ -36,22 +35,25 @@ const TrainingPage: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { addToast } = useToast();
 
+  const [state, dispatch] = useReducer(trainingPageReducer, initialTrainingPageState);
+  const {
+    isChatOpen,
+    activeTab,
+    isEvaluatingCheckpoint,
+    isAdvancing,
+    checkpointFeedback,
+    instructionSuggestion,
+    isSuggestionSubmitted,
+    isGeneratingReport,
+    performanceReport,
+    initialChatPrompt
+  } = state;
+
   const [currentTime, setCurrentTime] = useState(0);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('steps');
   const [stepsContext, setStepsContext] = useState('');
   const [fullTranscript, setFullTranscript] = useState('');
   const [sessionToken, setSessionToken] = useState('');
-  const [performanceReport, setPerformanceReport] = useState<PerformanceReportData | null>(null);
-  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-  const [initialChatPrompt, setInitialChatPrompt] = useState<string | undefined>();
-
-  // State for checkpoint UI
-  const [isEvaluatingCheckpoint, setIsEvaluatingCheckpoint] = useState(false);
-  const [checkpointFeedback, setCheckpointFeedback] = useState<CheckpointEvaluation | null>(null);
-  const [instructionSuggestion, setInstructionSuggestion] = useState<string | null>(null);
-  const [isSuggestionSubmitted, setIsSuggestionSubmitted] = useState(false);
   const isAdmin = !!user;
-  const [isAdvancing, setIsAdvancing] = useState(false);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -170,7 +172,7 @@ const TrainingPage: React.FC = () => {
     if (isCompleted && moduleData && !performanceReport && !isGeneratingReport) {
       const generateReport = async () => {
         if (!moduleId || !sessionToken) return;
-        setIsGeneratingReport(true);
+        dispatch({ type: 'START_REPORT_GENERATION' });
 
         const unclearStepIndexes = new Set(
           userActions.filter(a => a.status === 'unclear').map(a => a.stepIndex)
@@ -185,25 +187,27 @@ const TrainingPage: React.FC = () => {
         try {
           const { summary: aiFeedback } = await generatePerformanceSummary(moduleData.title, unclearSteps, userQuestions);
 
-          setPerformanceReport({
-            moduleTitle: moduleData.title,
-            completionDate: new Date().toLocaleDateString(),
-            aiFeedback,
-            unclearSteps,
-            userQuestions,
+          dispatch({
+            type: 'SET_PERFORMANCE_REPORT', payload: {
+              moduleTitle: moduleData.title,
+              completionDate: new Date().toLocaleDateString(),
+              aiFeedback,
+              unclearSteps,
+              userQuestions,
+            }
           });
 
         } catch (error) {
           console.error("Failed to generate performance report:", error);
-          setPerformanceReport({
-            moduleTitle: moduleData.title,
-            completionDate: new Date().toLocaleDateString(),
-            aiFeedback: "Congratulations on completing the training! You did a great job.",
-            unclearSteps,
-            userQuestions,
+          dispatch({
+            type: 'SET_PERFORMANCE_REPORT', payload: {
+              moduleTitle: moduleData.title,
+              completionDate: new Date().toLocaleDateString(),
+              aiFeedback: "Congratulations on completing the training! You did a great job.",
+              unclearSteps,
+              userQuestions,
+            }
           });
-        } finally {
-          setIsGeneratingReport(false);
         }
       };
       generateReport();
@@ -258,9 +262,7 @@ const TrainingPage: React.FC = () => {
 
   useEffect(() => {
     // Clear checkpoint-specific feedback when the step changes
-    setCheckpointFeedback(null);
-    setInstructionSuggestion(null);
-    setIsSuggestionSubmitted(false);
+    dispatch({ type: 'RESET_CHECKPOINT_STATE' });
   }, [currentStepIndex]);
 
   const handleMarkStep = useCallback((status: StepStatus) => {
@@ -278,7 +280,7 @@ const TrainingPage: React.FC = () => {
   }, [markStep, steps, currentStepIndex, handleSeekTo, addToast]);
 
   const handleRestart = () => {
-    setPerformanceReport(null);
+    dispatch({ type: 'RESET_SESSION_UI' });
     resetSession();
   }
 
@@ -286,9 +288,7 @@ const TrainingPage: React.FC = () => {
     const stepJustAnswered = steps[currentStepIndex];
     if (!stepJustAnswered?.checkpoint || !moduleId) return;
 
-    setIsEvaluatingCheckpoint(true);
-    setCheckpointFeedback(null);
-    setInstructionSuggestion(null);
+    dispatch({ type: 'START_CHECKPOINT_EVALUATION' });
 
     if (user) {
       logCheckpointResponse({
@@ -305,28 +305,27 @@ const TrainingPage: React.FC = () => {
 
     try {
       const evaluation = await evaluateCheckpointAnswer(stepJustAnswered, answer);
+      const isCorrect = evaluation.isCorrect;
 
-      if (evaluation.isCorrect) {
-        setCheckpointFeedback({ ...evaluation, feedback: `${evaluation.feedback} Correct! Moving on...` });
-        setIsAdvancing(true);
+      const feedbackPayload = {
+        ...evaluation,
+        feedback: isCorrect ? `${evaluation.feedback} Correct! Moving on...` : evaluation.feedback,
+      };
+
+      dispatch({ type: 'CHECKPOINT_EVALUATION_SUCCESS', payload: { evaluation: feedbackPayload, isAdvancing: isCorrect } });
+
+      if (isCorrect) {
         addToast('success', 'Checkpoint Passed!', "Moving to the next step shortly.");
-
         setTimeout(() => {
           markStep('done');
-          setIsAdvancing(false);
         }, 2000);
       } else {
-        setCheckpointFeedback(evaluation);
         addToast('info', 'Checkpoint Answer Noted', evaluation.feedback);
-        if (evaluation.suggestedInstructionChange) {
-          setInstructionSuggestion(evaluation.suggestedInstructionChange);
-        }
       }
     } catch (err) {
       console.error("Error evaluating checkpoint with AI", err);
+      dispatch({ type: 'CHECKPOINT_EVALUATION_FAILURE' });
       addToast('error', 'Evaluation Error', 'Could not get AI feedback.');
-    } finally {
-      setIsEvaluatingCheckpoint(false);
     }
   }, [currentStepIndex, steps, addToast, markStep, user, moduleId]);
 
@@ -335,7 +334,7 @@ const TrainingPage: React.FC = () => {
     try {
       await submitSuggestion(moduleId, currentStepIndex, instructionSuggestion);
       addToast('success', 'Suggestion Submitted', 'Thank you! The module owner will review it.');
-      setIsSuggestionSubmitted(true);
+      dispatch({ type: 'SUBMIT_SUGGESTION_SUCCESS' });
     } catch (err) {
       addToast('error', 'Submission Failed', 'Could not submit suggestion.');
     }
@@ -362,8 +361,7 @@ const TrainingPage: React.FC = () => {
       prompt = question;
     }
 
-    setInitialChatPrompt(prompt);
-    setIsChatOpen(true);
+    dispatch({ type: 'SET_CHAT_PROMPT', payload: prompt });
   }, [steps, currentStepIndex]);
 
 
@@ -449,7 +447,7 @@ const TrainingPage: React.FC = () => {
             <>
               <div className="flex border-b border-slate-200 dark:border-slate-700">
                 <button
-                  onClick={() => setActiveTab('steps')}
+                  onClick={() => dispatch({ type: 'SET_ACTIVE_TAB', payload: 'steps' })}
                   className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'steps' ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'
                     }`}
                 >
@@ -457,7 +455,7 @@ const TrainingPage: React.FC = () => {
                   <span>Steps</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('transcript')}
+                  onClick={() => dispatch({ type: 'SET_ACTIVE_TAB', payload: 'transcript' })}
                   className={`flex-1 p-4 font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${activeTab === 'transcript' ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'
                     }`}
                 >
@@ -509,7 +507,7 @@ const TrainingPage: React.FC = () => {
 
       {!isChatOpen && !isCompleted && (
         <button
-          onClick={() => setIsChatOpen(true)}
+          onClick={() => dispatch({ type: 'TOGGLE_CHAT' })}
           className="fixed bottom-6 right-6 bg-indigo-600 text-white p-4 rounded-full shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-500 transition-transform transform hover:scale-110"
           aria-label="Open AI Tutor"
         >
@@ -527,10 +525,7 @@ const TrainingPage: React.FC = () => {
             onTimestampClick={handleSeekTo}
             currentStepIndex={currentStepIndex}
             steps={steps}
-            onClose={() => {
-              setIsChatOpen(false);
-              setInitialChatPrompt(undefined);
-            }}
+            onClose={() => dispatch({ type: 'TOGGLE_CHAT' })}
             initialPrompt={initialChatPrompt}
           />
         </div>

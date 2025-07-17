@@ -25,6 +25,7 @@ import SessionReviewPage from '@/pages/SessionReviewPage';
 import { PwaUpdater } from '@/components/PwaUpdater';
 import QuestionLogDetailPage from './pages/QuestionLogDetailPage';
 import { supabase } from '@/services/apiClient';
+import AdminLayout from '@/components/AdminLayout';
 
 // Expose Supabase client for debugging in development mode
 if (import.meta.env.DEV) {
@@ -52,64 +53,45 @@ const router = createBrowserRouter([
                 element: <LoginPage />,
             },
             {
-                path: 'dashboard',
                 element: (
                     <ProtectedRoute>
-                        <DashboardPage />
+                        <AdminLayout />
                     </ProtectedRoute>
                 ),
-            },
-            {
-                path: 'dashboard/questions',
-                element: (
-                    <ProtectedRoute>
-                        <FaqPage />
-                    </ProtectedRoute>
-                )
-            },
-            {
-                path: 'dashboard/questions/:moduleId/:stepIndex/:encodedQuestion',
-                element: (
-                    <ProtectedRoute>
-                        <QuestionLogDetailPage />
-                    </ProtectedRoute>
-                )
+                children: [
+                    {
+                        path: 'dashboard',
+                        element: <DashboardPage />,
+                    },
+                    {
+                        path: 'dashboard/questions',
+                        element: <FaqPage />,
+                    },
+                    {
+                        path: 'dashboard/questions/:moduleId/:stepIndex/:encodedQuestion',
+                        element: <QuestionLogDetailPage />,
+                    },
+                    {
+                        path: 'modules/:moduleId/edit',
+                        element: <EditPage />,
+                    },
+                    {
+                        path: 'modules/:moduleId/live',
+                        element: <LiveCoachPage />,
+                    },
+                    {
+                        path: 'sessions/:moduleId/:session_key/review',
+                        element: <SessionReviewPage />,
+                    },
+                    {
+                        path: 'create',
+                        element: <CreatePage />,
+                    },
+                ]
             },
             {
                 path: 'modules/:moduleId',
                 element: <TrainingPage />,
-            },
-            {
-                path: 'modules/:moduleId/edit',
-                element: (
-                    <ProtectedRoute>
-                        <EditPage />
-                    </ProtectedRoute>
-                ),
-            },
-            {
-                path: 'modules/:moduleId/live',
-                element: (
-                    <ProtectedRoute>
-                        <LiveCoachPage />
-                    </ProtectedRoute>
-                )
-            },
-            {
-                path: 'sessions/:moduleId/:session_key/review',
-                element: (
-                    <ProtectedRoute>
-                        <SessionReviewPage />
-                    </ProtectedRoute>
-                )
-            },
-            {
-                path: 'create',
-                element: (
-                    <ProtectedRoute>
-                        <CreatePage />
-                    </ProtectedRoute>
-                ),
             },
             {
                 path: '*', // Catch-all for 404

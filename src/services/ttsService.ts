@@ -104,13 +104,15 @@ export async function speak(text: string, character: string = 'system'): Promise
     });
 
     if (!response.ok) {
-      throw new Error(`TTS API failed with status ${response.status}`);
+      throw new Error(`TTS API request failed with status ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.startsWith('audio/')) {
+      throw new Error(`TTS API returned unexpected content type: ${contentType || 'none'}. Expected audio.`);
     }
 
     const blob = await response.blob();
-    if (blob.type !== 'audio/mpeg' && !blob.type.startsWith('audio/')) {
-      throw new Error(`TTS API returned unexpected content type: ${blob.type}`);
-    }
     const audioUrl = URL.createObjectURL(blob);
 
     // --- Cache Management ---

@@ -5,7 +5,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getModule } from '@/services/moduleService';
 import { getSessionSummary } from '@/services/sessionService';
-import { BookOpenIcon, ClockIcon, LightbulbIcon, AlertTriangleIcon, TrophyIcon } from '@/components/Icons';
+import { ClockIcon, LightbulbIcon, AlertTriangleIcon, TrophyIcon } from '@/components/Icons';
 import type { LiveCoachEvent, TrainingModule, SessionSummary } from '@/types';
 
 /**
@@ -73,20 +73,14 @@ const SessionReviewPage: React.FC = () => {
     const totalDuration = sessionSummary.endedAt - sessionSummary.startedAt;
 
     return (
-        <div className="max-w-4xl mx-auto p-8">
-            <header className="flex justify-between items-center mb-8">
-                <Link to="/dashboard" className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-2">
-                    <BookOpenIcon className="h-5 w-5" />
-                    <span>Back to Dashboard</span>
-                </Link>
-                <div className="text-center">
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Session Review</h1>
-                    <p className="text-indigo-500 dark:text-indigo-400">{moduleData.title}</p>
-                </div>
-                <span className="w-40 text-right text-xs text-slate-500 truncate" title={session_key}>Token: {session_key}</span>
-            </header>
+        <div className="p-8">
+            <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Session Review</h1>
+                <p className="text-indigo-500 dark:text-indigo-400">{moduleData.title}</p>
+                <p className="text-xs text-slate-500 truncate" title={session_key}>Session Token: {session_key}</p>
+            </div>
 
-            <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 space-y-8">
+            <div className="bg-white dark:bg-slate-800/50 p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 space-y-8">
                 {/* --- Key Metrics Summary Card --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">
                     <div className="bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg">
