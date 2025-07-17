@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/useToast';
 import { getModule } from '@/services/moduleService';
 import { getSession, saveSession } from '@/services/sessionService';
-import { startChat } from '@/services/geminiService';
+import { startChat, sendMessageWithRetry } from '@/services/geminiService';
 import { getPastFeedbackForStep, logAiFeedback, updateFeedbackWithFix, findSimilarFixes } from '@/services/feedbackService';
 import { getPromptContextForLiveCoach, getTagline, getCelebratoryTagline } from '@/utils/promptEngineering';
 import { initializeObjectDetector, detectObjectsInVideo, isObjectPresent } from '@/services/visionService';
@@ -245,7 +245,7 @@ const LiveCoachPage: React.FC = () => {
 
             finalPrompt += `\n\nYour response should proactively ask the user for feedback (e.g., "Let me know if that helped"). End your response with this exact tagline: "${getTagline()}"`;
 
-            const stream = await chatRef.current.sendMessageStream({ message: finalPrompt });
+            const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
@@ -261,14 +261,17 @@ const LiveCoachPage: React.FC = () => {
                     await ttsService.speak(fullText, 'coach');
                 }
             }
+            setStatus('listening');
         } catch (e) {
             console.error(e);
+            addToast('error', 'AI Coach Error', 'The AI is having trouble. Pausing for a moment.');
+            setStatus('idle');
+            setTimeout(() => setStatus('listening'), 10000); // 10s cooldown
         } finally {
-            setStatus('listening');
             isInterjectingRef.current = false;
         }
 
-    }, [chatRef, activeModule, currentStepIndex, logAndSaveEvent, ttsEnabled, moduleId, sessionToken, moduleNeeds]);
+    }, [chatRef, activeModule, currentStepIndex, logAndSaveEvent, ttsEnabled, moduleId, sessionToken, moduleNeeds, addToast]);
 
     const processAiQuery = useCallback(async (query: string) => {
         if (!chatRef.current || !activeModule) return;
@@ -293,7 +296,7 @@ const LiveCoachPage: React.FC = () => {
         finalPrompt += `\n\nYour response should proactively ask the user for feedback (e.g., "Let me know if that helped"). End your response with this exact tagline: "${getTagline()}"`;
 
         try {
-            const stream = await chatRef.current.sendMessageStream({ message: finalPrompt });
+            const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
@@ -306,13 +309,13 @@ const LiveCoachPage: React.FC = () => {
                 setStatus('speaking');
                 if (ttsEnabled) await ttsService.speak(fullText, 'coach');
             }
+            setStatus('listening');
         } catch (error) {
             console.error("Error sending message to AI:", error);
             const errorMessage = "Sorry, I couldn't process that.";
             setAiResponse(errorMessage);
             setStatus('speaking');
             if (ttsEnabled) await ttsService.speak(errorMessage, 'coach');
-        } finally {
             setStatus('listening');
         }
     }, [chatRef, activeModule, detectedObjects, ttsEnabled, clearAllTimers, sessionToken, moduleId, currentStepIndex, moduleNeeds]);
