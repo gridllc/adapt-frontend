@@ -189,7 +189,7 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                                 This checkpoint surfaced a missing detail.
                               </p>
                               <p className="p-2 bg-white/50 dark:bg-black/20 rounded-md font-medium text-slate-700 dark:text-slate-200">
-                                "{instructionSuggestion}"
+                                &quot;{instructionSuggestion}&quot;
                               </p>
                               <button
                                 onClick={() => moduleId && navigate(`/modules/${moduleId}/edit`, { state: { suggestion: instructionSuggestion, stepIndex: index } })}
@@ -206,10 +206,10 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                                 <span>AI Improvement Suggestion</span>
                               </div>
                               <p className="text-yellow-900 dark:text-yellow-100 italic">
-                                The instructions seem incomplete. Here's a suggested fix:
+                                The instructions seem incomplete. Here&apos;s a suggested fix:
                               </p>
                               <p className="p-2 bg-white/50 dark:bg-black/20 rounded-md font-medium text-slate-700 dark:text-slate-200">
-                                "{instructionSuggestion}"
+                                &quot;{instructionSuggestion}&quot;
                               </p>
                               <button
                                 onClick={onSuggestionSubmit}
@@ -249,7 +249,7 @@ export const ProcessSteps: React.FC<ProcessStepsProps> = ({
                           className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold py-2 px-4 rounded-full transition-transform transform hover:scale-105"
                         >
                           <HelpCircleIcon className="h-5 w-5" />
-                          <span>I'm not sure</span>
+                          <span>I&apos;m not sure</span>
                         </button>
                       </div>
                     )}

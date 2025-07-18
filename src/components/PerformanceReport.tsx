@@ -1,4 +1,3 @@
-
 import React, { useCallback } from 'react';
 import type { PerformanceReportData } from '@/types';
 import { StarIcon, LightbulbIcon, HelpCircleIcon, DownloadIcon } from '@/components/Icons';
@@ -52,8 +51,8 @@ export const PerformanceReport: React.FC<PerformanceReportProps> = ({ report, on
             <div className="bg-slate-100 dark:bg-slate-900/50 border border-indigo-200 dark:border-indigo-500/50 rounded-xl p-6 md:p-8 text-center flex-grow flex flex-col justify-center">
                 <StarIcon className="h-12 w-12 text-yellow-400 mx-auto mb-4" />
                 <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Training Complete!</h2>
-                <p className="text-md text-slate-600 dark:text-slate-300 mt-1">You've successfully completed the module:</p>
-                <p className="text-lg font-semibold text-indigo-600 dark:text-indigo-300 mt-2">"{report.moduleTitle}"</p>
+                <p className="text-md text-slate-600 dark:text-slate-300 mt-1">You&apos;ve successfully completed the module:</p>
+                <p className="text-lg font-semibold text-indigo-600 dark:text-indigo-300 mt-2">&quot;{report.moduleTitle}&quot;</p>
                 <p className="text-xs text-slate-500 mt-1">Completed on {report.completionDate}</p>
 
                 <div className="mt-6 bg-slate-200 dark:bg-slate-800/60 p-4 rounded-lg text-left">
@@ -62,7 +61,7 @@ export const PerformanceReport: React.FC<PerformanceReportProps> = ({ report, on
                         <div>
                             <h3 className="font-bold text-md text-slate-800 dark:text-slate-200">Personalized Feedback</h3>
                             <p className="text-sm text-slate-700 dark:text-slate-300 mt-1 italic">
-                                "{report.aiFeedback}"
+                                &quot;{report.aiFeedback}&quot;
                             </p>
                         </div>
                     </div>
@@ -76,7 +75,7 @@ export const PerformanceReport: React.FC<PerformanceReportProps> = ({ report, on
                                 <h3 className="font-bold text-md text-slate-800 dark:text-slate-200">Areas for Review</h3>
                                 {report.unclearSteps.length > 0 && (
                                     <div className="mt-2">
-                                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Steps you weren't sure about:</h4>
+                                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Steps you weren&apos;t sure about:</h4>
                                         <ul className="list-disc list-inside text-sm text-slate-600 dark:text-slate-400">
                                             {report.unclearSteps.map(step => <li key={step.title}>{step.title}</li>)}
                                         </ul>
@@ -86,7 +85,7 @@ export const PerformanceReport: React.FC<PerformanceReportProps> = ({ report, on
                                     <div className="mt-2">
                                         <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Questions you asked:</h4>
                                         <ul className="list-disc list-inside text-sm text-slate-600 dark:text-slate-400">
-                                            {report.userQuestions.slice(0, 3).map(q => <li key={q} className="truncate">"{q}"</li>)}
+                                            {report.userQuestions.slice(0, 3).map(q => <li key={q} className="truncate">&quot;{q}&quot;</li>)}
                                         </ul>
                                     </div>
                                 )}

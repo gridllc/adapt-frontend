@@ -10,6 +10,7 @@ import {
 import type { GeneratedModuleData, TranscriptAnalysis } from '@/services/geminiService';
 import { saveModule } from '@/services/moduleService';
 import { ModuleEditor } from '@/components/ModuleEditor';
+import { TranscriptEditor } from '@/components/TranscriptEditor';
 import type { TranscriptLine, VideoMetadata } from '@/types';
 import type { Database } from '@/types/supabase';
 import { UploadCloudIcon, XIcon, SparklesIcon, VideoIcon, LightbulbIcon, FileTextIcon } from '@/components/Icons';
@@ -261,6 +262,13 @@ const CreatePage: React.FC = () => {
         }
     }, []);
 
+    const handleTranscriptChange = useCallback((index: number, newText: string) => {
+        const newTranscript = [...editedTranscript];
+        newTranscript[index] = { ...newTranscript[index], text: newText };
+        setEditedTranscript(newTranscript);
+    }, [editedTranscript]);
+
+
     const renderAiFlow = () => (
         <>
             {flowStep === 'initial' && (
@@ -303,8 +311,59 @@ const CreatePage: React.FC = () => {
                 </div>
             )}
             {flowStep === 'analyzing' && <div className="text-center p-8 animate-fade-in-up"><LightbulbIcon className="h-12 w-12 mx-auto text-indigo-500 dark:text-indigo-400 animate-pulse" /><p className="mt-4 text-lg text-slate-600 dark:text-slate-300">AI is analyzing your video...</p></div>}
-            {flowStep === 'review' && analysisResult && <div className="bg-slate-100 dark:bg-slate-800 p-8 rounded-2xl shadow-xl animate-fade-in-up"><p>Review step placeholder</p><button onClick={handleGenerateModule}>Generate</button></div>}
+
+            {flowStep === 'review' && analysisResult && videoUrl && (
+                <div className="animate-fade-in-up">
+                    <div className="text-center mb-8">
+                        <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">2. Review & Edit Transcript</h2>
+                        <p className="text-slate-600 dark:text-slate-300">Correct any mistakes in the AI-generated transcript. The accuracy of the next step depends on it.</p>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Left Column: Video & Metadata */}
+                        <div className="lg:col-span-1 lg:sticky top-6 space-y-4">
+                            <VideoPlayer ref={videoRef} video_url={videoUrl} onTimeUpdate={setCurrentTime} />
+                            <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <h3 className="font-bold mb-2 text-slate-800 dark:text-slate-100">Analysis Details</h3>
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-slate-600 dark:text-slate-300">AI Confidence</span>
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400">{(analysisResult.confidence * 100).toFixed(0)}%</span>
+                                </div>
+                                {analysisResult.uncertainWords.length > 0 && (
+                                    <div className="mt-3">
+                                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Uncertain Words</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {analysisResult.uncertainWords.map((word, i) => (
+                                                <span key={i} className="bg-yellow-200 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300 text-xs font-mono px-2 py-1 rounded">{word}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Column: Transcript Editor */}
+                        <div className="lg:col-span-2 bg-slate-100 dark:bg-slate-800 p-4 rounded-lg h-[70vh]">
+                            <TranscriptEditor
+                                transcript={editedTranscript}
+                                currentTime={currentTime}
+                                onSeek={handleSeek}
+                                onTranscriptChange={handleTranscriptChange}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-8 flex justify-center gap-4">
+                        <button onClick={resetForm} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">Start Over</button>
+                        <button onClick={handleGenerateModule} className="bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-indigo-700 transition-colors transform hover:scale-105 flex items-center justify-center gap-2">
+                            <SparklesIcon className="h-6 w-6" />
+                            Generate Module Steps
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {flowStep === 'generating' && <div className="text-center p-8 animate-fade-in-up"><LightbulbIcon className="h-12 w-12 mx-auto text-indigo-500 dark:text-indigo-400 animate-pulse" /><p className="mt-4 text-lg text-slate-600 dark:text-slate-300">AI is building your training module...</p></div>}
+
             {flowStep === 'final' && (
                 <div className="animate-fade-in-up">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">

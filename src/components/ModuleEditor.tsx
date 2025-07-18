@@ -1,5 +1,4 @@
-
-import React, { useCallback, useState, useRef, useEffect } from 'react'
+import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react'
 import type {
     AlternativeMethod,
     TraineeSuggestion,
@@ -68,8 +67,8 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     const [openTranscripts, setOpenTranscripts] = useState<Record<number, boolean>>({});
     const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-    const steps = (module.steps as ProcessStep[]) || [];
-    const transcript = (module.transcript as TranscriptLine[]) || [];
+    const steps = useMemo(() => (module.steps as ProcessStep[]) || [], [module.steps]);
+    const transcript = useMemo(() => (module.transcript as TranscriptLine[]) || [], [module.transcript]);
 
     /**
      * Effect to scroll to a specific step when a suggestion is applied from another page.
@@ -394,7 +393,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                             <SparklesIcon className="h-5 w-5" />
                                             AI-Suggested Fix
                                         </h4>
-                                        <p className="text-yellow-800 dark:text-yellow-200 italic mb-2">"{stepAiSuggestion.suggestion}"</p>
+                                        <p className="text-yellow-800 dark:text-yellow-200 italic mb-2">&quot;{stepAiSuggestion.suggestion}&quot;</p>
                                         <button
                                             onClick={() => handleStepChange(idx, 'description', stepAiSuggestion.suggestion)}
                                             className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 text-xs font-semibold flex items-center gap-1.5"
@@ -543,7 +542,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                                         </div>
                                                     ))
                                                 ) : (
-                                                    <p className="text-xs text-slate-500 italic">No transcript lines fall within this step's time range.</p>
+                                                    <p className="text-xs text-slate-500 italic">No transcript lines fall within this step&apos;s time range.</p>
                                                 )}
                                             </div>
                                         )}
@@ -558,7 +557,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                                 key={sug.id}
                                                 className="flex justify-between items-center mb-2"
                                             >
-                                                <span className="italic flex-1 text-sm text-slate-800 dark:text-slate-200">"{sug.text}"</span>
+                                                <span className="italic flex-1 text-sm text-slate-800 dark:text-slate-200">&quot;{sug.text}&quot;</span>
                                                 <div className="flex gap-2 ml-4">
                                                     <button
                                                         onClick={() => onAcceptSuggestion?.(sug)}

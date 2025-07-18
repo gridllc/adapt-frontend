@@ -1,3 +1,4 @@
+
 export interface AlternativeMethod {
   title: string;
   description: string;
@@ -137,7 +138,6 @@ export interface SessionSummary extends SessionState {
   durationsPerStep: Record<number, number>; // in milliseconds
 }
 
-
 export interface QuestionStats {
   question: string;
   count: number;
@@ -163,7 +163,7 @@ export interface AuthUser {
   email?: string;
   app_metadata: {
     provider?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
