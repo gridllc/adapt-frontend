@@ -14,8 +14,9 @@
   <!-- PWA & Mobile Experience -->
   <link rel="icon"
     href="data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3e%3ctext y='.9em' font-size='90'%3e🤖%3c/text%3e%3c/svg%3e">
-  <link rel="manifest" href="/manifest.json" />
+  <link rel="manifest" href="./manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
 
   <!-- Social Media & Link Previews -->
   <meta property="og:title" content="Adapt - AI Training Platform" />
@@ -80,6 +81,7 @@
       animation: fade-in-up 0.3s ease-out forwards;
     }
   </style>
+
   <script type="importmap">
 {
   "imports": {
@@ -107,6 +109,12 @@
   }
 }
 </script>
+  <script type="module" crossorigin src="./assets/index-3Hz1A7RP.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/vendor-DfM2CZGz.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-data-CSZXbkC3.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-react-vBNZnuX1.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-ai-xfXoiafW.js">
+  <link rel="stylesheet" crossorigin href="./assets/index-CReCzlg7.css">
 </head>
 
 <body class="bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-sans transition-colors duration-300">
@@ -116,7 +124,6 @@
     During the 'npm run build' process, Vite will automatically replace this with
     a script tag pointing to the optimized, bundled JavaScript for production.
   -->
-  <script type="module" src="/src/index.tsx"></script>
 </body>
 
 </html>

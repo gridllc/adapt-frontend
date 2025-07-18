@@ -1,46 +1,31 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import tsconfigPaths from 'vite-tsconfig-paths'
+// This file provides type definitions for Vite's `import.meta.env` and Node's `process.env`.
+// It is the single source of truth for environment variable types in the project.
 
-// https://vitejs.dev/config/
-export default defineConfig({
-    base: './',
-    plugins: [react(), tsconfigPaths()],
-    define: {
-        'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
-    },
+// By using `declare global`, we augment the existing global types rather than creating new ones.
+// This avoids conflicts with Vite's built-in environment variable types (like PROD and DEV).
+declare global {
+    // --- Vite Environment Variables (import.meta.env) ---
+    interface ImportMetaEnv {
+        readonly VITE_SUPABASE_URL?: string
+        readonly VITE_SUPABASE_ANON_KEY?: string
+        readonly VITE_SLACK_WEBHOOK_URL?: string
+        readonly DEV: boolean
+        readonly PROD: boolean
+    }
 
-    // 1) In dev, don’t pre-bundle fsevents
-    optimizeDeps: {
-        exclude: ['fsevents'],
-    },
+    interface ImportMeta {
+        readonly env: ImportMetaEnv
+    }
 
-    build: {
-        chunkSizeWarningLimit: 1000,
-        rollupOptions: {
-            // 2) In production, treat fsevents as external
-            external: ['fsevents'],
-            output: {
-                // 3) Arrow-fn for manualChunks to avoid parser issues
-                manualChunks: (id) => {
-                    if (id.includes('node_modules')) {
-                        if (
-                            id.includes('react') ||
-                            id.includes('react-dom') ||
-                            id.includes('react-router-dom')
-                        ) {
-                            return 'vendor-react'
-                        }
-                        if (id.includes('@tanstack') || id.includes('@supabase')) {
-                            return 'vendor-data'
-                        }
-                        if (id.includes('@google/genai')) {
-                            return 'vendor-ai'
-                        }
-                        return 'vendor'
-                    }
-                },
-            },
-        },
-    },
-})
+    // --- Node.js Environment Variables (process.env) ---
+    // Per coding guidelines, process.env.API_KEY is expected to be available in the execution context.
+    // We augment the NodeJS.ProcessEnv type to include API_KEY. This is the standard way to add types for Node.js environment variables.
+    namespace NodeJS {
+        interface ProcessEnv {
+            API_KEY?: string
+        }
+    }
+}
+
+// This `export {}` is required to make this file a module, which allows `declare global` to work correctly.
+export { }

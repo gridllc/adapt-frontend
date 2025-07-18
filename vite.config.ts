@@ -22,11 +22,11 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       // Explicitly set an absolute path for the entry point to resolve build errors on Render.
-      input: resolve('index.html'),
+      input: resolve(process.cwd(), 'index.html'),
       // 2) In production, treat fsevents as external
       external: ['fsevents'],
-      // 3) Arrow-fn for manualChunks to avoid parser issues
       output: {
+        // 3) Arrow-fn for manualChunks to avoid parser issues
         manualChunks: (id) => {
           if (id.includes('node_modules')) {
             if (
