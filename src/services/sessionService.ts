@@ -1,5 +1,4 @@
 
-
 import { supabase } from '@/services/apiClient';
 import type { UserAction, LiveCoachEvent, SessionState, SessionSummary } from '@/types';
 
@@ -96,4 +95,35 @@ export const getSessionSummary = async (moduleId: string, sessionToken: string):
         endedAt,
         durationsPerStep,
     };
+};
+
+/**
+ * Gets the total number of training sessions across all modules.
+ * @returns {Promise<number>} The total count of sessions.
+ */
+export const getTotalSessionCount = async (): Promise<number> => {
+    const { count, error } = await supabase
+        .from(TABLE_NAME)
+        .select('*', { count: 'exact', head: true });
+    if (error) {
+        console.error("Error fetching total session count:", error);
+        throw error;
+    }
+    return count || 0;
+};
+
+/**
+ * Gets the total number of completed training sessions across all modules.
+ * @returns {Promise<number>} The total count of completed sessions.
+ */
+export const getCompletedSessionCount = async (): Promise<number> => {
+    const { count, error } = await supabase
+        .from(TABLE_NAME)
+        .select('*', { count: 'exact', head: true })
+        .eq('is_completed', true);
+    if (error) {
+        console.error("Error fetching completed session count:", error);
+        throw error;
+    }
+    return count || 0;
 };

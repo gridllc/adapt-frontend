@@ -1,5 +1,4 @@
 
-
 import { supabase } from '@/services/apiClient';
 import type { TraineeSuggestion, AiSuggestion } from '@/types';
 
@@ -81,6 +80,37 @@ export const getTraineeSuggestionsForModule = async (moduleId: string): Promise<
         status: s.status as TraineeSuggestion['status'],
     }));
 };
+
+/**
+ * Retrieves all pending trainee-submitted suggestions across all modules.
+ * @returns {Promise<(TraineeSuggestion & { module_title?: string })[]>} An array of suggestions.
+ */
+export const getAllPendingSuggestions = async (): Promise<(TraineeSuggestion & { module_title?: string })[]> => {
+    const { data, error } = await supabase
+        .from(TRAINEE_TABLE_NAME)
+        .select('*, modules(title)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error("Error fetching all pending suggestions:", error);
+        throw error;
+    }
+    // Map from snake_case (db) to camelCase (ts type)
+    return (data || []).map(s => {
+        // Supabase join type can be an array or object depending on relationship
+        const moduleData = Array.isArray(s.modules) ? s.modules[0] : s.modules;
+        return {
+            id: s.id.toString(),
+            moduleId: s.module_id,
+            stepIndex: s.step_index,
+            text: s.text || '',
+            status: s.status as TraineeSuggestion['status'],
+            module_title: moduleData?.title
+        };
+    });
+};
+
 
 /**
  * Deletes a trainee suggestion by its ID from the database.

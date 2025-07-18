@@ -1,3 +1,4 @@
+
 import { supabase } from '@/services/apiClient';
 import type { AnalysisHotspot, QuestionStats, ProcessStep, TutorLogRow } from '@/types';
 import type { Database } from '@/types/supabase';
@@ -71,6 +72,24 @@ export const getTutorLogs = async (moduleId: string): Promise<TutorLogRow[]> => 
 
     return data || [];
 };
+
+/**
+ * Fetches all tutor logs from the database, used for platform-wide analytics.
+ * @returns {Promise<TutorLogRow[]>} A promise that resolves to an array of all tutor logs.
+ */
+export const getAllTutorLogs = async (): Promise<TutorLogRow[]> => {
+    const { data, error } = await supabase
+        .from('tutor_logs')
+        .select('module_id, step_index, user_question');
+
+    if (error) {
+        console.error("Error fetching all tutor logs:", error);
+        throw new Error(`Failed to fetch all tutor logs: ${error.message}`);
+    }
+
+    return data || [];
+};
+
 
 /**
  * Fetches all instances of a specific question for a specific step within a module, with optional date filtering.
@@ -164,5 +183,54 @@ export const findHotspots = (stats: QuestionStats[], module: ModuleRow): Analysi
     });
 
     // Only return a hotspot if there's at least one question to analyze.
+    return maxUniqueQuestions > 0 ? topHotspot : null;
+};
+
+/**
+ * Analyzes all tutor logs from all modules to find the single biggest point of confusion platform-wide.
+ * @param allLogs An array of all tutor logs.
+ * @param allModules An array of all available modules.
+ * @returns The single top hotspot across the platform, or null.
+ */
+export const findPlatformHotspot = (allLogs: TutorLogRow[], allModules: ModuleRow[]): (AnalysisHotspot & { moduleId: string }) | null => {
+    if (!allLogs || allLogs.length === 0 || !allModules || allModules.length === 0) {
+        return null;
+    }
+
+    const modulesBySlug = new Map(allModules.map(m => [m.slug, m]));
+    const stepConfusion: Record<string, { questions: Set<string>; totalCount: number, moduleId: string, stepIndex: number }> = {};
+
+    allLogs.forEach(log => {
+        if (typeof log.step_index !== 'number' || !log.user_question?.trim() || !log.module_id) return;
+
+        const key = `${log.module_id}::${log.step_index}`;
+        if (!stepConfusion[key]) {
+            stepConfusion[key] = { questions: new Set(), totalCount: 0, moduleId: log.module_id, stepIndex: log.step_index };
+        }
+        stepConfusion[key].questions.add(log.user_question);
+        stepConfusion[key].totalCount++;
+    });
+
+    let topHotspot: (AnalysisHotspot & { moduleId: string }) | null = null;
+    let maxUniqueQuestions = 0;
+
+    Object.values(stepConfusion).forEach(data => {
+        if (data.questions.size > maxUniqueQuestions) {
+            maxUniqueQuestions = data.questions.size;
+            const module = modulesBySlug.get(data.moduleId);
+            const step = (module?.steps as ProcessStep[])?.[data.stepIndex];
+
+            if (module && step) {
+                topHotspot = {
+                    moduleId: data.moduleId,
+                    stepIndex: data.stepIndex,
+                    stepTitle: step.title,
+                    questions: Array.from(data.questions),
+                    questionCount: data.totalCount,
+                };
+            }
+        }
+    });
+
     return maxUniqueQuestions > 0 ? topHotspot : null;
 };
