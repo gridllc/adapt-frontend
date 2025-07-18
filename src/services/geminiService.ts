@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse, Part } from "@google/genai";
 import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine, GeneratedBranchModule } from "@/types";
 
@@ -485,16 +486,11 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateEmbedding');
     const ai = getAiClient();
     try {
-        // NOTE: The `embedContent` API in the version used here might differ.
-        // This is a placeholder for the correct embedding API call.
-        // A real implementation would use the specific embedding method provided by the SDK.
-        console.warn("[AI Service] generateEmbedding is using a placeholder implementation.");
-        // Mock response for development if the API isn't available or configured.
-        if (import.meta.env.DEV) {
-            return Array(768).fill(Math.random());
-        }
-        throw new Error("Embedding model not implemented in this version.");
-
+        const result = await ai.models.embedContent({
+            model: 'text-embedding-004',
+            contents: { parts: [{ text }] },
+        });
+        return result.embeddings[0].values;
     } catch (error) {
         console.error("[AI Service] Error generating embedding:", error);
         throw new Error("Failed to generate text embedding for memory search.");
