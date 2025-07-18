@@ -9,4 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Supabase URL and Anon Key must be provided in your .env.local file.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Add global headers to ensure all requests accept JSON, fixing 406 errors.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+        headers: {
+            'Accept': 'application/json'
+        }
+    }
+});

@@ -23,9 +23,9 @@ const AdminLayout: React.FC = () => {
     ];
 
     return (
-        <div className="flex h-screen bg-slate-100 dark:bg-slate-900">
+        <div className="flex flex-col md:flex-row h-screen bg-slate-100 dark:bg-slate-900">
             {/* Sidebar */}
-            <aside className="w-64 flex-shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col">
+            <aside className="w-full md:w-64 flex-shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col">
                 <div className="h-16 flex items-center justify-center px-4 border-b border-slate-200 dark:border-slate-700">
                     <h1 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400">Adapt Admin</h1>
                 </div>

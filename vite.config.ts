@@ -26,23 +26,25 @@ export default defineConfig({
       // 2) In production, treat fsevents as external
       external: ['fsevents'],
       // 3) Arrow-fn for manualChunks to avoid parser issues
-      manualChunks: (id) => {
-        if (id.includes('node_modules')) {
-          if (
-            id.includes('react') ||
-            id.includes('react-dom') ||
-            id.includes('react-router-dom')
-          ) {
-            return 'vendor-react'
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (
+              id.includes('react') ||
+              id.includes('react-dom') ||
+              id.includes('react-router-dom')
+            ) {
+              return 'vendor-react'
+            }
+            if (id.includes('@tanstack') || id.includes('@supabase')) {
+              return 'vendor-data'
+            }
+            if (id.includes('@google/genai')) {
+              return 'vendor-ai'
+            }
+            return 'vendor'
           }
-          if (id.includes('@tanstack') || id.includes('@supabase')) {
-            return 'vendor-data'
-          }
-          if (id.includes('@google/genai')) {
-            return 'vendor-ai'
-          }
-          return 'vendor'
-        }
+        },
       },
     },
   },
