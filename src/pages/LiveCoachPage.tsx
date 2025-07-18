@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useRef, useMemo, useReducer } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,7 +14,7 @@ import * as ttsService from '../services/ttsService';
 import { LiveCameraFeed } from '@/components/LiveCameraFeed';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { coachReducer, initialCoachState } from '@/reducers/coachReducer';
-import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon, LightbulbIcon, GitBranchIcon, SpeakerOffIcon, TrophyIcon, ThumbsUpIcon, ThumbsDownIcon, CheckCircleIcon } from '@/components/Icons';
+import { BookOpenIcon, MicIcon, SparklesIcon, SpeakerOnIcon, EyeIcon, AlertTriangleIcon, LightbulbIcon, GitBranchIcon, SpeakerOffIcon, TrophyIcon, ThumbsUpIcon, ThumbsDownIcon } from '@/components/Icons';
 import type { Chat } from '@google/genai';
 import type { DetectedObject, ModuleNeeds, StepNeeds, LiveCoachEvent, CoachEventType, TrainingModule, SessionState } from '@/types';
 import type { CoachStatus } from '@/reducers/coachReducer';
@@ -551,7 +552,7 @@ const LiveCoachPage: React.FC = () => {
         if (detectedObjects.length > 0 && ['listening', 'idle'].includes(status)) return <><EyeIcon className="h-6 w-6 text-green-400" />Seeing: {detectedObjects.map(o => o.label).join(', ')}</>;
         switch (status) {
             case 'initializing': return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Vision AI is initializing...</>;
-            case 'listening': return <><MicIcon className="h-6 w-6 text-green-400" />Listening for "Hey Adapt"...</>;
+            case 'listening': return <><MicIcon className="h-6 w-6 text-green-400" />Listening for &quot;Hey Adapt&quot;...</>;
             case 'thinking': return <><SparklesIcon className="h-6 w-6 text-indigo-400 animate-pulse" />Thinking...</>;
             default: return 'Initializing...';
         }

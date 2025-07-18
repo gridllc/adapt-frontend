@@ -14,7 +14,7 @@ const TAGLINES = [
     "If it didn't work, tell me what did. I won’t cry. Probably.",
 ];
 
-let usedTaglines = new Set<string>();
+const usedTaglines = new Set<string>();
 
 /**
  * Returns a random, witty tagline that hasn't been used in the current session.

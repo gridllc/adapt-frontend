@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useRef, useCallback, useEffect, useMemo, useReducer } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -8,7 +7,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon, VideoIcon, AlertTriangleIcon, SparklesIcon, RefreshCwIcon } from '@/components/Icons';
-import type { ProcessStep, PerformanceReportData, TranscriptLine, StepStatus } from '@/types';
+import type { ProcessStep, TranscriptLine, StepStatus } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
@@ -80,8 +79,8 @@ const TrainingPage: React.FC = () => {
     retry: false,
   });
 
-  const steps = (moduleData?.steps as ProcessStep[]) || [];
-  const transcript = (moduleData?.transcript as TranscriptLine[]) || [];
+  const steps = useMemo(() => (moduleData?.steps as ProcessStep[]) || [], [moduleData]);
+  const transcript = useMemo(() => (moduleData?.transcript as TranscriptLine[]) || [], [moduleData]);
 
   const {
     currentStepIndex,
@@ -134,7 +133,7 @@ const TrainingPage: React.FC = () => {
       setStepsContext('');
       setFullTranscript('');
       return;
-    };
+    }
 
     const { title } = moduleData;
 

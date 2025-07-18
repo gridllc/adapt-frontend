@@ -1,8 +1,10 @@
+
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAvailableModules, saveModule, deleteModule } from '@/services/moduleService';
-import { UploadCloudIcon, BookOpenIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon, DownloadIcon, SparklesIcon, ClockIcon } from '@/components/Icons';
+import { getAvailableModules, deleteModule } from '@/services/moduleService';
+import { BookOpenIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon, DownloadIcon, SparklesIcon, ClockIcon } from '@/components/Icons';
 import type { ProcessStep } from '@/types';
 import type { Database } from '@/types/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,13 +13,11 @@ import { useTheme } from '@/hooks/useTheme';
 import { ModuleCardSkeleton } from '@/components/ModuleCardSkeleton';
 
 type ModuleWithStatsRow = Database['public']['Views']['modules_with_session_stats']['Row'];
-type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { addToast } = useToast();
-    const [isDragging, setIsDragging] = useState(false);
     const { isAuthenticated, user, signOut } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const [searchTerm, setSearchTerm] = useState('');
@@ -35,7 +35,6 @@ const HomePage: React.FC = () => {
         );
     }, [availableModules, searchTerm]);
 
-    // --- Keyboard shortcut for search ---
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === '/' && (e.target as HTMLElement)?.tagName !== 'INPUT' && (e.target as HTMLElement)?.tagName !== 'TEXTAREA') {
@@ -47,72 +46,6 @@ const HomePage: React.FC = () => {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
-
-    const handleFileUpload = useCallback(async (file: File) => {
-        if (!user) {
-            addToast('error', 'Authentication Error', 'You must be logged in to upload a module.');
-            return;
-        }
-
-        if (file.type !== 'application/json') {
-            addToast('error', 'Invalid File', 'Please upload a .json file.');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const text = e.target?.result;
-                if (typeof text !== 'string') throw new Error("Could not read file.");
-
-                const moduleData = JSON.parse(text) as ModuleInsert;
-
-                const savedModule = await saveModule({ moduleData });
-                await queryClient.invalidateQueries({ queryKey: ['modules'] });
-                addToast('success', 'Upload Complete', `Module "${savedModule.title}" was uploaded.`);
-                navigate(`/modules/${savedModule.slug}`);
-
-            } catch (err) {
-                console.error(err);
-                const errorMessage = err instanceof Error ? err.message : 'Failed to parse or save the module file.';
-                addToast('error', 'Upload Failed', errorMessage);
-            }
-        };
-        reader.onerror = () => {
-            addToast('error', 'Read Error', 'Could not read the selected file.');
-        };
-        reader.readAsText(file);
-    }, [navigate, queryClient, addToast, user]);
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) handleFileUpload(file);
-    };
-
-    const handleDrop = useCallback((event: React.DragEvent<HTMLLabelElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setIsDragging(false);
-        const file = event.dataTransfer.files?.[0];
-        if (file) handleFileUpload(file);
-    }, [handleFileUpload]);
-
-    const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-    };
-
-    const handleDragEnter = (event: React.DragEvent<HTMLLabelElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setIsDragging(true);
-    };
-
-    const handleDragLeave = (event: React.DragEvent<HTMLLabelElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setIsDragging(false);
-    };
 
     const handleDeleteModule = useCallback(async (e: React.MouseEvent, slug: string | null) => {
         e.preventDefault();
@@ -140,7 +73,6 @@ const HomePage: React.FC = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        // Create a clean version of the module data without the session stats for export
         const cleanModule = {
             slug: module.slug,
             title: module.title,
@@ -296,8 +228,8 @@ const HomePage: React.FC = () => {
                     </div>
                 ) : (
                     <div className="text-center bg-slate-100 dark:bg-slate-800 p-8 rounded-lg">
-                        <p className="text-slate-500 dark:text-slate-400">{searchTerm ? `No modules found for "${searchTerm}"` : "No training modules found in the database."}</p>
-                        {!searchTerm && <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">Use the "Create with AI" tool to add one.</p>}
+                        <p className="text-slate-500 dark:text-slate-400">{searchTerm ? `No modules found for &quot;${searchTerm}&quot;` : "No training modules found in the database."}</p>
+                        {!searchTerm && <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">Use the &quot;Create with AI&quot; tool to add one.</p>}
                     </div>
                 )}
             </div>

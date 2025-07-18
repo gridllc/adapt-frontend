@@ -1,16 +1,17 @@
+import type { Database } from "@/types/supabase";
+
+type ModuleRow = Database['public']['Tables']['modules']['Row'];
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+type SessionStateRow = Database['public']['Tables']['training_sessions']['Row'];
+type SuggestionRow = Database['public']['Tables']['suggestions']['Row'];
 
 export interface PlatformData {
-    modules: Record<string, any>;
-    chatHistories: Record<string, any>;
-    sessions: Record<string, any>;
-    suggestions: any;
-    auth?: any; // Include auth for completeness, but handle with care
+    modules: Record<string, ModuleRow>;
+    chatHistories: Record<string, ChatMessageRow[]>;
+    sessions: Record<string, SessionStateRow>;
+    suggestions: SuggestionRow[] | null;
+    auth: string | null;
 }
-
-// NOTE: With the migration to a Supabase backend, these localStorage-based
-// import/export functions are now largely obsolete. They are no longer
-// wired up to the UI. A proper backup/restore solution would now be
-// handled at the database level (e.g., pg_dump).
 
 const MODULE_PREFIX = 'adapt-module-';
 const CHAT_PREFIX = 'adapt-ai-tutor-chat-history-';
@@ -18,9 +19,6 @@ const SESSION_PREFIX = 'adapt-session-';
 const SUGGESTIONS_KEY = 'adapt-suggestions';
 const AUTH_KEY = 'adapt-auth-token';
 
-/**
- * Exports all Adapt platform data from localStorage into a single JSON object.
- */
 export const exportAllData = (): PlatformData => {
     const data: PlatformData = {
         modules: {},
@@ -36,7 +34,6 @@ export const exportAllData = (): PlatformData => {
 
         try {
             const value = localStorage.getItem(key)!;
-            // Auth token is not JSON, handle it separately
             if (key === AUTH_KEY) {
                 data.auth = value;
                 continue;
@@ -60,11 +57,6 @@ export const exportAllData = (): PlatformData => {
     return data;
 };
 
-/**
- * Imports platform data from a JSON string, clearing existing data first.
- * @param dataToImport The JSON string of the platform data.
- * @returns True if import was successful, throws an error otherwise.
- */
 export const importAllData = (dataToImport: string): boolean => {
     let parsedData: PlatformData;
     try {
@@ -72,11 +64,10 @@ export const importAllData = (dataToImport: string): boolean => {
         if (!parsedData || typeof parsedData !== 'object' || !('modules' in parsedData)) {
             throw new Error("Invalid data structure. The file does not appear to be a valid Adapt backup.");
         }
-    } catch (e) {
-        throw new Error(`Failed to parse import file. It must be a valid JSON backup from the Adapt platform. Error: ${e instanceof Error ? e.message : 'Unknown parsing error'}`);
+    } catch (e: unknown) {
+        throw new Error(`Failed to parse import file. It must be a valid JSON backup. Error: ${e instanceof Error ? e.message : 'Unknown parsing error'}`);
     }
 
-    // Clear all existing Adapt data
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -86,9 +77,8 @@ export const importAllData = (dataToImport: string): boolean => {
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
 
-    // Import new data
     try {
-        const writeJson = (dataObject: Record<string, any>) => {
+        const writeJson = (dataObject: Record<string, unknown>) => {
             Object.entries(dataObject).forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)));
         };
 
@@ -103,7 +93,7 @@ export const importAllData = (dataToImport: string): boolean => {
             localStorage.setItem(AUTH_KEY, parsedData.auth);
         }
 
-    } catch (e) {
+    } catch (e: unknown) {
         throw new Error(`An error occurred while writing imported data to storage. ${e instanceof Error ? e.message : ''}`);
     }
 

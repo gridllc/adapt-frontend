@@ -385,7 +385,7 @@ export interface Database {
           created_at: string | null
           id: string
           module_id: string
-          question_embedding: number[] | null
+          question_embedding: unknown | null
           step_index: number | null
           tutor_response: string
           user_question: string
@@ -394,7 +394,7 @@ export interface Database {
           created_at?: string | null
           id?: string
           module_id: string
-          question_embedding?: number[] | null
+          question_embedding?: unknown | null
           step_index?: number | null
           tutor_response: string
           user_question: string
@@ -403,7 +403,7 @@ export interface Database {
           created_at?: string | null
           id?: string
           module_id?: string
-          question_embedding?: number[] | null
+          question_embedding?: unknown | null
           step_index?: number | null
           tutor_response?: string
           user_question?: string

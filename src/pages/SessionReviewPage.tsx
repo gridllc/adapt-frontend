@@ -1,7 +1,7 @@
 
 
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getModule } from '@/services/moduleService';
 import { getSessionSummary } from '@/services/sessionService';
@@ -137,7 +137,7 @@ const SessionReviewPage: React.FC = () => {
                                                 <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
                                                     <div>
                                                         <p className="text-sm text-slate-600 dark:text-slate-300">
-                                                            <span className="font-bold capitalize">{event.eventType.replace('_', ' ')}</span> on step {event.stepIndex + 1}: <span className="italic">"{moduleData.steps[event.stepIndex]?.title}"</span>
+                                                            <span className="font-bold capitalize">{event.eventType.replace('_', ' ')}</span> on step {event.stepIndex + 1}: <span className="italic">&quot;{moduleData.steps[event.stepIndex]?.title}&quot;</span>
                                                         </p>
                                                     </div>
                                                     <div className="text-right text-sm whitespace-nowrap text-slate-500">

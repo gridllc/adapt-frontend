@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse } from "@google/genai";
 import type { File as AiFile } from "@google/genai";
 import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine, GeneratedBranchModule } from "@/types";
@@ -121,8 +122,9 @@ const _uploadAndPollFile = async (videoFile: globalThis.File, client: GoogleGenA
             const freshFile = await client.files.get({ name: uploadedFile.name });
             uploadedFile.state = freshFile.state;
             uploadedFile.error = freshFile.error;
-        } catch (e) {
-            throw new Error(`Could not check video processing status: ${(e as Error).message}`);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : "Unknown error";
+            throw new Error(`Could not check video processing status: ${message}`);
         }
         pollCount++;
     }
@@ -295,7 +297,7 @@ export async function sendMessageWithRetry(
     chat: Chat,
     prompt: string,
     retries: number = 2
-): Promise<AsyncGenerator<GenerateContentResponse, any, unknown>> {
+): Promise<AsyncGenerator<GenerateContentResponse, void, unknown>> {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             // The sendMessageStream method returns a promise that resolves to the async generator

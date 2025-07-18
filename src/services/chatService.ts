@@ -1,5 +1,6 @@
 import { supabase } from '@/services/apiClient';
 import type { ChatMessage } from '@/types';
+import type { Json } from '@/types/supabase';
 
 const TABLE_NAME = 'chat_messages';
 
@@ -23,7 +24,7 @@ export const getChatHistory = async (moduleId: string, sessionToken: string): Pr
         id: msg.id,
         role: msg.role as 'user' | 'model',
         text: msg.text || '',
-        citations: (msg.citations as any) || [],
+        citations: (msg.citations as Json | null) || [],
         isFallback: msg.is_fallback || false,
         feedback: msg.feedback as 'good' | 'bad' | null,
     }));

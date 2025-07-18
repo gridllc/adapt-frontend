@@ -102,7 +102,7 @@ const QuestionLogDetailPage: React.FC = () => {
             <div className="bg-white dark:bg-slate-800/50 p-8 rounded-2xl shadow-xl animate-fade-in-up border border-slate-200 dark:border-slate-700">
                 <div className="mb-6">
                     <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-200">History for question:</h2>
-                    <p className="text-lg italic text-indigo-600 dark:text-indigo-300">"{userQuestion}"</p>
+                    <p className="text-lg italic text-indigo-600 dark:text-indigo-300">&quot;{userQuestion}&quot;</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Asked in Step {Number(stepIndex) + 1}</p>
                 </div>
 
@@ -112,7 +112,7 @@ const QuestionLogDetailPage: React.FC = () => {
                             <SparklesIcon className="h-5 w-5" />
                             AI-Suggested Fix for this Step
                         </h4>
-                        <p className="text-yellow-800 dark:text-yellow-200 italic mb-2">"{aiSuggestion.suggestion}"</p>
+                        <p className="text-yellow-800 dark:text-yellow-200 italic mb-2">&quot;{aiSuggestion.suggestion}&quot;</p>
                         <button
                             onClick={() => handleProposeFix(aiSuggestion.suggestion)}
                             className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 text-xs font-semibold flex items-center gap-1.5"
@@ -124,7 +124,7 @@ const QuestionLogDetailPage: React.FC = () => {
                                 <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">This suggestion was generated based on questions like:</p>
                                 <ul className="mt-1 space-y-1">
                                     {aiSuggestion.sourceQuestions.slice(0, 2).map((q, i) => (
-                                        <li key={i} className="text-xs italic text-yellow-800 dark:text-yellow-200 truncate">"{q}"</li>
+                                        <li key={i} className="text-xs italic text-yellow-800 dark:text-yellow-200 truncate">&quot;{q}&quot;</li>
                                     ))}
                                 </ul>
                             </div>
@@ -161,7 +161,7 @@ const QuestionLogDetailPage: React.FC = () => {
                                         Asked on: {new Date(log.created_at!).toLocaleString()}
                                     </div>
                                     <div className="p-3 bg-slate-100 dark:bg-slate-900 rounded-md">
-                                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-1">AI Tutor's Response:</h3>
+                                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-1">AI Tutor&apos;s Response:</h3>
                                         <pre className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap font-sans">{log.tutor_response}</pre>
                                     </div>
                                     <div className="mt-3 flex gap-4 items-center flex-wrap">

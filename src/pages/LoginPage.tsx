@@ -16,7 +16,7 @@ const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    const from = location.state?.from?.pathname || '/';
+    const from = (location.state as { from: Location })?.from?.pathname || '/';
 
     // Redirect if user is already logged in
     useEffect(() => {
@@ -40,8 +40,9 @@ const LoginPage: React.FC = () => {
             } else {
                 navigate(from, { replace: true });
             }
-        } catch (err: any) {
-            setError(err.message || "An unexpected error occurred.");
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "An unexpected error occurred.";
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -126,7 +127,7 @@ const LoginPage: React.FC = () => {
                     </form>
                     <div className="mt-6 text-center">
                         <button onClick={toggleView} className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">
-                            {isLoginView ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
+                            {isLoginView ? "Don&apos;t have an account? Sign Up" : 'Already have an account? Sign In'}
                         </button>
                     </div>
                 </div>

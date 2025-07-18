@@ -9,13 +9,14 @@ type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses'
  * This is a fire-and-forget operation from the UI's perspective.
  * @param response The checkpoint response data to insert.
  */
-export async function logCheckpointResponse(response: CheckpointResponseInsert) {
+export async function logCheckpointResponse(response: CheckpointResponseInsert): Promise<void> {
     const { error } = await supabase.from('checkpoint_responses').insert(response);
 
     if (error) {
         console.error('Failed to log checkpoint response:', error);
-        // We don't throw here as it's a non-critical logging operation.
-        // The user experience should not be blocked by a failure to log analytics.
+        // We re-throw the error so the calling function can catch it and decide
+        // whether to notify the user, but it won't block the primary UI flow.
+        throw error;
     }
 }
 
@@ -73,7 +74,7 @@ export async function getCheckpointFailureStats(moduleId: string): Promise<{ ste
     return Array.from(statsMap.values()).sort((a, b) => b.count - a.count);
 }
 
-const convertToCsv = (data: any[]): string => {
+const convertToCsv = (data: CheckpointResponseRow[]): string => {
     if (data.length === 0) return '';
     const headers = ['Step', 'Checkpoint', 'Answer', 'Comment', 'Timestamp'];
     const rows = data.map(row => [

@@ -79,7 +79,7 @@ const FaqPage: React.FC = () => {
                             ) : tutorLogs.length > 0 ? (
                                 tutorLogs.map(log => (
                                     <tr key={log.id}>
-                                        <td className="px-6 py-4 whitespace-normal text-sm text-slate-700 dark:text-slate-300 italic">"{log.user_question}"</td>
+                                        <td className="px-6 py-4 whitespace-normal text-sm text-slate-700 dark:text-slate-300 italic">&quot;{log.user_question}&quot;</td>
                                         <td className="px-6 py-4 whitespace-normal text-sm text-slate-500 dark:text-slate-400">{log.tutor_response.substring(0, 150)}...</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400 text-center">{log.step_index != null ? log.step_index + 1 : 'N/A'}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">{log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A'}</td>

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -231,7 +232,7 @@ const DashboardPage: React.FC = () => {
                             <p className="text-md font-bold text-slate-800 dark:text-slate-200 mb-3">{hotspot.stepTitle}</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold uppercase">Common Questions</p>
                             <ul className="list-disc list-inside text-sm text-slate-700 dark:text-slate-300 mb-4">
-                                {hotspot.questions.slice(0, 3).map((q, i) => <li key={i} className="italic truncate">"{q}"</li>)}
+                                {hotspot.questions.slice(0, 3).map((q, i) => <li key={i} className="italic truncate">&quot;{q}&quot;</li>)}
                             </ul>
                         </div>
 
@@ -247,7 +248,7 @@ const DashboardPage: React.FC = () => {
                                         onClick={() => openSuggestionModal({ newDescription: existingAiSuggestion.suggestion, newAlternativeMethod: null })}
                                         className="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors transform hover:scale-105"
                                     >
-                                        Preview & Apply Fix
+                                        Preview &amp; Apply Fix
                                     </button>
                                 </div>
                             ) : newAiSuggestion ? (
@@ -257,7 +258,7 @@ const DashboardPage: React.FC = () => {
                                         onClick={() => openSuggestionModal(newAiSuggestion)}
                                         className="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition-colors transform hover:scale-105"
                                     >
-                                        Preview & Apply Fix
+                                        Preview &amp; Apply Fix
                                     </button>
                                 </div>
                             ) : (
@@ -298,7 +299,7 @@ const DashboardPage: React.FC = () => {
                                 to={`/dashboard/questions/${selectedModule?.slug}/${stat.stepIndex}/${encodeURIComponent(stat.question)}`}
                                 className="block bg-slate-200 dark:bg-slate-900/50 p-4 rounded-lg flex items-center justify-between hover:ring-2 hover:ring-indigo-500 transition-all"
                             >
-                                <p className="text-slate-800 dark:text-slate-200 italic">"{stat.question}"</p>
+                                <p className="text-slate-800 dark:text-slate-200 italic">&quot;{stat.question}&quot;</p>
                                 <span className="bg-indigo-600 text-white text-xs font-bold rounded-full px-3 py-1 flex-shrink-0 ml-4">{stat.count} {stat.count > 1 ? 'times' : 'time'}</span>
                             </Link>
                         ))}

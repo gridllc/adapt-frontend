@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getModule, saveModule, deleteModule } from '@/services/moduleService';
 import { getTraineeSuggestionsForModule, deleteTraineeSuggestion, getAiSuggestionsForModule } from '@/services/suggestionsService';
@@ -33,7 +33,6 @@ const EditPage: React.FC = () => {
     const isAdmin = !!user;
     const [initialFocusStepIndex, setInitialFocusStepIndex] = useState<number | undefined>();
 
-    // --- Refs and state for video player integration ---
     const videoRef = useRef<HTMLVideoElement>(null);
     const [currentTime, setCurrentTime] = useState(0);
 
@@ -46,8 +45,8 @@ const EditPage: React.FC = () => {
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId!),
         enabled: !!moduleId,
-        staleTime: 1000 * 60 * 5, // 5 minutes,
-        retry: false, // Don't retry on not found
+        staleTime: 1000 * 60 * 5,
+        retry: false,
     });
 
     const videoPath = useMemo(() => {
@@ -89,7 +88,6 @@ const EditPage: React.FC = () => {
         enabled: !!moduleId && isAdmin,
     });
 
-    // Real-time subscription for new suggestions
     useEffect(() => {
         if (!moduleId) return;
 
@@ -98,8 +96,7 @@ const EditPage: React.FC = () => {
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'suggestions', filter: `module_id=eq.${moduleId}` },
-                (payload) => {
-                    console.log('New trainee suggestion received!', payload);
+                () => {
                     queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
                     addToast('info', 'New Trainee Suggestion', 'A trainee has submitted a new suggestion for this module.');
                 }
@@ -110,8 +107,7 @@ const EditPage: React.FC = () => {
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'suggested_fixes', filter: `module_id=eq.${moduleId}` },
-                (payload) => {
-                    console.log('New AI suggestion received!', payload);
+                () => {
                     queryClient.invalidateQueries({ queryKey: ['aiSuggestions', moduleId] });
                     addToast('info', 'AI Suggestion Updated', 'A new AI-generated suggestion is available for this module.');
                 }
@@ -133,10 +129,9 @@ const EditPage: React.FC = () => {
         }
     }, [isAuthenticated, navigate]);
 
-    // This single effect handles both initial load and applying suggestions from navigation state.
     useEffect(() => {
         if (initialModuleData) {
-            const moduleToEdit = { ...initialModuleData }; // Make a mutable copy
+            const moduleToEdit = { ...initialModuleData };
             const navigationState = location.state as { suggestion?: string; stepIndex?: number } | null;
 
             if (navigationState?.suggestion && typeof navigationState.stepIndex === 'number') {
@@ -149,8 +144,6 @@ const EditPage: React.FC = () => {
                     setInitialFocusStepIndex(stepIndex);
 
                     addToast('info', 'Suggestion Applied', `AI fix pre-filled for Step ${stepIndex + 1}. Review and save changes.`);
-
-                    // Clear location state to prevent re-application on refresh/re-render
                     navigate(location.pathname, { replace: true, state: {} });
                 }
             }
@@ -167,7 +160,6 @@ const EditPage: React.FC = () => {
         }
     }, [isLoading, isModuleError, initialModuleData, moduleId, navigate, queryError]);
 
-    // --- Callback to seek video from ModuleEditor ---
     const handleSeek = useCallback((time: number) => {
         if (videoRef.current) {
             videoRef.current.currentTime = time;
@@ -251,7 +243,7 @@ const EditPage: React.FC = () => {
 
     const handleModuleDataChange = useCallback((updatedModuleData: ModuleRow) => {
         setModule(prev => ({
-            ...(prev || {} as ModuleRow), // Ensure prev is not null
+            ...(prev || {} as ModuleRow),
             ...updatedModuleData
         }));
     }, []);

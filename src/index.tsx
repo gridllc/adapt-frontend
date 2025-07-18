@@ -29,7 +29,7 @@ import AdminLayout from '@/components/AdminLayout';
 
 // Expose Supabase client for debugging in development mode
 if (import.meta.env.DEV) {
-    (window as any).supabase = supabase;
+    (window as Window & typeof globalThis & { supabase: typeof supabase }).supabase = supabase;
 }
 
 const rootElement = document.getElementById('root');
@@ -94,7 +94,7 @@ const router = createBrowserRouter([
                 element: <TrainingPage />,
             },
             {
-                path: '*', // Catch-all for 404
+                path: '*',
                 element: <NotFoundPage />,
             }
         ],

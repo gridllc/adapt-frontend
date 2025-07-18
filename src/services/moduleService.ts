@@ -2,6 +2,7 @@
 
 
 
+
 import { supabase } from '@/services/apiClient';
 import type { Database } from '@/types/supabase';
 import type { ProcessStep, TranscriptLine } from '@/types';
@@ -37,9 +38,10 @@ export const getModule = async (slug: string): Promise<ModuleRow | undefined> =>
 
         return undefined;
 
-    } catch (error: any) {
-        console.error(`Error fetching module with slug "${slug}":`, error.message);
-        throw new Error(error.message);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "An unknown error occurred";
+        console.error(`Error fetching module with slug "${slug}":`, message);
+        throw new Error(message);
     }
 };
 

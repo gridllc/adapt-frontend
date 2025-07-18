@@ -40,7 +40,7 @@ export const logAiFeedback = async (feedbackData: Omit<AIFeedbackLog, 'id' | 'cr
  * @param fixOrRating The text provided by the user, or the string 'good'.
  */
 export const updateFeedbackWithFix = async (logId: string, fixOrRating: string): Promise<void> => {
-    let updatePayload: { user_fix_text?: string, feedback?: 'good', fix_embedding?: number[] } = {};
+    const updatePayload: { user_fix_text?: string, feedback?: 'good', fix_embedding?: number[] } = {};
 
     if (fixOrRating === 'good') {
         updatePayload.feedback = 'good';
