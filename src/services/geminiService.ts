@@ -1,7 +1,5 @@
 
-
-import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse } from "@google/genai";
-import type { File as AiFile } from "@google/genai";
+import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse, Part } from "@google/genai";
 import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine, GeneratedBranchModule } from "@/types";
 
 // --- Custom Return Types for Decoupling ---
@@ -96,56 +94,29 @@ const moduleFromTextSchema = {
     required: ["slug", "title", "steps"]
 };
 
-
 // --- Internal File Handling Helper ---
-const _uploadAndPollFile = async (videoFile: globalThis.File, client: GoogleGenAI): Promise<AiFile> => {
-    console.log(`[AI Service] Uploading video "${videoFile.name}"...`);
-    const uploadedFile = await client.files.upload({ file: videoFile });
-
-    const MAX_POLLS = 20;
-    const POLL_INTERVAL_MS = 2000;
-    let pollCount = 0;
-
-    while (pollCount < MAX_POLLS) {
-        console.log(`[AI Service] Polling for active video state (${pollCount + 1}/${MAX_POLLS})... Current state: ${uploadedFile.state}`);
-        if (uploadedFile.state === 'ACTIVE') {
-            console.log("[AI Service] Video is active and ready for analysis.");
-            return uploadedFile;
-        }
-        if (uploadedFile.state === 'FAILED') {
-            throw new Error(`Video processing failed. State: ${uploadedFile.state}. Error: ${uploadedFile.error?.message}`);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-
-        try {
-            const freshFile = await client.files.get({ name: uploadedFile.name });
-            uploadedFile.state = freshFile.state;
-            uploadedFile.error = freshFile.error;
-        } catch (e: unknown) {
-            const message = e instanceof Error ? e.message : "Unknown error";
-            throw new Error(`Could not check video processing status: ${message}`);
-        }
-        pollCount++;
-    }
-    throw new Error(`Video processing timed out after ${POLL_INTERVAL_MS * MAX_POLLS / 1000}s.`);
+async function fileToGenerativePart(file: File): Promise<Part> {
+    const base64EncodedDataPromise = new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.readAsDataURL(file);
+    });
+    return {
+        inlineData: {
+            data: await base64EncodedDataPromise,
+            mimeType: file.type,
+        },
+    };
 }
-
 
 // --- Module Creation Services ---
 
-export const uploadVideo = async (videoFile: globalThis.File): Promise<AiFile> => {
-    const client = getAiClient();
-    return await _uploadAndPollFile(videoFile, client);
-};
-
-export const getTranscriptWithConfidence = async (uploadedFile: AiFile): Promise<TranscriptAnalysis> => {
-    // DEV-ONLY: Performance logging
+export const getTranscriptWithConfidence = async (videoFile: File): Promise<TranscriptAnalysis> => {
     if (import.meta.env.DEV) console.time('[AI Perf] getTranscriptWithConfidence');
 
-    const client = getAiClient();
+    const ai = getAiClient();
     console.log("[AI Service] Generating transcript with confidence from video...");
-    const videoFilePart = { fileData: { mimeType: uploadedFile.mimeType, fileUri: uploadedFile.uri } };
+    const videoFilePart = await fileToGenerativePart(videoFile);
     const prompt = `You are an expert transcriber with a confidence scoring system. Analyze this video and return a JSON object containing:
 1.  'transcript': A full, clean, line-by-line transcript.
 2.  'overallConfidence': A score from 0.0 to 1.0 indicating how clear the audio was and how confident you are in the transcription.
@@ -153,7 +124,7 @@ export const getTranscriptWithConfidence = async (uploadedFile: AiFile): Promise
 The output MUST be a single, valid JSON object adhering to the provided schema.`;
 
     try {
-        const result = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: { parts: [{ text: prompt }, videoFilePart] },
             config: {
@@ -161,7 +132,7 @@ The output MUST be a single, valid JSON object adhering to the provided schema.`
                 responseSchema: transcriptWithConfidenceSchema,
             },
         });
-        const jsonText = result.text?.trim();
+        const jsonText = response.text?.trim();
         if (!jsonText) {
             console.warn("[AI Service] Transcript generation returned empty response. This may be normal for silent videos.");
             return { transcript: [], confidence: 0, uncertainWords: [] };
@@ -190,32 +161,34 @@ export const generateModuleFromContext = async (context: {
 }): Promise<GeneratedModuleData> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateModuleFromContext');
 
-    const client = getAiClient();
+    const ai = getAiClient();
     console.log("[AI Service] Generating module from context...");
 
-    const structuredPrompt = {
-        instruction: "Analyze the provided transcript and context to generate a structured training module with a title, slug, and numbered, timestamped steps. The steps should be based on the content of the transcript.",
-        process_title: context.title,
-        transcript: context.transcript,
-        transcript_confidence: context.confidence,
-        additional_context: context.notes || "No additional notes provided.",
-        output_format: {
-            steps: "A numbered list, where each step has a title, detailed description, an optional checkpoint question, and optional alternative methods.",
-            tone: "instructional, clear, concise"
-        }
-    };
+    const prompt = `Analyze the provided transcript and context to generate a structured training module.
+    
+    **Process Title:** ${context.title}
+    **Transcript:**
+    ${context.transcript}
+    
+    **Additional Notes:** ${context.notes || "No additional notes provided."}
+    
+    Based on this, create a JSON object with:
+    - A URL-friendly 'slug'.
+    - A concise 'title'.
+    - An array of 'steps', where each step has a 'title', a detailed 'description', an optional 'checkpoint' question, and optional 'alternativeMethods'.
+    - Set 'start' and 'end' times for steps to 0 as placeholders.`;
 
     try {
-        const result = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: JSON.stringify(structuredPrompt),
+            contents: prompt,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: moduleFromTextSchema,
             },
         });
 
-        const jsonText = result.text?.trim();
+        const jsonText = response.text?.trim();
         if (!jsonText) {
             console.error("[AI Service] AI response for module generation was empty.");
             throw new Error("The AI returned an empty response. The input text may have been too short or unclear.");
@@ -234,18 +207,6 @@ export const generateModuleFromContext = async (context: {
         if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateModuleFromContext');
     }
 };
-
-export const deleteUploadedVideo = async (uploadedFile: AiFile): Promise<void> => {
-    console.log(`[AI Service] Cleaning up uploaded video file: ${uploadedFile.name}`);
-    const client = getAiClient();
-    try {
-        await client.files.delete({ name: uploadedFile.name });
-        console.log("[AI Service] Cleanup successful.");
-    } catch (err) {
-        console.error("[AI Service] Failed to clean up file:", err);
-    }
-};
-
 
 // --- Chat & Tutoring Services ---
 
@@ -276,23 +237,15 @@ ${transcriptSection}
 }
 
 export const startChat = (stepsContext: string, fullTranscript?: string, history: Content[] = []): Chat => {
-    const client = getAiClient();
+    const ai = getAiClient();
     const systemInstruction = getChatTutorSystemInstruction(stepsContext, fullTranscript);
-    return client.chats.create({
+    return ai.chats.create({
         model: 'gemini-2.5-flash',
         config: { systemInstruction, tools: [{ googleSearch: {} }] },
         history,
     });
 };
 
-/**
- * A wrapper for `chat.sendMessageStream` that includes automatic retries on failure.
- * This helps make the chat feature more resilient to transient network or API errors.
- * @param {Chat} chat The active chat instance.
- * @param {string} prompt The user's prompt to send.
- * @param {number} retries The number of times to retry on failure.
- * @returns {Promise<AsyncGenerator<GenerateContentResponse>>} A promise that resolves to the stream generator.
- */
 export async function sendMessageWithRetry(
     chat: Chat,
     prompt: string,
@@ -300,35 +253,31 @@ export async function sendMessageWithRetry(
 ): Promise<AsyncGenerator<GenerateContentResponse, void, unknown>> {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            // The sendMessageStream method returns a promise that resolves to the async generator
-            const stream = await chat.sendMessageStream({ message: prompt });
-            return stream;
+            return await chat.sendMessageStream({ message: prompt });
         } catch (err) {
             console.warn(`[AI Service] sendMessageStream attempt ${attempt} failed.`, err);
             if (attempt === retries) {
                 console.error("[AI Service] All retry attempts failed for sendMessageStream.");
-                throw err; // Re-throw the error on the final attempt
+                throw err;
             }
-            // Wait for a short period before retrying
             await new Promise(resolve => setTimeout(resolve, 500 * attempt));
         }
     }
-    // This line is theoretically unreachable due to the throw in the loop, but required by TypeScript
     throw new Error("sendMessageWithRetry failed after all attempts.");
 }
 
 export const getFallbackResponse = async (prompt: string, history: ChatMessage[], stepsContext: string, fullTranscript: string): Promise<string> => {
     if (import.meta.env.DEV) console.time('[AI Perf] getFallbackResponse');
     console.log("[AI Service] Attempting fallback AI provider...");
-    const client = getAiClient();
+    const ai = getAiClient();
     const systemInstruction = getChatTutorSystemInstruction(stepsContext, fullTranscript);
     const geminiHistory: Content[] = history.slice(-20).map(msg => ({ role: msg.role, parts: [{ text: msg.text }] }));
     const contents = [...geminiHistory, { role: 'user', parts: [{ text: prompt }] }];
 
     try {
-        const result = await client.models.generateContent({ model: 'gemini-2.5-flash', contents, config: { systemInstruction } });
-        if (!result.text) throw new Error("Fallback AI provider returned an empty response.");
-        return result.text;
+        const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents, config: { systemInstruction } });
+        if (!response.text) throw new Error("Fallback AI provider returned an empty response.");
+        return response.text;
     } catch (error) {
         console.error("[AI Service] Fallback AI provider also failed:", error);
         throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");
@@ -339,9 +288,9 @@ export const getFallbackResponse = async (prompt: string, history: ChatMessage[]
 
 export const generateImage = async (prompt: string): Promise<string> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateImage');
-    const client = getAiClient();
+    const ai = getAiClient();
     try {
-        const response = await client.models.generateImages({
+        const response = await ai.models.generateImages({
             model: 'imagen-3.0-generate-002',
             prompt: `A clean, simple, minimalist, black-and-white technical line drawing of: ${prompt}. The diagram should be on a plain white background.`,
             config: { numberOfImages: 1, outputMimeType: 'image/png', aspectRatio: '1:1' },
@@ -361,7 +310,7 @@ export const generateImage = async (prompt: string): Promise<string> => {
 
 export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: string): Promise<CheckpointEvaluation> => {
     if (import.meta.env.DEV) console.time('[AI Perf] evaluateCheckpointAnswer');
-    const client = getAiClient();
+    const ai = getAiClient();
     const systemInstruction = `You are a helpful and strict training evaluator. Your task is to determine if a user's answer to a checkpoint question is correct based ONLY on the provided step description. You must respond in JSON format.`;
     const prompt = `
         **Process Step Description (Source of Truth):** "${step.description}"
@@ -388,13 +337,13 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
     };
 
     try {
-        const result = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: evaluationSchema },
         });
-        if (!result.text) throw new Error("AI evaluation returned an empty response.");
-        return JSON.parse(result.text) as CheckpointEvaluation;
+        if (!response.text) throw new Error("AI evaluation returned an empty response.");
+        return JSON.parse(response.text) as CheckpointEvaluation;
     } catch (error) {
         console.error("[AI Service] Error evaluating checkpoint:", error);
         throw new Error("An error occurred during checkpoint evaluation.");
@@ -405,7 +354,7 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
 
 export const generateRefinementSuggestion = async (step: ProcessStep, questions: string[]): Promise<RefinementSuggestion> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateRefinementSuggestion');
-    const client = getAiClient();
+    const ai = getAiClient();
     const systemInstruction = `You are an expert instructional designer tasked with improving a training module. You will be given a step and questions trainees have asked. Your job is to rewrite the step's description to be clearer and to proactively answer the questions. If appropriate, also suggest a new 'alternative method'. You MUST respond in valid JSON format.`;
     const prompt = `
         **Current Step Title:** "${step.title}"
@@ -430,13 +379,13 @@ export const generateRefinementSuggestion = async (step: ProcessStep, questions:
     };
 
     try {
-        const result = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: refinementSchema },
         });
-        if (!result.text) throw new Error("AI returned empty refinement suggestion.");
-        return JSON.parse(result.text);
+        if (!response.text) throw new Error("AI returned empty refinement suggestion.");
+        return JSON.parse(response.text);
     } catch (error) {
         console.error("[AI Service] Error generating refinement suggestion:", error);
         throw new Error("Failed to get AI refinement suggestion.");
@@ -447,7 +396,7 @@ export const generateRefinementSuggestion = async (step: ProcessStep, questions:
 
 export const generatePerformanceSummary = async (moduleTitle: string, unclearSteps: ProcessStep[], userQuestions: string[]): Promise<{ summary: string }> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generatePerformanceSummary');
-    const client = getAiClient();
+    const ai = getAiClient();
     const systemInstruction = "You are a friendly and encouraging AI coach. Your job is to provide positive, summarized feedback to a trainee who has just completed a module. Speak directly to the trainee. Keep the feedback concise (2-3 sentences).";
     let prompt = `The trainee just completed the "${moduleTitle}" module.`;
 
@@ -462,13 +411,13 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
     const summarySchema = { type: Type.OBJECT, properties: { summary: { type: Type.STRING } }, required: ["summary"] };
 
     try {
-        const result = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: summarySchema },
         });
-        if (!result.text) return { summary: "Great job completing the training!" };
-        return JSON.parse(result.text);
+        if (!response.text) return { summary: "Great job completing the training!" };
+        return JSON.parse(response.text);
     } catch (error) {
         console.error("[AI Service] Error generating performance summary:", error);
         return { summary: "Congratulations on completing the training module!" };
@@ -477,15 +426,9 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
     }
 };
 
-/**
- * Generates a small, remedial submodule to address a specific point of confusion.
- * @param stepTitle The title of the confusing step.
- * @param frequentQuestions An array of questions trainees frequently ask about this step.
- * @returns A promise resolving to the generated branch module data.
- */
 export const generateBranchModule = async (stepTitle: string, frequentQuestions: string[]): Promise<GeneratedBranchModule> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateBranchModule');
-    const client = getAiClient();
+    const ai = getAiClient();
     const systemInstruction = "You are an expert instructional designer. Your task is to create a short, 2-3 step remedial training module to teach a specific concept more clearly. You MUST respond in the requested JSON format.";
 
     const prompt = `
@@ -512,17 +455,17 @@ export const generateBranchModule = async (stepTitle: string, frequentQuestions:
     };
 
     try {
-        const result = await client.models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: branchModuleSchema },
         });
 
-        if (!result.text) {
+        if (!response.text) {
             throw new Error("AI returned empty data for the branch module.");
         }
 
-        return JSON.parse(result.text) as GeneratedBranchModule;
+        return JSON.parse(response.text) as GeneratedBranchModule;
 
     } catch (error) {
         console.error("[AI Service] Error generating branch module:", error);
@@ -532,22 +475,15 @@ export const generateBranchModule = async (stepTitle: string, frequentQuestions:
     }
 };
 
-/**
- * Generates a vector embedding for a given text string.
- * NOTE: The 'text-embedding-004' model is used here to fulfill the "collective memory"
- * feature request, which relies on text embeddings for similarity search.
- * @param text The text to generate an embedding for.
- * @returns A promise that resolves to an array of numbers representing the embedding.
- */
 export const generateEmbedding = async (text: string): Promise<number[]> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateEmbedding');
-    const client = getAiClient();
+    const ai = getAiClient();
     try {
-        const result = await client.models.embedContent({
+        const response = await ai.models.embedContent({
             model: "text-embedding-004",
             contents: text,
         });
-        return result.embeddings[0].values;
+        return response.embeddings[0].values;
     } catch (error) {
         console.error("[AI Service] Error generating embedding:", error);
         throw new Error("Failed to generate text embedding for memory search.");

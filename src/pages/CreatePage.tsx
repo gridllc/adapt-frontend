@@ -1,11 +1,10 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-    uploadVideo,
     getTranscriptWithConfidence,
     generateModuleFromContext,
-    deleteUploadedVideo
 } from '@/services/geminiService';
 import type { GeneratedModuleData, TranscriptAnalysis } from '@/services/geminiService';
 import { saveModule } from '@/services/moduleService';
@@ -16,7 +15,6 @@ import type { Database } from '@/types/supabase';
 import { UploadCloudIcon, XIcon, SparklesIcon, VideoIcon, LightbulbIcon, FileTextIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import type { File as AiFile } from '@google/genai';
 import { VideoPlayer } from '@/components/VideoPlayer';
 
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
@@ -41,7 +39,6 @@ const CreatePage: React.FC = () => {
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
-    const [uploadedAiFile, setUploadedAiFile] = useState<AiFile | null>(null);
     const [analysisResult, setAnalysisResult] = useState<TranscriptAnalysis | null>(null);
     const [editedTranscript, setEditedTranscript] = useState<TranscriptLine[]>([]);
     const [generatedModule, setGeneratedModule] = useState<ModuleInsert | null>(null);
@@ -170,13 +167,9 @@ const CreatePage: React.FC = () => {
             return;
         }
         setFlowStep('analyzing');
-        let tempUploadedFile: AiFile | null = null;
         try {
-            addToast('info', 'Uploading Video...', 'Please wait while the video is prepared for analysis.');
-            tempUploadedFile = await uploadVideo(videoFile);
-            setUploadedAiFile(tempUploadedFile);
-            addToast('info', 'Analyzing Audio...', 'AI is transcribing the video. This may take a moment.');
-            const result = await getTranscriptWithConfidence(tempUploadedFile);
+            addToast('info', 'Analyzing Video...', 'AI is transcribing the video. This may take a moment.');
+            const result = await getTranscriptWithConfidence(videoFile);
             setAnalysisResult(result);
             setEditedTranscript(result.transcript);
             addToast('success', 'Analysis Complete', `AI confidence: ${(result.confidence * 100).toFixed(0)}%`);
@@ -184,10 +177,6 @@ const CreatePage: React.FC = () => {
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             addToast('error', 'Analysis Failed', errorMessage);
-            if (tempUploadedFile) {
-                await deleteUploadedVideo(tempUploadedFile);
-                setUploadedAiFile(null);
-            }
             setFlowStep('initial');
         }
     };
@@ -227,7 +216,6 @@ const CreatePage: React.FC = () => {
                 user_id: user.id,
             };
             const savedModule = await saveModule({ moduleData: moduleToSave, videoFile });
-            if (uploadedAiFile) await deleteUploadedVideo(uploadedAiFile);
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             addToast('success', 'Module Saved', `Navigating to new training: "${savedModule.title}"`);
             navigate(`/modules/${savedModule.slug}`);
@@ -240,7 +228,6 @@ const CreatePage: React.FC = () => {
     };
 
     const resetForm = useCallback(async () => {
-        if (uploadedAiFile) await deleteUploadedVideo(uploadedAiFile);
         if (videoBlobUrlRef.current) URL.revokeObjectURL(videoBlobUrlRef.current);
         setFlowStep('initial');
         setTitle('');
@@ -248,12 +235,11 @@ const CreatePage: React.FC = () => {
         setVideoFile(null);
         setVideoUrl(null);
         setVideoMetadata(null);
-        setUploadedAiFile(null);
         setAnalysisResult(null);
         setGeneratedModule(null);
         setEditedTranscript([]);
         setIsSaving(false);
-    }, [uploadedAiFile]);
+    }, []);
 
     const handleSeek = useCallback((time: number) => {
         if (videoRef.current) {

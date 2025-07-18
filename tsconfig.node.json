@@ -11,6 +11,6 @@
     ]
   },
   "include": [
-    "vite.config.tsx"
+    "vite.config.ts"
   ]
 }
