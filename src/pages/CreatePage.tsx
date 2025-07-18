@@ -37,7 +37,6 @@ const CreatePage: React.FC = () => {
     const [title, setTitle] = useState('');
     const [notes, setNotes] = useState('');
     const [videoFile, setVideoFile] = useState<File | null>(null);
-    const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null);
     const [analysisResult, setAnalysisResult] = useState<TranscriptAnalysis | null>(null);
     const [editedTranscript, setEditedTranscript] = useState<TranscriptLine[]>([]);
@@ -104,9 +103,10 @@ const CreatePage: React.FC = () => {
             return;
         }
         if (videoBlobUrlRef.current) URL.revokeObjectURL(videoBlobUrlRef.current);
+
         const newUrl = URL.createObjectURL(file);
         videoBlobUrlRef.current = newUrl;
-        setVideoUrl(newUrl);
+
         setVideoFile(file);
         const videoElement = document.createElement('video');
         videoElement.preload = 'metadata';
@@ -118,6 +118,8 @@ const CreatePage: React.FC = () => {
                 width: videoElement.videoWidth,
                 height: videoElement.videoHeight,
             });
+            // Revoke the temporary URL used for metadata to avoid keeping the video in memory
+            if (videoBlobUrlRef.current !== newUrl) URL.revokeObjectURL(newUrl);
         };
         videoElement.onerror = () => addToast('error', 'Metadata Error', 'Could not read metadata from the video file.');
         videoElement.src = newUrl;
@@ -138,7 +140,6 @@ const CreatePage: React.FC = () => {
             URL.revokeObjectURL(videoBlobUrlRef.current);
             videoBlobUrlRef.current = null;
         }
-        setVideoUrl(null);
         setVideoFile(null);
         setVideoMetadata(null);
     }, []);
@@ -229,11 +230,11 @@ const CreatePage: React.FC = () => {
 
     const resetForm = useCallback(async () => {
         if (videoBlobUrlRef.current) URL.revokeObjectURL(videoBlobUrlRef.current);
+        videoBlobUrlRef.current = null;
         setFlowStep('initial');
         setTitle('');
         setNotes('');
         setVideoFile(null);
-        setVideoUrl(null);
         setVideoMetadata(null);
         setAnalysisResult(null);
         setGeneratedModule(null);
@@ -269,13 +270,13 @@ const CreatePage: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Training Video</label>
-                                {videoFile && videoUrl ? (
+                                {videoFile && videoBlobUrlRef.current ? (
                                     <div>
                                         <div className="bg-slate-200 dark:bg-slate-900/50 p-3 rounded-lg flex items-center justify-between">
                                             <div className="flex items-center gap-3"><VideoIcon className="h-6 w-6 text-indigo-500 dark:text-indigo-400" /><span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{videoFile.name}</span></div>
                                             <button onClick={handleRemoveVideo} className="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" disabled={flowStep !== 'initial'}><XIcon className="h-5 w-5" /></button>
                                         </div>
-                                        <div className="mt-4 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700"><VideoPlayer video_url={videoUrl} onTimeUpdate={() => { }} /></div>
+                                        <div className="mt-4 rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700"><VideoPlayer video_url={videoBlobUrlRef.current} onTimeUpdate={() => { }} /></div>
                                     </div>
                                 ) : (
                                     <label onDrop={(e) => handleDrop(e, false)} onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} className={`flex flex-col items-center justify-center w-full h-40 px-4 transition bg-white dark:bg-slate-900 border-2 ${isDragging ? 'border-indigo-400' : 'border-slate-300 dark:border-slate-700'} border-dashed rounded-md appearance-none cursor-pointer hover:border-indigo-500 focus:outline-none`}>
@@ -298,7 +299,7 @@ const CreatePage: React.FC = () => {
             )}
             {flowStep === 'analyzing' && <div className="text-center p-8 animate-fade-in-up"><LightbulbIcon className="h-12 w-12 mx-auto text-indigo-500 dark:text-indigo-400 animate-pulse" /><p className="mt-4 text-lg text-slate-600 dark:text-slate-300">AI is analyzing your video...</p></div>}
 
-            {flowStep === 'review' && analysisResult && videoUrl && (
+            {flowStep === 'review' && analysisResult && videoBlobUrlRef.current && (
                 <div className="animate-fade-in-up">
                     <div className="text-center mb-8">
                         <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-2">2. Review & Edit Transcript</h2>
@@ -307,7 +308,7 @@ const CreatePage: React.FC = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         {/* Left Column: Video & Metadata */}
                         <div className="lg:col-span-1 lg:sticky top-6 space-y-4">
-                            <VideoPlayer ref={videoRef} video_url={videoUrl} onTimeUpdate={setCurrentTime} />
+                            <VideoPlayer ref={videoRef} video_url={videoBlobUrlRef.current} onTimeUpdate={setCurrentTime} />
                             <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
                                 <h3 className="font-bold mb-2 text-slate-800 dark:text-slate-100">Analysis Details</h3>
                                 <div className="flex items-center justify-between text-sm">
@@ -355,7 +356,7 @@ const CreatePage: React.FC = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
                         <div className="lg:sticky top-6">
                             <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">3. Video Preview</h2>
-                            {videoUrl && <VideoPlayer ref={videoRef} video_url={videoUrl} onTimeUpdate={setCurrentTime} />}
+                            {videoBlobUrlRef.current && <VideoPlayer ref={videoRef} video_url={videoBlobUrlRef.current} onTimeUpdate={setCurrentTime} />}
                         </div>
                         <div>
                             <h2 className="text-2xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">4. Refine Final Draft</h2>

@@ -1,9 +1,9 @@
 
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { resolve } from 'path'
-import { cwd } from 'node:process'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -22,29 +22,27 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       // Explicitly set an absolute path for the entry point to resolve build errors on Render.
-      input: resolve(cwd(), 'index.html'),
+      input: resolve('index.html'),
       // 2) In production, treat fsevents as external
       external: ['fsevents'],
-      output: {
-        // 3) Arrow-fn for manualChunks to avoid parser issues
-        manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            if (
-              id.includes('react') ||
-              id.includes('react-dom') ||
-              id.includes('react-router-dom')
-            ) {
-              return 'vendor-react'
-            }
-            if (id.includes('@tanstack') || id.includes('@supabase')) {
-              return 'vendor-data'
-            }
-            if (id.includes('@google/genai')) {
-              return 'vendor-ai'
-            }
-            return 'vendor'
+      // 3) Arrow-fn for manualChunks to avoid parser issues
+      manualChunks: (id) => {
+        if (id.includes('node_modules')) {
+          if (
+            id.includes('react') ||
+            id.includes('react-dom') ||
+            id.includes('react-router-dom')
+          ) {
+            return 'vendor-react'
           }
-        },
+          if (id.includes('@tanstack') || id.includes('@supabase')) {
+            return 'vendor-data'
+          }
+          if (id.includes('@google/genai')) {
+            return 'vendor-ai'
+          }
+          return 'vendor'
+        }
       },
     },
   },

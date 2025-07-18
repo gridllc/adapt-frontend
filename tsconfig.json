@@ -19,6 +19,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
@@ -27,7 +28,7 @@
   },
   "include": [
     "src",
-    "vite.config.tsx",
+    "vite.config.ts",
     "vite-env.d.ts"
   ],
   "references": [
