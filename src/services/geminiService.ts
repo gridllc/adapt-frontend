@@ -108,6 +108,23 @@ async function fileToGenerativePart(file: File): Promise<Part> {
     };
 }
 
+// --- Safe JSON Parsing Helper ---
+function parseJson<T>(text: string | undefined): T {
+    if (!text) {
+        throw new Error("AI returned an empty response which could not be parsed as JSON.");
+    }
+    try {
+        return JSON.parse(text.trim()) as T;
+    } catch (e) {
+        console.error("Failed to parse AI JSON response:", text);
+        if (e instanceof SyntaxError) {
+            throw new Error("The AI returned invalid JSON.");
+        }
+        throw e;
+    }
+}
+
+
 // --- Module Creation Services ---
 
 export const getTranscriptWithConfidence = async (videoFile: File): Promise<TranscriptAnalysis> => {
@@ -136,8 +153,7 @@ The output MUST be a single, valid JSON object adhering to the provided schema.`
             console.warn("[AI Service] Transcript generation returned empty response. This may be normal for silent videos.");
             return { transcript: [], confidence: 0, uncertainWords: [] };
         }
-        console.log("[AI Service] Parsing generated transcript...");
-        const parsed = JSON.parse(jsonText.trim());
+        const parsed = parseJson<{ transcript?: TranscriptLine[], overallConfidence?: number, uncertainWords?: string[] }>(jsonText);
         return {
             transcript: parsed.transcript || [],
             confidence: parsed.overallConfidence ?? 0.5,
@@ -145,7 +161,6 @@ The output MUST be a single, valid JSON object adhering to the provided schema.`
         };
     } catch (error) {
         console.error("[AI Service] Error generating transcript:", error);
-        if (error instanceof SyntaxError) throw new Error("The AI returned invalid JSON for the transcript.");
         throw error;
     } finally {
         if (import.meta.env.DEV) console.timeEnd('[AI Perf] getTranscriptWithConfidence');
@@ -187,20 +202,12 @@ export const generateModuleFromContext = async (context: {
             },
         });
 
-        const jsonText = response.text;
-        if (!jsonText) {
-            console.error("[AI Service] AI response for module generation was empty.");
-            throw new Error("The AI returned an empty response. The input text may have been too short or unclear.");
-        }
-
-        console.log("[AI Service] Parsing generated JSON from text...");
-        return JSON.parse(jsonText.trim()) as GeneratedModuleData;
+        const text = response.text;
+        if (!text) throw new Error("AI returned empty response for module generation.");
+        return parseJson<GeneratedModuleData>(text);
 
     } catch (error) {
         console.error("[AI Service] Error generating module from context:", error);
-        if (error instanceof SyntaxError) {
-            throw new Error("The AI returned invalid JSON. Please check the model or prompt.");
-        }
         throw error;
     } finally {
         if (import.meta.env.DEV) console.timeEnd('[AI Perf] generateModuleFromContext');
@@ -343,8 +350,8 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: evaluationSchema },
         });
         const text = response.text;
-        if (!text) throw new Error("AI evaluation returned an empty response.");
-        return JSON.parse(text) as CheckpointEvaluation;
+        if (!text) throw new Error("AI returned empty response for checkpoint evaluation.");
+        return parseJson<CheckpointEvaluation>(text);
     } catch (error) {
         console.error("[AI Service] Error evaluating checkpoint:", error);
         throw new Error("An error occurred during checkpoint evaluation.");
@@ -386,8 +393,8 @@ export const generateRefinementSuggestion = async (step: ProcessStep, questions:
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: refinementSchema },
         });
         const text = response.text;
-        if (!text) throw new Error("AI returned empty refinement suggestion.");
-        return JSON.parse(text);
+        if (!text) throw new Error("AI returned empty response for refinement suggestion.");
+        return parseJson<RefinementSuggestion>(text);
     } catch (error) {
         console.error("[AI Service] Error generating refinement suggestion:", error);
         throw new Error("Failed to get AI refinement suggestion.");
@@ -420,7 +427,7 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
         });
         const text = response.text;
         if (!text) return { summary: "Great job completing the training!" };
-        return JSON.parse(text);
+        return parseJson<{ summary: string }>(text);
     } catch (error) {
         console.error("[AI Service] Error generating performance summary:", error);
         return { summary: "Congratulations on completing the training module!" };
@@ -465,11 +472,8 @@ export const generateBranchModule = async (stepTitle: string, frequentQuestions:
         });
 
         const text = response.text;
-        if (!text) {
-            throw new Error("AI returned empty data for the branch module.");
-        }
-
-        return JSON.parse(text) as GeneratedBranchModule;
+        if (!text) throw new Error("AI returned empty response for branch module generation.");
+        return parseJson<GeneratedBranchModule>(text);
 
     } catch (error) {
         console.error("[AI Service] Error generating branch module:", error);
@@ -485,13 +489,9 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     try {
         const response = await ai.models.embedContent({
             model: "text-embedding-004",
-            content: { parts: [{ text }] },
+            contents: [{ text }],
         });
-        const embedding = response.embeddings?.[0];
-        if (!embedding?.values) {
-            return [];
-        }
-        return embedding.values;
+        return response.embeddings?.[0]?.values ?? [];
     } catch (error) {
         console.error("[AI Service] Error generating embedding:", error);
         throw new Error("Failed to generate text embedding for memory search.");
