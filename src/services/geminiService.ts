@@ -303,8 +303,11 @@ export const generateImage = async (prompt: string): Promise<string> => {
             config: { numberOfImages: 1, outputMimeType: 'image/png', aspectRatio: '1:1' },
         });
 
-        if (!response.generatedImages?.[0]?.image.imageBytes) throw new Error("The AI did not return an image.");
-        return `data:image/png;base64,${response.generatedImages[0].image.imageBytes}`;
+        const imageBytes = response.generatedImages?.[0]?.image.imageBytes;
+        if (!imageBytes) {
+            throw new Error("The AI did not return an image.");
+        }
+        return `data:image/png;base64,${imageBytes}`;
     } catch (error) {
         console.error("[AI Service] Error generating image:", error);
         throw new Error("Failed to generate the image. The model may be unavailable or the prompt was blocked.");
