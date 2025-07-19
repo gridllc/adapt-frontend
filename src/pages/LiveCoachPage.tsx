@@ -296,8 +296,9 @@ const LiveCoachPage: React.FC = () => {
 
             try {
                 for await (const chunk of stream) {
-                    fullText += chunk.text;
-                    if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
+                    const chunkText = chunk.text ?? '';
+                    fullText += chunkText;
+                    if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunkText });
                 }
             } catch (streamError) {
                 console.error("AI stream failed:", streamError);
@@ -356,8 +357,9 @@ const LiveCoachPage: React.FC = () => {
 
             try {
                 for await (const chunk of stream) {
-                    fullText += chunk.text;
-                    if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunk.text });
+                    const chunkText = chunk.text ?? '';
+                    fullText += chunkText;
+                    if (mountedRef.current) dispatch({ type: 'APPEND_AI_RESPONSE', payload: chunkText });
                 }
             } catch (streamError) {
                 console.error("AI query stream failed:", streamError);

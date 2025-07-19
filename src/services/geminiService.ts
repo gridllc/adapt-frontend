@@ -275,7 +275,7 @@ export const getFallbackResponse = async (prompt: string, history: ChatMessage[]
 
     try {
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents, config: { systemInstruction } });
-        const text = response?.text;
+        const text = response.text;
         if (!text) throw new Error("Fallback AI provider returned an empty response.");
         return text;
     } catch (error) {
@@ -485,11 +485,11 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     try {
         const response = await ai.models.embedContent({
             model: "text-embedding-004",
-            contents: text,
+            content: { parts: [{ text }] },
         });
         const embedding = response.embeddings?.[0];
         if (!embedding?.values) {
-            throw new Error("Failed to generate embedding: No embedding returned from API.");
+            return [];
         }
         return embedding.values;
     } catch (error) {
