@@ -14,10 +14,10 @@ import type { LiveCoachEvent, AppModule, SessionSummary } from '@/types';
  */
 const EventIcon: React.FC<{ type: LiveCoachEvent['eventType'] }> = ({ type }) => {
     switch (type) {
-        case 'hint': return <LightbulbIcon className="h-5 w-5 text-yellow-400" title="Hint Provided" />;
-        case 'correction': return <AlertTriangleIcon className="h-5 w-5 text-red-400" title="Correction Made" />;
-        case 'tutoring': return <LightbulbIcon className="h-5 w-5 text-orange-400" title="Tutoring Session" />;
-        default: return <ClockIcon className="h-5 w-5 text-slate-400" title="Step Advanced" />;
+        case 'hint': return <span title="Hint Provided"><LightbulbIcon className="h-5 w-5 text-yellow-400" /></span>;
+        case 'correction': return <span title="Correction Made"><AlertTriangleIcon className="h-5 w-5 text-red-400" /></span>;
+        case 'tutoring': return <span title="Tutoring Session"><LightbulbIcon className="h-5 w-5 text-orange-400" /></span>;
+        default: return <span title="Step Advanced"><ClockIcon className="h-5 w-5 text-slate-400" /></span>;
     }
 };
 

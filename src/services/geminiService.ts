@@ -485,12 +485,12 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     try {
         const response = await ai.models.embedContent({
             model: "text-embedding-004",
-            contents: text,
+            content: text,
         });
-        if (!response.embeddings || response.embeddings.length === 0) {
+        if (!response.embedding?.values) {
             throw new Error("Failed to generate embedding: No embedding returned from API.");
         }
-        return response.embeddings[0].values;
+        return response.embedding.values;
     } catch (error) {
         console.error("[AI Service] Error generating embedding:", error);
         throw new Error("Failed to generate text embedding for memory search.");

@@ -1,6 +1,9 @@
 import { supabase } from '@/services/apiClient';
 import type { AIFeedbackLog, SimilarFix } from '@/types';
 import { generateEmbedding } from './geminiService';
+import type { Database } from '@/types/supabase';
+
+type AIFeedbackLogRow = Database['public']['Tables']['ai_feedback_logs']['Row'];
 
 const TABLE_NAME = 'ai_feedback_logs';
 const SIMILARITY_THRESHOLD = 0.78;
@@ -40,7 +43,7 @@ export const logAiFeedback = async (feedbackData: Omit<AIFeedbackLog, 'id' | 'cr
  * @param fixOrRating The text provided by the user, or the string 'good'.
  */
 export const updateFeedbackWithFix = async (logId: string, fixOrRating: string): Promise<void> => {
-    const updatePayload: { user_fix_text?: string, feedback?: 'good', fix_embedding?: number[] } = {};
+    let updatePayload: { user_fix_text?: string, feedback?: 'good', fix_embedding?: number[] } = {};
 
     if (fixOrRating === 'good') {
         updatePayload.feedback = 'good';
@@ -87,7 +90,7 @@ export const getPastFeedbackForStep = async (moduleId: string, stepIndex: number
         return []; // Return empty on error to not block the user
     }
 
-    return (data || []).map(item => ({
+    return (data || []).map((item: AIFeedbackLogRow) => ({
         id: item.id,
         sessionToken: item.session_token,
         moduleId: item.module_id,

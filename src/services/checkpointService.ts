@@ -3,6 +3,8 @@ import type { Database } from '@/types/supabase';
 
 type CheckpointResponseInsert = Database['public']['Tables']['checkpoint_responses']['Insert'];
 type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses']['Row'];
+type CsvExportRow = Pick<CheckpointResponseRow, 'step_index' | 'checkpoint_text' | 'answer' | 'comment' | 'created_at'>;
+
 
 /**
  * Logs a user's response to a checkpoint question to the database.
@@ -74,7 +76,7 @@ export async function getCheckpointFailureStats(moduleId: string): Promise<{ ste
     return Array.from(statsMap.values()).sort((a, b) => b.count - a.count);
 }
 
-const convertToCsv = (data: CheckpointResponseRow[]): string => {
+const convertToCsv = (data: CsvExportRow[]): string => {
     if (data.length === 0) return '';
     const headers = ['Step', 'Checkpoint', 'Answer', 'Comment', 'Timestamp'];
     const rows = data.map(row => [
@@ -95,7 +97,7 @@ const convertToCsv = (data: CheckpointResponseRow[]): string => {
  * @param moduleId The slug of the module.
  * @returns A promise that resolves to an array of raw checkpoint response rows.
  */
-export async function getCheckpointFailuresRaw(moduleId: string) {
+export async function getCheckpointFailuresRaw(moduleId: string): Promise<CsvExportRow[]> {
     const { data, error } = await supabase
         .from('checkpoint_responses')
         .select('step_index, checkpoint_text, answer, comment, created_at')
