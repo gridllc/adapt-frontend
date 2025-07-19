@@ -1,3 +1,4 @@
+
 import { supabase } from '@/services/apiClient';
 import type { AIFeedbackLog, SimilarFix } from '@/types';
 import { generateEmbedding } from './geminiService';
@@ -14,7 +15,7 @@ const MATCH_COUNT = 3;
  * @param feedbackData The core data about the feedback event.
  * @returns The ID of the newly created log entry.
  */
-export const logAiFeedback = async (feedbackData: Omit<AIFeedbackLog, 'id' | 'createdAt' | 'feedback'> & { feedback?: 'good' | 'bad' }): Promise<string> => {
+export const logAiFeedback = async (feedbackData: Omit<AIFeedbackLog, 'id' | 'createdAt'>): Promise<string> => {
     const { data, error } = await supabase
         .from(TABLE_NAME)
         .insert({
