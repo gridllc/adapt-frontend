@@ -120,7 +120,7 @@ export const deleteTraineeSuggestion = async (suggestionId: string): Promise<voi
     const { error } = await supabase
         .from(TRAINEE_TABLE_NAME)
         .delete()
-        .eq('id', suggestionId);
+        .eq('id', parseInt(suggestionId, 10));
 
     if (error) {
         console.error(`Error deleting trainee suggestion ${suggestionId}:`, error);

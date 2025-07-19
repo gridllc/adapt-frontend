@@ -1,5 +1,7 @@
+
 import { supabase } from '@/services/apiClient';
 import type { UserAction, LiveCoachEvent, SessionSummary } from '@/types';
+import type { Json } from '@/types/supabase';
 
 const TABLE_NAME = 'training_sessions';
 
@@ -45,9 +47,9 @@ export const saveSession = async (state: Partial<SessionState> & { moduleId: str
         module_id: state.moduleId,
         session_token: state.sessionToken,
         current_step_index: state.currentStepIndex,
-        user_actions: state.userActions,
+        user_actions: state.userActions as Json,
         is_completed: state.isCompleted,
-        live_coach_events: state.liveCoachEvents,
+        live_coach_events: state.liveCoachEvents as Json,
         score: state.score,
         updated_at: new Date().toISOString()
     };
