@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import type { AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats, AiSuggestion, TraineeSuggestion, TutorLogRow, AppModuleWithStats, AppModule } from '@/types';
 import type { Database } from '@/types/supabase';
+import type { Json } from '@/types/supabase';
 
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 
@@ -102,7 +103,7 @@ const DashboardPage: React.FC = () => {
             const generatedData = await generateBranchModule(stepTitle, questions);
             const newModuleSlug = generatedData.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
             const newSteps: ProcessStep[] = generatedData.steps.map((desc, index) => ({ title: `Step ${index + 1}`, description: desc, start: 0, end: 0, checkpoint: null, alternativeMethods: [] }));
-            const newModule: ModuleInsert = { slug: newModuleSlug, title: generatedData.title, steps: newSteps, user_id: user.id, metadata: { generated_by_ai: true, source_module: selectedModule?.slug, source_step: moduleHotspot?.stepIndex } };
+            const newModule: ModuleInsert = { slug: newModuleSlug, title: generatedData.title, steps: newSteps as unknown as Json, user_id: user.id, metadata: { generated_by_ai: true, source_module: selectedModule?.slug, source_step: moduleHotspot?.stepIndex } as Json };
             await saveModule({ moduleData: newModule });
             return newModule;
         },

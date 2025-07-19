@@ -14,7 +14,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
 
-type ModuleRow = Database['public']['Tables']['modules']['Row'];
 type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses']['Row'];
 
 
@@ -167,159 +166,168 @@ const EditPage: React.FC = () => {
         }
     }, []);
 
-    const handleSuggestionAccept = async (suggestion: TraineeSuggestion) => {
+    const handleSuggestionAccept = useCallback(async (suggestion: TraineeSuggestion) => {
         if (!module) return;
 
         const newSteps = [...(module.steps ?? [])];
-        const stepToUpdate = newSteps[suggestion.stepIndex];
+        const stepIndex = suggestion.stepIndex;
 
-        if (stepToUpdate) {
-            const newAlternativeMethod: AlternativeMethod = {
-                title: "Trainee-Suggested Improvement",
-                description: suggestion.text || ''
-            };
-            stepToUpdate.alternativeMethods.push(newAlternativeMethod);
+        if (stepIndex >= 0 && stepIndex < newSteps.length) {
+            const stepToUpdate = newSteps[stepIndex];
+            // Appends the trainee's suggestion to the existing description.
+            const newDescription = `${stepToUpdate.description}\n\n--- Trainee Suggestion ---\n${suggestion.text}`;
+            newSteps[stepIndex] = { ...stepToUpdate, description: newDescription };
 
             setModule({ ...module, steps: newSteps });
-        }
 
-        await deleteTraineeSuggestion(suggestion.id.toString());
-        queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
-        addToast('success', 'Suggestion Accepted', 'The new method has been added to the step.');
-    };
+            // After applying the change, remove the suggestion from the pending list.
+            try {
+                await deleteTraineeSuggestion(suggestion.id);
+                await queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
+                addToast('success', 'Suggestion Applied', 'The suggestion has been added to the step description.');
+            } catch (err) {
+                addToast('error', 'Update Failed', 'Could not remove the pending suggestion.');
+            }
+        } else {
+            // This case handles data inconsistency where a suggestion points to a non-existent step.
+            addToast('error', 'Step Not Found', `Cannot apply suggestion: Step at index ${stepIndex} not found.`);
+        }
+    }, [module, moduleId, queryClient, addToast]);
 
     const handleSuggestionReject = async (suggestionId: string) => {
-        await deleteTraineeSuggestion(suggestionId);
-        queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
-        addToast('info', 'Suggestion Rejected', 'The suggestion has been removed.');
+        try {
+            await deleteTraineeSuggestion(suggestionId);
+            queryClient.invalidateQueries({ queryKey: ['traineeSuggestions', moduleId] });
+            addToast('info', 'Suggestion Rejected', 'The suggestion has been removed.');
+        } catch (err) {
+            addToast('error', 'Rejection Failed', 'Could not remove the pending suggestion.');
+        }
     };
 
-    const handleSave = async () => {
-        if (!module) return;
-        if (!user) {
-            addToast('error', 'Authentication Error', 'Cannot save module without a logged-in user.');
-            setIsSaving(false);
-            return;
-        }
-        setIsSaving(true);
 
+    const handleSave = async () => {
+        if (!module || !user) return;
+        setIsSaving(true);
+        addToast('info', 'Saving...', 'Your changes are being saved to the database.');
         try {
-            const savedModule = await saveModule({ moduleData: module });
+            // The video file is not being re-uploaded here.
+            // The video_url should persist from the initial load.
+            const savedModule = await saveModule({ moduleData: { ...module, user_id: user.id } });
             await queryClient.invalidateQueries({ queryKey: ['module', savedModule.slug] });
             await queryClient.invalidateQueries({ queryKey: ['modules'] });
-            addToast('success', 'Changes Saved', 'The module has been updated successfully.');
-            navigate(`/modules/${savedModule.slug}`);
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Could not save the module. Please try again.';
+            addToast('success', 'Module Saved', 'Your changes have been successfully saved.');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Could not save module.";
             addToast('error', 'Save Failed', errorMessage);
+        } finally {
             setIsSaving(false);
         }
     };
 
     const handleDelete = async () => {
-        if (!module) return;
-
-        const confirmation = window.confirm(
-            'Are you sure you want to delete this module? This will also remove ALL associated training progress and chat histories. This action cannot be undone.'
-        );
-
-        if (confirmation) {
+        if (!module?.slug) return;
+        const confirmed = window.confirm('Are you sure you want to delete this module? This action is irreversible and will delete all associated session data and suggestions.');
+        if (confirmed) {
             setIsDeleting(true);
             try {
                 await deleteModule(module.slug);
-                await queryClient.invalidateQueries({ queryKey: ['module', module.slug] });
                 await queryClient.invalidateQueries({ queryKey: ['modules'] });
-                addToast('success', 'Module Deleted', 'The module and all its data have been removed.');
+                addToast('success', 'Module Deleted', `The module "${module.title}" has been removed.`);
                 navigate('/');
-            } catch (err) {
-                const errorMessage = err instanceof Error ? err.message : 'Could not delete the module.';
-                addToast('error', 'Delete Failed', errorMessage);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Could not delete module.';
+                addToast('error', 'Deletion Failed', errorMessage);
+            } finally {
                 setIsDeleting(false);
             }
         }
-    }
+    };
 
-    const handleModuleDataChange = useCallback((updatedModuleData: AppModule | ModuleRow) => {
-        setModule(prev => ({
-            ...(prev || {} as AppModule),
-            ...updatedModuleData
-        }));
-    }, []);
 
     if (isLoading || !module) {
-        return <div className="text-center p-8 text-slate-500 dark:text-slate-400">Loading editor...</div>;
+        return (
+            <div className="flex items-center justify-center h-screen bg-slate-100 dark:bg-slate-900">
+                <p className="text-xl text-slate-700 dark:text-slate-300">Loading Module for Editing...</p>
+            </div>
+        );
     }
 
     return (
-        <div className="p-6">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white text-center">Edit: {module.title}</h1>
-                <Link to={`/modules/${module.slug}`} className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-white font-semibold py-2 px-4 rounded-lg transition-colors">
-                    Back to Training
-                </Link>
-            </div>
-
-
-            <div className="animate-fade-in-up">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                    <div className="lg:sticky top-6">
-                        <h2 className="text-xl font-bold text-indigo-500 dark:text-indigo-400 mb-4">Video Preview</h2>
-                        {isLoadingVideo ? (
-                            <div className="w-full aspect-video flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 rounded-lg p-4">
-                                <SparklesIcon className="h-12 w-12 text-indigo-400 animate-pulse" />
-                                <p className="mt-4 text-slate-500">Verifying video...</p>
-                            </div>
-                        ) : isVideoError ? (
-                            <div className="w-full aspect-video flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 rounded-lg p-4">
-                                <AlertTriangleIcon className="h-12 w-12 text-red-500 mb-4" />
-                                <p className="text-red-500 text-center">Could not load the video. The path might be missing or incorrect.</p>
-                                <button
-                                    onClick={retryVideoUrl}
-                                    className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg flex items-center gap-2"
-                                >
-                                    <RefreshCwIcon className="h-5 w-5" /> Try Again
-                                </button>
-                            </div>
-                        ) : publicVideoUrl ? (
-                            <VideoPlayer ref={videoRef} video_url={publicVideoUrl} onTimeUpdate={setCurrentTime} />
-                        ) : (
-                            <div className="aspect-video bg-slate-200 dark:bg-slate-800 rounded-lg flex flex-col items-center justify-center">
-                                <VideoIcon className="h-16 w-16 text-slate-400 dark:text-slate-600" />
-                                <p className="mt-4 text-slate-500">No video provided for this module.</p>
-                            </div>
-                        )}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 h-screen">
+            <div className="lg:col-span-2 flex flex-col h-full">
+                <header className="flex-shrink-0 flex justify-between items-center mb-4">
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Edit: {module.title}</h1>
+                    <div className="flex items-center gap-4">
+                        <Link to={`/modules/${module.slug}`} className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                            Go to Training Page
+                        </Link>
+                        <button
+                            onClick={handleDelete}
+                            disabled={isDeleting}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-colors disabled:bg-slate-400"
+                        >
+                            <TrashIcon className="h-5 w-5" />
+                            {isDeleting ? 'Deleting...' : 'Delete'}
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-slate-400"
+                        >
+                            {isSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
                     </div>
-                    <div>
-                        <ModuleEditor
-                            module={module}
-                            onModuleChange={handleModuleDataChange}
-                            traineeSuggestions={pendingTraineeSuggestions}
-                            aiSuggestions={aiSuggestions}
-                            checkpointResponses={checkpointResponses}
-                            onAcceptSuggestion={handleSuggestionAccept}
-                            onRejectSuggestion={(id) => handleSuggestionReject(id.toString())}
-                            isAdmin={isAdmin}
-                            currentTime={currentTime}
-                            onSeek={handleSeek}
-                            initialFocusStepIndex={initialFocusStepIndex}
-                        />
-                    </div>
+                </header>
+                <div className="flex-1 overflow-y-auto">
+                    <ModuleEditor
+                        module={module}
+                        onModuleChange={setModule}
+                        traineeSuggestions={pendingTraineeSuggestions}
+                        aiSuggestions={aiSuggestions}
+                        checkpointResponses={checkpointResponses}
+                        onAcceptSuggestion={handleSuggestionAccept}
+                        onRejectSuggestion={handleSuggestionReject}
+                        isAdmin={isAdmin}
+                        currentTime={currentTime}
+                        onSeek={handleSeek}
+                        initialFocusStepIndex={initialFocusStepIndex}
+                    />
                 </div>
-                <div className="mt-8 flex justify-center items-center gap-4">
-                    <button
-                        onClick={handleDelete}
-                        disabled={isSaving || isDeleting}
-                        className="flex items-center gap-2 bg-red-700 dark:bg-red-800/80 hover:bg-red-800 dark:hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-400 dark:disabled:bg-slate-500"
-                    >
-                        <TrashIcon className="h-5 w-5" />
-                        <span>{isDeleting ? 'Deleting...' : 'Delete Module'}</span>
-                    </button>
-                    <button onClick={() => navigate(`/modules/${module.slug}`)} className="bg-slate-500 dark:bg-slate-600 hover:bg-slate-600 dark:hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-lg transition-colors" disabled={isSaving || isDeleting}>
-                        Cancel
-                    </button>
-                    <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors disabled:bg-slate-400 dark:disabled:bg-slate-500" disabled={isSaving || isDeleting}>
-                        {isSaving ? 'Saving...' : 'Save Changes'}
-                    </button>
+            </div>
+            <div className="lg:col-span-1 bg-white dark:bg-slate-800 rounded-lg shadow-xl flex flex-col h-full overflow-hidden">
+                <h2 className="text-lg font-bold p-4 border-b border-slate-200 dark:border-slate-700">Video Preview</h2>
+                <div className="flex-1 bg-slate-900 flex items-center justify-center">
+                    {!publicVideoUrl && !isLoadingVideo && (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900">
+                            <VideoIcon className="h-16 w-16 text-slate-400 dark:text-slate-600" />
+                            <p className="mt-4 text-slate-500">No video provided for this module.</p>
+                        </div>
+                    )}
+                    {isLoadingVideo && (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
+                            <SparklesIcon className="h-12 w-12 text-indigo-400 animate-pulse" />
+                            <p className="mt-4 text-slate-500">Verifying video...</p>
+                        </div>
+                    )}
+                    {isVideoError && (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
+                            <AlertTriangleIcon className="h-12 w-12 text-red-500 mb-4" />
+                            <p className="text-red-500 text-center">Could not load the video. The path might be missing or incorrect.</p>
+                            <button
+                                onClick={retryVideoUrl}
+                                className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg flex items-center gap-2"
+                            >
+                                <RefreshCwIcon className="h-5 w-5" /> Try Again
+                            </button>
+                        </div>
+                    )}
+                    {publicVideoUrl && (
+                        <VideoPlayer
+                            ref={videoRef}
+                            video_url={publicVideoUrl}
+                            onTimeUpdate={setCurrentTime}
+                        />
+                    )}
                 </div>
             </div>
         </div>

@@ -4,12 +4,14 @@ import type { Json } from "./types/supabase";
 export interface AlternativeMethod {
   title: string;
   description: string;
+  [key: string]: any;
 }
 
 export interface TranscriptLine {
   start: number;
   end: number;
   text: string;
+  [key: string]: any;
 }
 
 export interface ProcessStep {
@@ -19,6 +21,7 @@ export interface ProcessStep {
   description: string;
   checkpoint: string | null;
   alternativeMethods: AlternativeMethod[];
+  [key: string]: any;
 }
 
 // Stricter application-level types for modules
@@ -42,6 +45,7 @@ export interface VideoMetadata {
   duration: number;
   width: number;
   height: number;
+  [key: string]: any;
 }
 
 export interface ChatMessage {

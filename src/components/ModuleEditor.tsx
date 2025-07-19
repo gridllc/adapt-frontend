@@ -1,3 +1,6 @@
+
+
+
 import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react'
 import type {
     AlternativeMethod,
@@ -5,6 +8,7 @@ import type {
     AiSuggestion,
     TranscriptLine,
     ProcessStep,
+    AppModule,
 } from '@/types'
 import type { Database } from '@/types/supabase'
 import {
@@ -21,12 +25,11 @@ import { useToast } from '@/hooks/useToast'
 import { CheckpointDashboard } from './CheckpointDashboard'
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
-type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 type CheckpointResponseRow = Database['public']['Tables']['checkpoint_responses']['Row'];
 
 interface ModuleEditorProps {
-    module: ModuleRow | ModuleInsert
-    onModuleChange: (module: ModuleRow | ModuleInsert) => void
+    module: AppModule
+    onModuleChange: (module: AppModule) => void
     traineeSuggestions?: TraineeSuggestion[]
     aiSuggestions?: AiSuggestion[];
     checkpointResponses?: CheckpointResponseRow[];
@@ -67,8 +70,8 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
     const [openTranscripts, setOpenTranscripts] = useState<Record<number, boolean>>({});
     const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-    const steps = useMemo(() => (module.steps as ProcessStep[]) || [], [module.steps]);
-    const transcript = useMemo(() => (module.transcript as TranscriptLine[]) || [], [module.transcript]);
+    const steps = useMemo(() => module.steps || [], [module.steps]);
+    const transcript = useMemo(() => module.transcript || [], [module.transcript]);
 
     /**
      * Effect to scroll to a specific step when a suggestion is applied from another page.
@@ -117,7 +120,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
         }
         content += `\n===================================\n\n`;
 
-        const moduleSteps = (module.steps as ProcessStep[]) || [];
+        const moduleSteps = module.steps || [];
         moduleSteps.forEach((step, index) => {
             content += `Step ${index + 1}: ${step.title}\n`;
             content += `-----------------------------------\n`;
@@ -169,8 +172,8 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
 
 
     const handleFieldChange = useCallback(
-        (field: keyof ModuleInsert, value: string) => {
-            onModuleChange({ ...module, [field]: value })
+        (field: keyof ModuleRow, value: string) => {
+            onModuleChange({ ...module, [field]: value } as AppModule)
         },
         [module, onModuleChange]
     );
@@ -557,7 +560,7 @@ export const ModuleEditor: React.FC<ModuleEditorProps> = ({
                                                 key={sug.id}
                                                 className="flex justify-between items-center mb-2"
                                             >
-                                                <span className="italic flex-1 text-sm text-slate-800 dark:text-slate-200">&quot;{sug.text}&quot;</span>
+                                                <span className="italic flex-1 text-sm text-slate-800 dark:text-slate-200">"{sug.text}"</span>
                                                 <div className="flex gap-2 ml-4">
                                                     <button
                                                         onClick={() => onAcceptSuggestion?.(sug)}
