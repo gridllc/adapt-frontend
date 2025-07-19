@@ -51,13 +51,13 @@ const LiveCoachPage: React.FC = () => {
     // Refs
     const chatRef = useRef<Chat | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const hintTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const stepCompletionTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const hintTimerRef = useRef<number | null>(null);
+    const stepCompletionTimerRef = useRef<number | null>(null);
+    const visionIntervalRef = useRef<number | null>(null);
     const isInterjectingRef = useRef(false);
     const mountedRef = useRef(true);
     const isProcessingActionRef = useRef(false); // Ref to prevent action overlaps
-    const cooldownRef = useRef<NodeJS.Timeout | null>(null); // Ref for action cooldown
+    const cooldownRef = useRef<number | null>(null); // Ref for action cooldown
     const speechHandlerRef = useRef<(transcript: string, isFinal: boolean) => void | undefined>(undefined);
 
     // --- Session & Data Fetching ---
