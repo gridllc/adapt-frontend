@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 // This file provides type definitions for Vite's `import.meta.env` and Node's `process.env`.
 // It is the single source of truth for environment variable types in the project.
 
@@ -6,11 +8,9 @@
 declare global {
     // --- Vite Environment Variables (import.meta.env) ---
     interface ImportMetaEnv {
-        readonly VITE_SUPABASE_URL?: string
-        readonly VITE_SUPABASE_ANON_KEY?: string
+        readonly VITE_SUPABASE_URL: string
+        readonly VITE_SUPABASE_ANON_KEY: string
         readonly VITE_SLACK_WEBHOOK_URL?: string
-        readonly DEV: boolean
-        readonly PROD: boolean
     }
 
     interface ImportMeta {
@@ -22,7 +22,7 @@ declare global {
     // We augment the NodeJS.ProcessEnv type to include API_KEY. This is the standard way to add types for Node.js environment variables.
     namespace NodeJS {
         interface ProcessEnv {
-            API_KEY?: string
+            API_KEY: string;
         }
     }
 }

@@ -1,5 +1,3 @@
-
-
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from 'vite-tsconfig-paths'
@@ -22,7 +20,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       // Explicitly set an absolute path for the entry point to resolve build errors on Render.
-      input: resolve(process.cwd(), 'index.html'),
+      input: resolve('index.html'),
       // 2) In production, treat fsevents as external
       external: ['fsevents'],
       output: {
