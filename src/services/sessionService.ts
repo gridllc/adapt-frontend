@@ -35,9 +35,9 @@ export const getSession = async (moduleId: string, sessionToken: string): Promis
         moduleId: data.module_id,
         sessionToken: data.session_token,
         currentStepIndex: data.current_step_index,
-        userActions: (data.user_actions as UserAction[]) || [],
+        userActions: (data.user_actions as unknown as UserAction[]) || [],
         isCompleted: data.is_completed,
-        liveCoachEvents: (data.live_coach_events as LiveCoachEvent[]) || [],
+        liveCoachEvents: (data.live_coach_events as unknown as LiveCoachEvent[]) || [],
         score: data.score ?? undefined,
     };
 };
@@ -47,9 +47,9 @@ export const saveSession = async (state: Partial<SessionState> & { moduleId: str
         module_id: state.moduleId,
         session_token: state.sessionToken,
         current_step_index: state.currentStepIndex,
-        user_actions: state.userActions as Json,
+        user_actions: state.userActions as unknown as Json,
         is_completed: state.isCompleted,
-        live_coach_events: state.liveCoachEvents as Json,
+        live_coach_events: state.liveCoachEvents as unknown as Json,
         score: state.score,
         updated_at: new Date().toISOString()
     };
