@@ -1,19 +1,9 @@
 
 import { supabase } from '@/services/apiClient';
-import type { UserAction, LiveCoachEvent, SessionSummary } from '@/types';
+import type { UserAction, LiveCoachEvent, SessionSummary, SessionState } from '@/types';
 import type { Json } from '@/types/supabase';
 
 const TABLE_NAME = 'training_sessions';
-
-export interface SessionState {
-    moduleId: string;
-    sessionToken: string;
-    currentStepIndex: number;
-    userActions: UserAction[];
-    isCompleted: boolean;
-    liveCoachEvents?: LiveCoachEvent[];
-    score?: number;
-}
 
 
 export const getSession = async (moduleId: string, sessionToken: string): Promise<SessionState | null> => {
@@ -22,9 +12,9 @@ export const getSession = async (moduleId: string, sessionToken: string): Promis
         .select('*')
         .eq('module_id', moduleId)
         .eq('session_token', sessionToken)
-        .single();
+        .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') { // Ignore "no rows" error, which is expected for new sessions
+    if (error) {
         console.error('Error fetching session:', error);
         throw error;
     }
@@ -43,23 +33,33 @@ export const getSession = async (moduleId: string, sessionToken: string): Promis
 };
 
 export const saveSession = async (state: Partial<SessionState> & { moduleId: string; sessionToken: string }): Promise<void> => {
-    const upsertData = {
-        module_id: state.moduleId,
-        session_token: state.sessionToken,
-        current_step_index: state.currentStepIndex,
-        user_actions: state.userActions as unknown as Json,
-        is_completed: state.isCompleted,
-        live_coach_events: state.liveCoachEvents as unknown as Json,
-        score: state.score,
-        updated_at: new Date().toISOString()
-    };
+    const {
+        moduleId,
+        sessionToken,
+        currentStepIndex,
+        score,
+        isCompleted,
+        userActions,
+        liveCoachEvents,
+    } = state;
 
-    // Remove undefined properties so they don't overwrite existing values in DB
-    Object.keys(upsertData).forEach(key => upsertData[key as keyof typeof upsertData] === undefined && delete upsertData[key as keyof typeof upsertData]);
+    // Create the object to upsert, filtering out any undefined values
+    // so they don't overwrite existing data in the database with null.
+    const upsertData: any = {
+        module_id: moduleId,
+        session_token: sessionToken,
+        updated_at: new Date().toISOString(),
+    };
+    if (currentStepIndex !== undefined) upsertData.current_step_index = currentStepIndex;
+    if (score !== undefined) upsertData.score = score;
+    if (isCompleted !== undefined) upsertData.is_completed = isCompleted;
+    if (userActions !== undefined) upsertData.user_actions = userActions as unknown as Json;
+    if (liveCoachEvents !== undefined) upsertData.live_coach_events = liveCoachEvents as unknown as Json;
+
 
     const { error } = await supabase
         .from(TABLE_NAME)
-        .upsert(upsertData, { onConflict: 'module_id, session_token' }); // Composite key for upsert
+        .upsert([upsertData], { onConflict: 'module_id, session_token' }); // upsert expects an array
 
     if (error) {
         console.error('Error saving session:', error);
