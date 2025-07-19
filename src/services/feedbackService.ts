@@ -127,7 +127,7 @@ export const findSimilarFixes = async (moduleId: string, stepIndex: number, user
             throw error;
         }
 
-        return (data || []).map(item => ({
+        return (data || []).map((item: { id: string; user_fix_text: string; similarity: number }) => ({
             id: item.id,
             userFixText: item.user_fix_text,
             similarity: item.similarity

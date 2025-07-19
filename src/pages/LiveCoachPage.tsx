@@ -288,7 +288,7 @@ const LiveCoachPage: React.FC = () => {
             const similarFixes = await findSimilarFixes(moduleId, currentStepIndex, basePrompt);
             const pastFeedback = await getPastFeedbackForStep(moduleId, currentStepIndex);
             const requiredItems = moduleNeeds?.[activeModule.slug]?.[currentStepIndex]?.required || [];
-            let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex].title, requiredItems, type, pastFeedback, similarFixes, basePrompt);
+            let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex]?.title ?? 'Current Step', requiredItems, type, pastFeedback, similarFixes, basePrompt);
             finalPrompt += `\n\nYour response should proactively ask the user for feedback. End your response with this exact tagline: "${getTagline()}"`;
 
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
@@ -348,7 +348,7 @@ const LiveCoachPage: React.FC = () => {
             const similarFixes = await findSimilarFixes(moduleId, currentStepIndex, query);
             const pastFeedback = await getPastFeedbackForStep(moduleId, currentStepIndex);
             const requiredItems = moduleNeeds?.[activeModule.slug]?.[currentStepIndex]?.required || [];
-            let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex].title, requiredItems, 'query', pastFeedback, similarFixes, `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`);
+            let finalPrompt = getPromptContextForLiveCoach(activeModule.steps[currentStepIndex]?.title ?? 'Current Step', requiredItems, 'query', pastFeedback, similarFixes, `The user asked: "${query}". My live camera analysis shows a ${objectLabels} are present. Based on the current step's instructions and this visual context, answer their question.`);
             finalPrompt += `\n\nYour response should proactively ask the user for feedback. End your response with this exact tagline: "${getTagline()}"`;
 
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
@@ -407,7 +407,7 @@ const LiveCoachPage: React.FC = () => {
             if (detectedForbiddenItem) {
                 clearAllTimers();
                 const branchRule = needs.branchOn?.find(b => detectedForbiddenItem.toLowerCase().includes(b.item.toLowerCase()));
-                if (branchRule) { await handleBranchStart(branchRule.module); return; }
+                if (branchRule && branchRule.module) { await handleBranchStart(branchRule.module); return; }
                 processAiInterjection(`The user is using a forbidden item: a "${detectedForbiddenItem}".`, 'correction');
                 return;
             }

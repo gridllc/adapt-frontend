@@ -89,8 +89,10 @@ export async function speak(text: string, character: string = 'system'): Promise
 
   // 1. Check cache first
   if (audioCache.has(cacheKey)) {
-    const audioUrl = audioCache.get(cacheKey)!;
-    return playAudio(audioUrl);
+    const audioUrl = audioCache.get(cacheKey);
+    if (audioUrl) {
+      return playAudio(audioUrl);
+    }
   }
 
   // 2. Fetch from high-quality TTS API
@@ -119,12 +121,14 @@ export async function speak(text: string, character: string = 'system'): Promise
     // If cache is full, evict the oldest entry to prevent memory leaks from blob URLs.
     if (audioCache.size >= MAX_CACHE_SIZE) {
       const oldestKey = audioCache.keys().next().value;
-      const urlToRevoke = audioCache.get(oldestKey);
-      if (urlToRevoke) {
-        URL.revokeObjectURL(urlToRevoke); // Revoke the old blob URL to free memory.
+      if (oldestKey) {
+        const urlToRevoke = audioCache.get(oldestKey);
+        if (urlToRevoke) {
+          URL.revokeObjectURL(urlToRevoke); // Revoke the old blob URL to free memory.
+        }
+        audioCache.delete(oldestKey);
+        console.log(`TTS cache full. Evicted oldest entry: ${oldestKey}`);
       }
-      audioCache.delete(oldestKey);
-      console.log(`TTS cache full. Evicted oldest entry: ${oldestKey}`);
     }
     audioCache.set(cacheKey, audioUrl); // Save to cache
 
