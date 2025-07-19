@@ -1,12 +1,5 @@
-
 import { supabase } from '@/services/apiClient';
-import type { AnalysisHotspot, QuestionStats, ProcessStep, TutorLogRow } from '@/types';
-import type { Database } from '@/types/supabase';
-
-// Define types from the database schema for better type safety.
-type ModuleRow = Database['public']['Tables']['modules']['Row'];
-type TutorLogsRow = Database['public']['Tables']['tutor_logs']['Row'];
-
+import type { AnalysisHotspot, QuestionStats, ProcessStep, TutorLogRow, AppModuleWithStats } from '@/types';
 
 /**
  * Scans the tutor_logs table and returns a frequency-ranked list of unique questions for a module.
@@ -70,7 +63,7 @@ export const getTutorLogs = async (moduleId: string): Promise<TutorLogRow[]> => 
         throw new Error(`Failed to fetch tutor logs: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []) as TutorLogRow[];
 };
 
 /**
@@ -80,14 +73,14 @@ export const getTutorLogs = async (moduleId: string): Promise<TutorLogRow[]> => 
 export const getAllTutorLogs = async (): Promise<TutorLogRow[]> => {
     const { data, error } = await supabase
         .from('tutor_logs')
-        .select('module_id, step_index, user_question');
+        .select('*');
 
     if (error) {
         console.error("Error fetching all tutor logs:", error);
         throw new Error(`Failed to fetch all tutor logs: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []) as TutorLogRow[];
 };
 
 
@@ -100,7 +93,7 @@ export const getAllTutorLogs = async (): Promise<TutorLogRow[]> => {
  * @param {string} params.question - The exact question text to match.
  * @param {string} [params.startDate] - Optional start date in 'YYYY-MM-DD' format.
  * @param {string} [params.endDate] - Optional end date in 'YYYY-MM-DD' format.
- * @returns {Promise<TutorLogsRow[]>} A promise resolving to an array of matching tutor logs.
+ * @returns {Promise<TutorLogRow[]>} A promise resolving to an array of matching tutor logs.
  */
 export const getQuestionLogsByQuestion = async ({ moduleId, stepIndex, question, startDate, endDate }: {
     moduleId: string;
@@ -108,7 +101,7 @@ export const getQuestionLogsByQuestion = async ({ moduleId, stepIndex, question,
     question: string;
     startDate?: string;
     endDate?: string;
-}): Promise<TutorLogsRow[]> => {
+}): Promise<TutorLogRow[]> => {
     let query = supabase
         .from('tutor_logs')
         .select('*')
@@ -133,7 +126,7 @@ export const getQuestionLogsByQuestion = async ({ moduleId, stepIndex, question,
         throw new Error(`Failed to fetch detailed question logs: ${error.message}`);
     }
 
-    return data || [];
+    return (data || []) as TutorLogRow[];
 };
 
 
@@ -142,16 +135,16 @@ export const getQuestionLogsByQuestion = async ({ moduleId, stepIndex, question,
  * A hotspot is defined as the step with the highest number of *unique* questions asked,
  * as this indicates broader confusion rather than one person asking the same question repeatedly.
  * @param {QuestionStats[]} stats - The question statistics from getQuestionFrequency.
- * @param {ModuleRow} module - The full training module data object.
+ * @param {AppModule} module - The full training module data object.
  * @returns {AnalysisHotspot | null} The identified hotspot, or null if no significant confusion is found.
  */
-export const findHotspots = (stats: QuestionStats[], module: ModuleRow): AnalysisHotspot | null => {
+export const findHotspots = (stats: QuestionStats[], module: AppModuleWithStats): AnalysisHotspot | null => {
     if (!stats || stats.length === 0) {
         return null;
     }
 
     const stepConfusion: Record<number, { questions: Set<string>; totalCount: number }> = {};
-    const steps = (module.steps as ProcessStep[]) || [];
+    const steps = module.steps || [];
 
     // Group questions by step index to find the step with the most unique questions.
     stats.forEach(stat => {
@@ -192,7 +185,7 @@ export const findHotspots = (stats: QuestionStats[], module: ModuleRow): Analysi
  * @param allModules An array of all available modules.
  * @returns The single top hotspot across the platform, or null.
  */
-export const findPlatformHotspot = (allLogs: TutorLogRow[], allModules: ModuleRow[]): (AnalysisHotspot & { moduleId: string }) | null => {
+export const findPlatformHotspot = (allLogs: TutorLogRow[], allModules: AppModuleWithStats[]): (AnalysisHotspot & { moduleId: string }) | null => {
     if (!allLogs || allLogs.length === 0 || !allModules || allModules.length === 0) {
         return null;
     }
@@ -218,7 +211,7 @@ export const findPlatformHotspot = (allLogs: TutorLogRow[], allModules: ModuleRo
         if (data.questions.size > maxUniqueQuestions) {
             maxUniqueQuestions = data.questions.size;
             const module = modulesBySlug.get(data.moduleId);
-            const step = (module?.steps as ProcessStep[])?.[data.stepIndex];
+            const step = module?.steps?.[data.stepIndex];
 
             if (module && step) {
                 topHotspot = {

@@ -1,18 +1,13 @@
-
-
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAvailableModules, deleteModule } from '@/services/moduleService';
 import { BookOpenIcon, LogOutIcon, UserIcon, BarChartIcon, TrashIcon, SunIcon, MoonIcon, SearchIcon, XIcon, VideoIcon, DownloadIcon, SparklesIcon, ClockIcon } from '@/components/Icons';
-import type { ProcessStep } from '@/types';
-import type { Database } from '@/types/supabase';
+import type { AppModuleWithStats } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { useTheme } from '@/hooks/useTheme';
 import { ModuleCardSkeleton } from '@/components/ModuleCardSkeleton';
-
-type ModuleWithStatsRow = Database['public']['Views']['modules_with_session_stats']['Row'];
 
 const HomePage: React.FC = () => {
     const navigate = useNavigate();
@@ -22,7 +17,7 @@ const HomePage: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
     const [searchTerm, setSearchTerm] = useState('');
 
-    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<ModuleWithStatsRow[], Error>({
+    const { data: availableModules, isLoading: isLoadingModules, error: modulesError } = useQuery<AppModuleWithStats[], Error>({
         queryKey: ['modules'],
         queryFn: getAvailableModules
     });
@@ -69,7 +64,7 @@ const HomePage: React.FC = () => {
         }
     }, [queryClient, addToast]);
 
-    const handleDownloadModule = useCallback((e: React.MouseEvent, module: ModuleWithStatsRow) => {
+    const handleDownloadModule = useCallback((e: React.MouseEvent, module: AppModuleWithStats) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -179,9 +174,9 @@ const HomePage: React.FC = () => {
                                         <div>
                                             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                                                 {module.title}
-                                                {module.is_ai_generated && <SparklesIcon className="h-5 w-5 text-yellow-500" title="AI Generated" />}
+                                                {module.is_ai_generated && <span title="AI Generated"><SparklesIcon className="h-5 w-5 text-yellow-500" /></span>}
                                             </h3>
-                                            <p className="text-slate-500 dark:text-slate-400">{((module.steps as ProcessStep[]) || []).length} steps</p>
+                                            <p className="text-slate-500 dark:text-slate-400">{module.steps.length} steps</p>
                                         </div>
                                     </div>
                                     <div className="flex-shrink-0" title={module.last_used_at ? `Last used on ${new Date(module.last_used_at).toLocaleDateString()}` : undefined}>

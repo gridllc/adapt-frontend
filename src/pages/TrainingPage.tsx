@@ -1,5 +1,3 @@
-
-
 import React, { useState, useRef, useCallback, useEffect, useMemo, useReducer } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -7,8 +5,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { ProcessSteps } from '@/components/ProcessSteps';
 import { ChatTutor } from '@/components/ChatTutor';
 import { BotIcon, BookOpenIcon, FileTextIcon, Share2Icon, PencilIcon, VideoIcon, AlertTriangleIcon, SparklesIcon, RefreshCwIcon } from '@/components/Icons';
-import type { ProcessStep, TranscriptLine, StepStatus } from '@/types';
-import type { Database } from '@/types/supabase';
+import type { ProcessStep, TranscriptLine, StepStatus, AppModule } from '@/types';
 import { useTrainingSession } from '@/hooks/useTrainingSession';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -21,8 +18,6 @@ import { TranscriptViewer } from '@/components/TranscriptViewer';
 import { PerformanceReport } from '@/components/PerformanceReport';
 import { useSafeVideoUrl } from '@/hooks/useSafeVideoUrl';
 import { trainingPageReducer, initialTrainingPageState } from '@/reducers/trainingPageReducer';
-
-type ModuleRow = Database['public']['Tables']['modules']['Row'];
 
 const generateToken = () => Math.random().toString(36).substring(2, 10);
 
@@ -71,7 +66,7 @@ const TrainingPage: React.FC = () => {
     isLoading: isLoadingModule,
     isError,
     error,
-  } = useQuery<ModuleRow | undefined, Error>({
+  } = useQuery<AppModule | undefined, Error>({
     queryKey: ['module', moduleId],
     queryFn: () => getModule(moduleId!),
     enabled: !!moduleId && !!sessionToken,
@@ -79,8 +74,8 @@ const TrainingPage: React.FC = () => {
     retry: false,
   });
 
-  const steps = useMemo(() => (moduleData?.steps as ProcessStep[]) || [], [moduleData]);
-  const transcript = useMemo(() => (moduleData?.transcript as TranscriptLine[]) || [], [moduleData]);
+  const steps = useMemo(() => moduleData?.steps || [], [moduleData]);
+  const transcript = useMemo(() => moduleData?.transcript || [], [moduleData]);
 
   const {
     currentStepIndex,
@@ -133,7 +128,7 @@ const TrainingPage: React.FC = () => {
       setStepsContext('');
       setFullTranscript('');
       return;
-    }
+    };
 
     const { title } = moduleData;
 

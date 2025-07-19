@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef, useCallback, useReducer } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { startChat, getFallbackResponse, generateImage, sendMessageWithRetry } from '@/services/geminiService';
@@ -216,7 +214,7 @@ export const ChatTutor: React.FC<ChatTutorProps> = ({ moduleId, sessionToken, st
             const stream = await sendMessageWithRetry(chatRef.current, finalPrompt);
 
             for await (const chunk of stream) {
-                const chunkText = chunk.text;
+                const chunkText = chunk.text ?? '';
                 finalModelText += chunkText;
                 const groundingChunks = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
                 let newCitations: ChatMessage['citations'] | undefined;

@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse, Part } from "@google/genai";
 import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine, GeneratedBranchModule } from "@/types";
 
@@ -21,13 +19,18 @@ export interface TranscriptAnalysis {
 
 // --- AI Client Initialization ---
 
+let cachedClient: GoogleGenAI | null = null;
+
 function getAiClient(): GoogleGenAI {
+    if (cachedClient) {
+        return cachedClient;
+    }
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
         throw new Error("AI features are unavailable. The required API key is missing from the environment.");
     }
-    // No caching needed as per new guidelines, create a fresh instance.
-    return new GoogleGenAI({ apiKey });
+    cachedClient = new GoogleGenAI({ apiKey });
+    return cachedClient;
 }
 
 // --- Schemas for AI Response Validation ---
@@ -54,11 +57,11 @@ const transcriptWithConfidenceSchema = {
                     end: { type: Type.NUMBER, description: "End time of the speech segment in seconds." },
                     text: { type: Type.STRING, description: "The transcribed text for this segment, with filler words like 'um' or 'uh' removed." },
                 },
-                propertyOrdering: ["start", "end", "text"]
+                required: ["start", "end", "text"]
             }
         }
     },
-    propertyOrdering: ["overallConfidence", "uncertainWords", "transcript"]
+    required: ["overallConfidence", "uncertainWords", "transcript"]
 };
 
 const moduleFromTextSchema = {
@@ -76,18 +79,18 @@ const moduleFromTextSchema = {
                     end: { type: Type.NUMBER, description: "The end time of this step in seconds. Set to 0 as a placeholder." },
                     title: { type: Type.STRING, description: "A short, action-oriented title for the step (e.g., 'Toast the Bread')." },
                     description: { type: Type.STRING, description: "A detailed explanation of how to perform this step." },
-                    checkpoint: { type: Type.STRING, description: "A question to verify the trainee's understanding of this step. Should be null if not applicable." },
+                    checkpoint: { type: Type.STRING, nullable: true, description: "A question to verify the trainee's understanding of this step. Should be null if not applicable." },
                     alternativeMethods: {
                         type: Type.ARRAY,
                         description: "Optional alternative ways to perform the step. Should be an empty array if not applicable.",
-                        items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING } }, propertyOrdering: ["title", "description"] }
+                        items: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, description: { type: Type.STRING } }, required: ["title", "description"] }
                     }
                 },
-                propertyOrdering: ["start", "end", "title", "description", "checkpoint", "alternativeMethods"]
+                required: ["start", "end", "title", "description", "checkpoint", "alternativeMethods"]
             }
         },
     },
-    propertyOrdering: ["slug", "title", "steps"]
+    required: ["slug", "title", "steps"]
 };
 
 // --- Internal File Handling Helper ---
@@ -128,13 +131,13 @@ The output MUST be a single, valid JSON object adhering to the provided schema.`
                 responseSchema: transcriptWithConfidenceSchema,
             },
         });
-        const jsonText = response.text.trim();
+        const jsonText = response.text;
         if (!jsonText) {
             console.warn("[AI Service] Transcript generation returned empty response. This may be normal for silent videos.");
             return { transcript: [], confidence: 0, uncertainWords: [] };
         }
         console.log("[AI Service] Parsing generated transcript...");
-        const parsed = JSON.parse(jsonText);
+        const parsed = JSON.parse(jsonText.trim());
         return {
             transcript: parsed.transcript || [],
             confidence: parsed.overallConfidence ?? 0.5,
@@ -171,7 +174,7 @@ export const generateModuleFromContext = async (context: {
     Based on this, create a JSON object with:
     - A URL-friendly 'slug'.
     - A concise 'title'.
-    - An array of 'steps', where each step has a 'title', a detailed 'description', an optional 'checkpoint' question (null if none), and optional 'alternativeMethods' (empty array if none).
+    - An array of 'steps', where each step has a 'title', a detailed 'description', an optional 'checkpoint' question, and optional 'alternativeMethods'.
     - Set 'start' and 'end' times for steps to 0 as placeholders.`;
 
     try {
@@ -184,14 +187,14 @@ export const generateModuleFromContext = async (context: {
             },
         });
 
-        const jsonText = response.text.trim();
+        const jsonText = response.text;
         if (!jsonText) {
             console.error("[AI Service] AI response for module generation was empty.");
             throw new Error("The AI returned an empty response. The input text may have been too short or unclear.");
         }
 
         console.log("[AI Service] Parsing generated JSON from text...");
-        return JSON.parse(jsonText) as GeneratedModuleData;
+        return JSON.parse(jsonText.trim()) as GeneratedModuleData;
 
     } catch (error) {
         console.error("[AI Service] Error generating module from context:", error);
@@ -272,7 +275,9 @@ export const getFallbackResponse = async (prompt: string, history: ChatMessage[]
 
     try {
         const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents, config: { systemInstruction } });
-        return response.text;
+        const text = response.text;
+        if (!text) throw new Error("Fallback AI provider returned an empty response.");
+        return text;
     } catch (error) {
         console.error("[AI Service] Fallback AI provider also failed:", error);
         throw new Error("Sorry, the AI tutor is currently unavailable. Please try again later.");
@@ -315,7 +320,7 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
         **Your Task:**
         1.  Evaluate if the user's answer is correct based on the step description. Set 'isCorrect' to true or false.
         2.  Provide brief 'feedback' explaining your decision.
-        3.  **Crucially:** If the user's answer is technically wrong but their reasoning is logical because the original instruction was incomplete or ambiguous (e.g., the instruction was "Open the door" and the checkpoint was "Did you close it?"), you MUST provide a 'suggestedInstructionChange'. This new text should be the improved, clearer version of the instruction. If the instruction was fine, this field must be null.`;
+        3.  **Crucially:** If the user's answer is technically wrong but their reasoning is logical because the original instruction was incomplete or ambiguous (e.g., the instruction was "Open the door" and the checkpoint was "Did you close it?"), you MUST provide a 'suggestedInstructionChange'. This new text should be the improved, clearer version of the instruction. If the instruction was fine, this field should be null.`;
 
     const evaluationSchema = {
         type: Type.OBJECT,
@@ -324,10 +329,11 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
             feedback: { type: Type.STRING, description: "Gentle, helpful feedback for the user." },
             suggestedInstructionChange: {
                 type: Type.STRING,
+                nullable: true,
                 description: "If the instruction was flawed, provide a revised, clearer instruction text here. Otherwise, this MUST be null."
             }
         },
-        propertyOrdering: ["isCorrect", "feedback", "suggestedInstructionChange"],
+        required: ["isCorrect", "feedback", "suggestedInstructionChange"],
     };
 
     try {
@@ -336,15 +342,9 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: evaluationSchema },
         });
-
-        const parsed = JSON.parse(response.text) as CheckpointEvaluation;
-        // Ensure null is correctly handled from schema.
-        if (parsed.suggestedInstructionChange === undefined) {
-            parsed.suggestedInstructionChange = undefined;
-        }
-
-        return parsed;
-
+        const text = response.text;
+        if (!text) throw new Error("AI evaluation returned an empty response.");
+        return JSON.parse(text) as CheckpointEvaluation;
     } catch (error) {
         console.error("[AI Service] Error evaluating checkpoint:", error);
         throw new Error("An error occurred during checkpoint evaluation.");
@@ -352,7 +352,6 @@ export const evaluateCheckpointAnswer = async (step: ProcessStep, userAnswer: st
         if (import.meta.env.DEV) console.timeEnd('[AI Perf] evaluateCheckpointAnswer');
     }
 };
-
 
 export const generateRefinementSuggestion = async (step: ProcessStep, questions: string[]): Promise<RefinementSuggestion> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateRefinementSuggestion');
@@ -372,12 +371,12 @@ export const generateRefinementSuggestion = async (step: ProcessStep, questions:
         properties: {
             newDescription: { type: Type.STRING },
             newAlternativeMethod: {
-                type: Type.OBJECT,
+                type: Type.OBJECT, nullable: true,
                 properties: { title: { type: Type.STRING }, description: { type: Type.STRING } },
-                propertyOrdering: ["title", "description"],
+                required: ["title", "description"],
             }
         },
-        propertyOrdering: ["newDescription", "newAlternativeMethod"],
+        required: ["newDescription", "newAlternativeMethod"],
     };
 
     try {
@@ -386,13 +385,9 @@ export const generateRefinementSuggestion = async (step: ProcessStep, questions:
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: refinementSchema },
         });
-
-        const parsed = JSON.parse(response.text);
-        if (parsed.newAlternativeMethod === undefined) {
-            parsed.newAlternativeMethod = null;
-        }
-        return parsed;
-
+        const text = response.text;
+        if (!text) throw new Error("AI returned empty refinement suggestion.");
+        return JSON.parse(text);
     } catch (error) {
         console.error("[AI Service] Error generating refinement suggestion:", error);
         throw new Error("Failed to get AI refinement suggestion.");
@@ -415,7 +410,7 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
         if (userQuestions.length > 0) prompt += `\n- They asked these questions: ${userQuestions.map(q => `"${q}"`).join(', ')}.`;
     }
 
-    const summarySchema = { type: Type.OBJECT, properties: { summary: { type: Type.STRING } }, propertyOrdering: ["summary"] };
+    const summarySchema = { type: Type.OBJECT, properties: { summary: { type: Type.STRING } }, required: ["summary"] };
 
     try {
         const response = await ai.models.generateContent({
@@ -423,8 +418,9 @@ export const generatePerformanceSummary = async (moduleTitle: string, unclearSte
             contents: prompt,
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: summarySchema },
         });
-        if (!response.text) return { summary: "Great job completing the training!" };
-        return JSON.parse(response.text);
+        const text = response.text;
+        if (!text) return { summary: "Great job completing the training!" };
+        return JSON.parse(text);
     } catch (error) {
         console.error("[AI Service] Error generating performance summary:", error);
         return { summary: "Congratulations on completing the training module!" };
@@ -458,7 +454,7 @@ export const generateBranchModule = async (stepTitle: string, frequentQuestions:
                 items: { type: Type.STRING }
             }
         },
-        propertyOrdering: ["title", "steps"],
+        required: ["title", "steps"],
     };
 
     try {
@@ -468,11 +464,12 @@ export const generateBranchModule = async (stepTitle: string, frequentQuestions:
             config: { systemInstruction, responseMimeType: "application/json", responseSchema: branchModuleSchema },
         });
 
-        if (!response.text) {
+        const text = response.text;
+        if (!text) {
             throw new Error("AI returned empty data for the branch module.");
         }
 
-        return JSON.parse(response.text) as GeneratedBranchModule;
+        return JSON.parse(text) as GeneratedBranchModule;
 
     } catch (error) {
         console.error("[AI Service] Error generating branch module:", error);
@@ -486,11 +483,14 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     if (import.meta.env.DEV) console.time('[AI Perf] generateEmbedding');
     const ai = getAiClient();
     try {
-        const result = await ai.models.embedContent({
-            model: 'text-embedding-004',
-            contents: { parts: [{ text }] },
+        const response = await ai.models.embedContent({
+            model: "text-embedding-004",
+            contents: text,
         });
-        return result.embeddings[0].values;
+        if (!response.embeddings || response.embeddings.length === 0) {
+            throw new Error("Failed to generate embedding: No embedding returned from API.");
+        }
+        return response.embeddings[0].values;
     } catch (error) {
         console.error("[AI Service] Error generating embedding:", error);
         throw new Error("Failed to generate text embedding for memory search.");

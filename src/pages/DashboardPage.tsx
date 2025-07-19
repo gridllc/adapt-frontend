@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -12,12 +11,10 @@ import { BarChartIcon, LightbulbIcon, SparklesIcon, GitBranchIcon, BookOpenIcon,
 import { RefinementModal } from '@/components/RefinementModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import type { AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats, AiSuggestion, TraineeSuggestion, TutorLogRow } from '@/types';
+import type { AnalysisHotspot, RefinementSuggestion, ProcessStep, QuestionStats, AiSuggestion, TraineeSuggestion, TutorLogRow, AppModuleWithStats, AppModule } from '@/types';
 import type { Database } from '@/types/supabase';
 
-type ModuleRow = Database['public']['Tables']['modules']['Row'];
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
-type ModuleWithStatsRow = Database['public']['Views']['modules_with_session_stats']['Row'];
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ElementType; isLoading: boolean }> = ({ title, value, icon: Icon, isLoading }) => (
     <div className="bg-slate-100 dark:bg-slate-900/50 p-6 rounded-xl flex items-center gap-4">
@@ -42,12 +39,12 @@ const DashboardPage: React.FC = () => {
     const { addToast } = useToast();
     const navigate = useNavigate();
 
-    const [selectedModule, setSelectedModule] = useState<ModuleRow | null>(null);
+    const [selectedModule, setSelectedModule] = useState<AppModuleWithStats | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activeSuggestion, setActiveSuggestion] = useState<RefinementSuggestion | null>(null);
 
     // --- Platform-Wide Data Fetching ---
-    const { data: availableModules = [], isLoading: isLoadingModules } = useQuery<ModuleWithStatsRow[], Error>({ queryKey: ['modules'], queryFn: getAvailableModules });
+    const { data: availableModules = [], isLoading: isLoadingModules } = useQuery<AppModuleWithStats[], Error>({ queryKey: ['modules'], queryFn: getAvailableModules });
     const { data: totalSessions, isLoading: isLoadingTotalSessions } = useQuery<number>({ queryKey: ['totalSessions'], queryFn: getTotalSessionCount });
     const { data: completedSessions, isLoading: isLoadingCompletedSessions } = useQuery<number>({ queryKey: ['completedSessions'], queryFn: getCompletedSessionCount });
     const { data: pendingSuggestions = [], isLoading: isLoadingSuggestions } = useQuery<(TraineeSuggestion & { module_title?: string })[]>({ queryKey: ['pendingSuggestions'], queryFn: getAllPendingSuggestions });
@@ -58,7 +55,7 @@ const DashboardPage: React.FC = () => {
         queryKey: ['dashboardAnalysis', selectedModule?.slug],
         queryFn: async () => {
             if (!selectedModule) return { stats: [], hotspot: null };
-            const stats = await getQuestionFrequency(selectedModule.slug);
+            const stats = await getQuestionFrequency(selectedModule.slug!);
             const hotspot = findHotspots(stats, selectedModule);
             return { stats, hotspot };
         },
@@ -71,7 +68,7 @@ const DashboardPage: React.FC = () => {
         queryKey: ['aiSuggestion', selectedModule?.slug, moduleHotspot?.stepIndex],
         queryFn: () => {
             if (!moduleHotspot || !selectedModule) return null;
-            return getLatestAiSuggestionForStep(selectedModule.slug, moduleHotspot.stepIndex);
+            return getLatestAiSuggestionForStep(selectedModule.slug!, moduleHotspot.stepIndex);
         },
         enabled: !!moduleHotspot && !!selectedModule,
     });
@@ -178,7 +175,7 @@ const DashboardPage: React.FC = () => {
                             disabled={availableModules.length === 0 || isLoadingModules}
                         >
                             {isLoadingModules && <option>Loading modules...</option>}
-                            {!isLoadingModules && availableModules.map(m => <option key={m.slug} value={m.slug}>{m.title}</option>)}
+                            {!isLoadingModules && availableModules.map(m => <option key={m.slug} value={m.slug!}>{m.title}</option>)}
                             {!isLoadingModules && availableModules.length === 0 && <option>No modules available</option>}
                         </select>
                     </div>
@@ -239,7 +236,7 @@ const DashboardPage: React.FC = () => {
             </div>
 
             {isModalOpen && moduleHotspot && activeSuggestion && selectedModule && (
-                <RefinementModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} currentStep={(selectedModule.steps as ProcessStep[])[moduleHotspot.stepIndex]} suggestion={activeSuggestion} onApply={handleApplyRefinement} />
+                <RefinementModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} currentStep={selectedModule.steps[moduleHotspot.stepIndex]} suggestion={activeSuggestion} onApply={handleApplyRefinement} />
             )}
         </div>
     );

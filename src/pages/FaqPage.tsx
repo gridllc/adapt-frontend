@@ -1,26 +1,21 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getAvailableModules } from '@/services/moduleService';
 import { getTutorLogs } from '@/services/analyticsService';
 import { HelpCircleIcon } from '@/components/Icons';
-import type { TutorLogRow } from '@/types';
-import type { Database } from '@/types/supabase';
-
-type ModuleRow = Database['public']['Tables']['modules']['Row'];
+import type { TutorLogRow, AppModuleWithStats } from '@/types';
 
 const FaqPage: React.FC = () => {
-    const [selectedModule, setSelectedModule] = useState<ModuleRow | null>(null);
+    const [selectedModule, setSelectedModule] = useState<AppModuleWithStats | null>(null);
 
-    const { data: availableModules = [], isLoading: isLoadingModules } = useQuery<ModuleRow[], Error>({
+    const { data: availableModules = [], isLoading: isLoadingModules } = useQuery<AppModuleWithStats[], Error>({
         queryKey: ['modules'],
         queryFn: getAvailableModules,
     });
 
     const { data: tutorLogs = [], isLoading: isLoadingLogs } = useQuery<TutorLogRow[], Error>({
         queryKey: ['tutorLogs', selectedModule?.slug],
-        queryFn: () => getTutorLogs(selectedModule!.slug),
+        queryFn: () => getTutorLogs(selectedModule!.slug!),
         enabled: !!selectedModule,
     });
 
@@ -55,7 +50,7 @@ const FaqPage: React.FC = () => {
                     >
                         {isLoadingModules && <option>Loading modules...</option>}
                         {!isLoadingModules && availableModules.map(module => (
-                            <option key={module.slug} value={module.slug}>{module.title}</option>
+                            <option key={module.slug} value={module.slug ?? ''}>{module.title}</option>
                         ))}
                         {!isLoadingModules && availableModules.length === 0 && <option>No modules available</option>}
                     </select>

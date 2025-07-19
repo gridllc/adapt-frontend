@@ -1,3 +1,5 @@
+import type { Database } from "./types/supabase";
+import type { Json } from "./types/supabase";
 
 export interface AlternativeMethod {
   title: string;
@@ -18,6 +20,21 @@ export interface ProcessStep {
   checkpoint: string | null;
   alternativeMethods: AlternativeMethod[];
 }
+
+// Stricter application-level types for modules
+export type AppModule = Omit<Database['public']['Tables']['modules']['Row'], 'steps' | 'transcript'> & {
+  steps: ProcessStep[];
+  transcript: TranscriptLine[];
+};
+
+export type AppModuleWithStats = Omit<Database['public']['Views']['modules_with_session_stats']['Row'], 'steps' | 'transcript'> & {
+  steps: ProcessStep[];
+  transcript: TranscriptLine[];
+};
+
+// Alias AppModule for use in LiveCoachPage
+export type TrainingModule = AppModule;
+
 
 export interface VideoMetadata {
   originalName: string;
@@ -114,7 +131,7 @@ export interface PerformanceReportData {
   userQuestions: string[];
 }
 
-export type CoachEventType = 'hint' | 'correction' | 'tutoring' | 'step_advance';
+export type CoachEventType = 'hint' | 'correction' | 'tutoring' | 'step_advance' | 'hinting' | 'correcting';
 
 export interface LiveCoachEvent {
   eventType: CoachEventType;
@@ -201,14 +218,6 @@ export interface TutorLogRow {
   user_question: string;
   tutor_response: string;
   created_at: string | null;
-}
-
-// This is a minimal definition for the TrainingModule to be used in LiveCoachPage
-// It avoids making assumptions about the full Supabase-generated type.
-export interface TrainingModule {
-  slug: string;
-  title: string;
-  steps: ProcessStep[];
 }
 
 export interface AIFeedbackLog {

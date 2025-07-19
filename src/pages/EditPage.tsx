@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,7 +7,7 @@ import { getCheckpointResponsesForModule } from '@/services/checkpointService';
 import { supabase } from '@/services/apiClient';
 import { ModuleEditor } from '@/components/ModuleEditor';
 import { VideoPlayer } from '@/components/VideoPlayer';
-import type { AlternativeMethod, TraineeSuggestion, ProcessStep, AiSuggestion } from '@/types';
+import type { AlternativeMethod, TraineeSuggestion, ProcessStep, AiSuggestion, AppModule } from '@/types';
 import type { Database } from '@/types/supabase';
 import { TrashIcon, VideoIcon, AlertTriangleIcon, RefreshCwIcon, SparklesIcon } from '@/components/Icons';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,7 +25,7 @@ const EditPage: React.FC = () => {
     const queryClient = useQueryClient();
     const { isAuthenticated, user } = useAuth();
     const { addToast } = useToast();
-    const [module, setModule] = useState<ModuleRow | null>(null);
+    const [module, setModule] = useState<AppModule | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const isAdmin = !!user;
@@ -41,7 +39,7 @@ const EditPage: React.FC = () => {
         isLoading,
         isError: isModuleError,
         error: queryError
-    } = useQuery<ModuleRow | undefined>({
+    } = useQuery<AppModule | undefined>({
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId!),
         enabled: !!moduleId,
@@ -136,7 +134,7 @@ const EditPage: React.FC = () => {
 
             if (navigationState?.suggestion && typeof navigationState.stepIndex === 'number') {
                 const { suggestion, stepIndex } = navigationState;
-                const steps = (moduleToEdit.steps as ProcessStep[]) ?? [];
+                const steps = moduleToEdit.steps;
 
                 if (steps && steps[stepIndex]) {
                     steps[stepIndex] = { ...steps[stepIndex], description: suggestion };
@@ -172,7 +170,7 @@ const EditPage: React.FC = () => {
     const handleSuggestionAccept = async (suggestion: TraineeSuggestion) => {
         if (!module) return;
 
-        const newSteps = [...((module.steps as ProcessStep[]) ?? [])];
+        const newSteps = [...(module.steps ?? [])];
         const stepToUpdate = newSteps[suggestion.stepIndex];
 
         if (stepToUpdate) {
@@ -241,9 +239,9 @@ const EditPage: React.FC = () => {
         }
     }
 
-    const handleModuleDataChange = useCallback((updatedModuleData: ModuleRow) => {
+    const handleModuleDataChange = useCallback((updatedModuleData: AppModule | ModuleRow) => {
         setModule(prev => ({
-            ...(prev || {} as ModuleRow),
+            ...(prev || {} as AppModule),
             ...updatedModuleData
         }));
     }, []);

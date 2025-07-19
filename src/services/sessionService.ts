@@ -1,8 +1,18 @@
-
 import { supabase } from '@/services/apiClient';
-import type { UserAction, LiveCoachEvent, SessionState, SessionSummary } from '@/types';
+import type { UserAction, LiveCoachEvent, SessionSummary } from '@/types';
 
 const TABLE_NAME = 'training_sessions';
+
+export interface SessionState {
+    moduleId: string;
+    sessionToken: string;
+    currentStepIndex: number;
+    userActions: UserAction[];
+    isCompleted: boolean;
+    liveCoachEvents?: LiveCoachEvent[];
+    score?: number;
+}
+
 
 export const getSession = async (moduleId: string, sessionToken: string): Promise<SessionState | null> => {
     const { data, error } = await supabase

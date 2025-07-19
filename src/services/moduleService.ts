@@ -1,17 +1,25 @@
-
-
-
-
-
 import { supabase } from '@/services/apiClient';
 import type { Database } from '@/types/supabase';
-import type { ProcessStep, TranscriptLine } from '@/types';
+import type { ProcessStep, TranscriptLine, AppModule, AppModuleWithStats } from '@/types';
 
 type ModuleRow = Database['public']['Tables']['modules']['Row'];
 type ModuleInsert = Database['public']['Tables']['modules']['Insert'];
 type ModuleWithStatsRow = Database['public']['Views']['modules_with_session_stats']['Row'];
 
-export const getModule = async (slug: string): Promise<ModuleRow | undefined> => {
+const toAppModule = (module: ModuleRow): AppModule => ({
+    ...module,
+    steps: (module.steps as unknown as ProcessStep[] | null) ?? [],
+    transcript: (module.transcript as unknown as TranscriptLine[] | null) ?? [],
+});
+
+const toAppModuleWithStats = (module: ModuleWithStatsRow): AppModuleWithStats => ({
+    ...module,
+    steps: (module.steps as unknown as ProcessStep[] | null) ?? [],
+    transcript: (module.transcript as unknown as TranscriptLine[] | null) ?? [],
+});
+
+
+export const getModule = async (slug: string): Promise<AppModule | undefined> => {
     if (!slug) return undefined;
 
     try {
@@ -26,14 +34,14 @@ export const getModule = async (slug: string): Promise<ModuleRow | undefined> =>
         }
 
         if (data) {
-            return data;
+            return toAppModule(data);
         }
 
         // Fallback for static sub-modules used in live coaching
         const response = await fetch(`/modules/${slug}.json`);
         if (response.ok) {
             const staticModule = await response.json() as ModuleRow;
-            return staticModule;
+            return toAppModule(staticModule);
         }
 
         return undefined;
@@ -45,7 +53,7 @@ export const getModule = async (slug: string): Promise<ModuleRow | undefined> =>
     }
 };
 
-export const getAvailableModules = async (): Promise<ModuleWithStatsRow[]> => {
+export const getAvailableModules = async (): Promise<AppModuleWithStats[]> => {
     const { data, error } = await supabase
         .from('modules_with_session_stats')
         .select('*');
@@ -60,7 +68,7 @@ export const getAvailableModules = async (): Promise<ModuleWithStatsRow[]> => {
         return [];
     }
 
-    return data;
+    return data.map(toAppModuleWithStats);
 };
 
 export const saveModule = async ({
@@ -69,7 +77,7 @@ export const saveModule = async ({
 }: {
     moduleData: ModuleRow | ModuleInsert,
     videoFile?: File | null,
-}): Promise<ModuleRow> => {
+}): Promise<AppModule> => {
     // Validate transcript data before proceeding
     if (moduleData.transcript) {
         const invalidLines = (moduleData.transcript as TranscriptLine[]).filter(
@@ -100,7 +108,6 @@ export const saveModule = async ({
             .upload(filePath, videoFile, {
                 cacheControl: '3600',
                 upsert: true,
-                resumable: true, // Enable chunked uploads for large files
             });
 
         if (uploadError) {
@@ -138,7 +145,7 @@ export const saveModule = async ({
         throw new Error("Data returned after save is not a valid TrainingModule.");
     }
 
-    return savedData;
+    return toAppModule(savedData);
 };
 
 export const deleteModule = async (slug: string): Promise<void> => {

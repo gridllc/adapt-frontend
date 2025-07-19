@@ -1,12 +1,10 @@
-
-
 import React from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getModule } from '@/services/moduleService';
 import { getSessionSummary } from '@/services/sessionService';
 import { ClockIcon, LightbulbIcon, AlertTriangleIcon, TrophyIcon } from '@/components/Icons';
-import type { LiveCoachEvent, TrainingModule, SessionSummary } from '@/types';
+import type { LiveCoachEvent, AppModule, SessionSummary } from '@/types';
 
 /**
  * A small component to render the correct icon based on the event type.
@@ -46,7 +44,7 @@ const SessionReviewPage: React.FC = () => {
     const { moduleId, session_key } = useParams<{ moduleId: string, session_key: string }>();
 
     // Fetch the core module data (title, steps, etc.)
-    const { data: moduleData, isLoading: isLoadingModule } = useQuery<TrainingModule | undefined>({
+    const { data: moduleData, isLoading: isLoadingModule } = useQuery<AppModule | undefined>({
         queryKey: ['module', moduleId],
         queryFn: () => getModule(moduleId!),
         enabled: !!moduleId,
