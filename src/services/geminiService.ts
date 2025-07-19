@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, Content, Type, GenerateContentResponse, Part } from "@google/genai";
 import type { ProcessStep, ChatMessage, RefinementSuggestion, CheckpointEvaluation, TranscriptLine, GeneratedBranchModule } from "@/types";
 
@@ -303,11 +304,12 @@ export const generateImage = async (prompt: string): Promise<string> => {
             config: { numberOfImages: 1, outputMimeType: 'image/png', aspectRatio: '1:1' },
         });
 
-        const imageBytes = response.generatedImages?.[0]?.image.imageBytes;
-        if (!imageBytes) {
+        const firstImage = response.generatedImages?.[0];
+        if (firstImage && firstImage.image && firstImage.image.imageBytes) {
+            return `data:image/png;base64,${firstImage.image.imageBytes}`;
+        } else {
             throw new Error("The AI did not return an image.");
         }
-        return `data:image/png;base64,${imageBytes}`;
     } catch (error) {
         console.error("[AI Service] Error generating image:", error);
         throw new Error("Failed to generate the image. The model may be unavailable or the prompt was blocked.");
